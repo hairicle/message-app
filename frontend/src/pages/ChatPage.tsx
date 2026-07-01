@@ -12,7 +12,7 @@ function avatarBg(seed: string): string {
 }
 import * as conversationsApi from '../api/conversations';
 import * as teamsApi from '../api/teams';
-import type { Conversation, Message, Team, TeamMember } from '../api/types';
+import type { Conversation, Message, Team } from '../api/types';
 import { ConversationList } from '../components/ConversationList';
 import { MessageThread } from '../components/MessageThread';
 import { NewConversationDialog } from '../components/NewConversationDialog';
@@ -148,7 +148,7 @@ export function ChatPage() {
           {icon}
           {(badge ?? 0) > 0 && (
             <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
-              {badge > 99 ? '99+' : badge}
+              {(badge ?? 0) > 99 ? '99+' : badge}
             </span>
           )}
         </span>

@@ -169,7 +169,7 @@ export function MessageAttachment({ type, file, isMine, compact, onOpen }: Messa
   }
 
   if (!previewUrl) {
-    return <p className={`text-xs italic mb-1 ${loadingClass}`}>Loading {file.fileName}...</p>;
+    return <p className={`text-xs italic mb-1 ${isMine ? 'text-white/70' : 'text-gray-400'}`}>Loading {file.fileName}...</p>;
   }
 
   return (

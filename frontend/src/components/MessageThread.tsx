@@ -392,7 +392,6 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
         setPinnedMessages((prev) => prev.filter((p) => p.messageId !== message.id));
       } else {
         await messagesApi.pinMessage(message.id);
-        const text = decodeMessageText(message.ciphertext);
         const sender = conversation?.members?.find((m) => m.user_id === message.senderId);
         const newPin: PinnedMessage = {
           messageId: message.id,
@@ -562,7 +561,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
       {false && incomingCall && (
         <div className="flex items-center gap-3 px-4 py-3 flex-shrink-0" style={{ background: 'var(--accent-wash)', borderBottom: '1px solid var(--accent-dim)' }}>
           <span className="animate-pulse" style={{ color: 'var(--accent)' }}>📞</span>
-          <span className="text-sm font-medium flex-1" style={{ color: 'var(--text)' }}>Incoming {incomingCall.type} call…</span>
+          <span className="text-sm font-medium flex-1" style={{ color: 'var(--text)' }}>Incoming {incomingCall?.type} call…</span>
           <button onClick={answerCall} className="px-3 py-1.5 rounded-lg text-sm font-mono" style={{ background: 'var(--accent)', color: '#fff' }}>Answer</button>
           <button onClick={rejectCall} className="px-3 py-1.5 rounded-lg text-sm font-mono" style={{ background: 'var(--danger-wash)', color: 'var(--danger)' }}>Decline</button>
         </div>
