@@ -2,108 +2,161 @@
 
 ## Overview
 
-A secure, self-hosted internal communications platform (Telegram/Slack-style) giving the
-organization full control over encryption keys, data residency, and compliance — with
-no third-party data access.
+A secure, self-hosted internal communications platform (Microsoft Teams / Slack-style)
+giving the organization full control over data, access, and compliance — with no
+third-party data access. Designed around a department/team hierarchy so each org unit
+communicates in isolated workspaces.
 
-## Core Features
+---
 
-- Direct messages (1-on-1)
-- Group chats
-- Channels (read-only broadcasts)
-- File & media sharing
-- Message delivery status (sent / delivered / read)
-- Online presence indicators
-- Voice / video calls *(future / optional — see Future Enhancements)*
+## What's Been Built
+
+### ✅ Phase 1 — Foundation & Authentication
+- **Backend scaffold** — Node.js + Express, TypeScript (ESM), PostgreSQL, Redis
+- **Auth system** — JWT tokens, LDAP/SSO integration (`ldapts`), 2FA via TOTP (QR code setup, enable/disable, two-step login)
+- **Closed registration** — accounts created via admin panel or LDAP sync only; no public sign-up
+- **User management** — profiles, avatar upload, display name, directory listing
+- **Swagger UI** — API docs at `/api-docs` for backend testing
+
+### ✅ Phase 2 — Core Messaging
+- **Direct messages** — 1-on-1 chat with read receipts and delivery status
+- **Group chats** — create groups, add/remove members, group admin roles
+- **Channels** — broadcast-only; only owners/admins can post; anyone can subscribe/unsubscribe
+- **Real-time engine** — Socket.IO with presence (online/offline), typing indicators
+- **Message features** — edit, delete (soft), reply/quote, emoji reactions, pinned messages
+- **Unread counts + last message preview** — in conversation sidebar
+- **Message search** — full-text search within conversation or across all chats
+- **Notification preferences** — per-user sound/desktop/email toggles
+- **Conversation mute/unmute** — with duration (1h / 1d / 1w / forever)
+
+### ✅ Phase 3 — File Sharing & Media
+- **File uploads** — stored on MinIO (self-hosted S3-compatible); local disk fallback for dev
+- **Image/video** — thumbnails (Sharp), inline preview, media gallery per chat
+- **Voice notes** — record in-browser, upload as audio message, duration extraction
+- **Link previews** — OG/Twitter Card metadata fetched server-side (SSRF-safe, fire-and-forget)
+- **Read receipts per member** — see who read a message and when
+
+### ✅ Phase 4 — Voice & Video Calls
+- **WebRTC signalling** — SDP offer/answer and ICE candidate relay via Socket.IO
+- **Call state management** — initiate, join, leave, end; call history per conversation
+- **Peer-to-peer calls** — works for 1-on-1 and small groups (mesh topology, ≤4 people)
+- **Push notification on incoming call** — notifies offline users via FCM
+
+### ✅ Phase 5 — Mobile & Push
+- **FCM push notifications** — sends push to offline recipients on every new message
+  (checks Redis presence first — online users get Socket.IO; offline get push)
+- **Offline message sync** — `GET /api/messages/undelivered` delivers queued messages on reconnect
+- **Push token registration** — `PUT /api/users/me/devices/:id/push-token` stores FCM/APNs tokens
+
+### ✅ Phase 6 — Teams / Workspaces
+- **Teams** — department-scoped workspaces; conversations in a team are only visible to members
+- **Auto-assignment** — users are automatically added to their department team on create/update/LDAP sync
+- **Role-based teams** — admins auto-join "Admins" team; everyone joins "All Employees"
+- **Announcement channels** — grouped by division in the Announcements panel
+- **Channel discovery** — `GET /api/conversations/channels/all` lists all channels with `isSubscribed`
+
+### ✅ Phase 7 — Admin Dashboard
+- **Full-screen admin panel** — dark terminal design; tabs: Overview, Users, Departments, Audit Logs
+- **Users CRUD** — create, inline-edit (name/username/email/role/department), disable/enable, delete
+- **Excel import** — bulk-create users from `.xlsx`/`.csv`; template download; row-by-row error report
+- **Disable user** — immediate session invalidation via Redis blocklist + Socket.IO disconnect
+- **Delete user** — safe cascade: messages/files preserved (`SET NULL`), memberships removed (`CASCADE`)
+- **Departments management** — add/rename/delete departments; rename cascades to `users.department` and team name
+- **Department member view** — expand a department to see all members; assign/remove users
+- **Audit logs** — filterable by action, user, date range; terminal-style log viewer
+- **Platform stats** — total users, active users, messages, 24h messages, conversations
+- **User profile panel** — click avatar → edit profile, change avatar, change password, manage 2FA, notification prefs
+
+---
 
 ## Tech Stack
 
 | Area | Choice |
 |---|---|
-| Backend | Node.js (Express/Fastify) |
-| Real-time | WebSockets (Socket.IO) / self-hosted MQTT |
-| Database | PostgreSQL (users/metadata) + Redis (presence/sessions) |
-| File storage | MinIO (self-hosted S3-compatible) |
-| Encryption | Signal Protocol (libsignal) for E2E |
-| Frontend | React (web/desktop) + React Native (iOS/Android) |
-
-## Security Advantages over Telegram
-
-- **Default end-to-end encryption** — Telegram only encrypts normal chats in transit/at rest on its own servers (it holds the keys); only opt-in "Secret Chats" are true E2E. Our app uses libsignal E2E for every chat by default, so not even server admins can read message content.
-- **Full control over encryption keys** — Keys are generated and held on user devices, never on our servers.
-- **Data residency within internal network / private cloud** — All messages, files, and metadata stay on infrastructure the company owns, instead of Telegram's data centers in undisclosed locations.
-- **No third-party data access** — Removes Telegram (a company we don't control) from the equation entirely — no risk of breach, subpoena, policy change, or metadata exposure via a third party.
-- **SSO/LDAP integration with existing employee directory** — Login ties directly into company AD/LDAP, so access follows the employee's account status automatically.
-- **Closed registration** — Accounts are provisioned via company LDAP/admin only, with no public sign-up. This removes the open-registration attack surface (bots, fake accounts, account-takeover via sign-up flows) and ensures offboarded employees lose access immediately when their LDAP account is disabled.
-- **Full audit logs for compliance** — Tracks logins, channel access, and file uploads/downloads — visibility Telegram doesn't provide, needed for SOC2/HIPAA/financial-style compliance requirements.
+| Backend | Node.js + Express (TypeScript, ESM) |
+| Real-time | Socket.IO (WebSockets) |
+| Database | PostgreSQL + Redis (presence/sessions/blocklist) |
+| File storage | MinIO (self-hosted S3) with local disk fallback |
+| Auth | JWT + LDAP (`ldapts`) + TOTP 2FA (`otpauth`) |
+| Frontend | React + Vite + Tailwind CSS |
+| Push | Firebase Admin SDK (FCM) |
+| Excel | SheetJS (`xlsx`) |
 
 ---
 
-## Build Phases & Timeline (10 weeks)
+## Schema Highlights
 
-### Phase 1 — Foundation & Authentication (Weeks 1–2)
-
-- **Backend scaffold**: Node.js + Express, PostgreSQL, Redis, project structure
-- **Auth system**: SSO/LDAP integration, JWT tokens, 2FA via TOTP
-- **Closed registration**: No public sign-up endpoint — accounts created via LDAP sync or admin panel only
-- **User management**: Profiles, roles, departments, employee directory
-- **E2E encryption**: Signal Protocol (libsignal) key setup and distribution
-
-**Stack:** Node.js, PostgreSQL, Redis, libsignal, LDAP
-
-### Phase 2 — Core Messaging (Weeks 3–5)
-
-- **Direct messages**: 1-on-1 encrypted chat, read receipts, delivery status
-- **Group chats**: Create groups, add/remove members, group admin roles
-- **Real-time engine**: WebSocket via Socket.IO, presence, typing indicators
-- **Channels**: Broadcast-only channels, subscriptions, announcements
-
-**Stack:** Socket.IO, React, WebSockets, IndexedDB
-
-### Phase 3 — File Sharing & Media (Weeks 6–7)
-
-- **File uploads**: Encrypted storage on MinIO, chunked upload, progress
-- **Image & video**: Thumbnails, inline preview, media gallery per chat
-- **Voice notes**: Record, send, and play back audio messages in-app
-- **Link previews**: OG metadata fetching, safe preview rendering
-
-**Stack:** MinIO, FFmpeg, Sharp, Web Audio API
-
-### Phase 4 — Mobile Apps (Weeks 8–9)
-
-- **React Native app**: Shared codebase for iOS and Android from one repo
-- **Push notifications**: Self-hosted via FCM/APNs, encrypted payload
-- **Offline mode**: Message queue, local cache, sync on reconnect
-- **Mobile UX**: Swipe gestures, haptic feedback, biometric lock
-
-**Stack:** React Native, Expo, FCM, APNs, SQLite
-
-### Phase 5 — Admin, Compliance & Launch (Week 10)
-
-- **Admin dashboard**: User management, group controls, usage analytics
-- **Audit logs**: Message metadata logs, access records, compliance export
-- **Monitoring**: Prometheus + Grafana, uptime alerts, error tracking
-- **Deploy & rollout**: Docker / K8s, pilot team, full org onboarding
-
-**Stack:** Docker, Kubernetes, Prometheus, Grafana, Sentry
+| Table | Purpose |
+|---|---|
+| `users` | Accounts with role (free text), department (text FK to departments.name) |
+| `departments` | Managed list of department names; case-insensitive unique index |
+| `teams` | Workspaces; scoped by department; case-insensitive unique index |
+| `team_members` | User → team membership with role (owner/admin/member) |
+| `conversations` | DMs / groups / channels, optionally scoped to a `team_id` |
+| `messages` | Ciphertext (base64), soft-delete, edit history |
+| `message_reactions` | Emoji reactions per user per message |
+| `pinned_messages` | Pinned messages per conversation |
+| `message_deliveries` | Per-device delivery/read status |
+| `link_previews` | OG metadata cached after send |
+| `notification_preferences` | Per-user sound/desktop/email flags |
+| `audit_logs` | Login, password change, user create/delete events |
+| `calls` / `call_participants` | Call records and participant list |
 
 ---
 
-## Future Enhancements (Post-Launch)
+## What Remains
 
-### Voice & Video Calls
-
-- **1-on-1 calls**: WebRTC peer-to-peer voice and video, DTLS encryption
-- **Group calls**: SFU server (mediasoup), up to 25 participants
-- **Screen share**: Desktop capture, presenter controls, annotations
-- **TURN/STUN**: Self-hosted Coturn server for NAT traversal
-
-**Stack:** WebRTC, mediasoup, Coturn, DTLS-SRTP
+| Item | Priority | Notes |
+|---|---|---|
+| Docker / docker-compose setup | High | For production deployment |
+| Email notifications (SMTP) | Medium | For `email_enabled` pref |
+| mediasoup SFU | Low | Group calls >4 people |
+| TURN/STUN (Coturn) | Low | NAT traversal for WebRTC |
+| React Native mobile app | Future | Capacitor wrapper recommended |
+| Monitoring (Prometheus/Grafana) | Future | Production observability |
+| Signal Protocol (libsignal) | Future | True E2E encryption (DB tables ready) |
 
 ---
 
-## Next Steps
+## Branch Strategy
 
-- [x] Confirm backend language choice — Node.js
-- [ ] Set up repo structure and CI/CD
-- [ ] Begin Phase 1: backend scaffold + auth system
+| Branch | Purpose |
+|---|---|
+| `sethi` | My working branch (backend + frontend features) |
+| `develop` | Integration branch — PRs merged here |
+| `main` | Production — merged by lead only |
+
+---
+
+## Key API Endpoints
+
+```
+Auth:         POST /api/auth/login  ·  POST /api/auth/login/totp
+              POST /api/auth/totp/setup  ·  POST /api/auth/totp/enable
+
+Users:        GET/PATCH /api/users/me  ·  POST /api/users/me/avatar
+              PUT /api/users/me/devices/:id/push-token
+
+Teams:        GET/POST /api/teams  ·  GET /api/teams/:id/members
+              POST /api/teams/:id/members
+
+Convs:        GET/POST /api/conversations
+              GET /api/conversations/channels/all
+              POST/DELETE /api/conversations/:id/subscribe
+              GET/POST/DELETE /api/conversations/:id/pins
+
+Messages:     GET/POST /api/messages  ·  GET /api/messages/search
+              POST /api/messages/:id/reactions  ·  GET /api/messages/:id/receipts
+              GET /api/messages/undelivered
+
+Files:        POST /api/files  ·  POST /api/files/voice
+
+Calls:        POST /api/calls  ·  POST /api/calls/:id/join
+              POST /api/calls/:id/leave  ·  POST /api/calls/:id/end
+
+Departments:  GET/POST /api/departments  ·  PATCH/DELETE /api/departments/:id
+
+Admin:        GET /api/admin/stats  ·  GET /api/admin/audit-logs
+              PATCH /api/admin/users/:id  ·  DELETE /api/admin/users/:id
+              POST /api/admin/users/import  ·  POST /api/admin/sync-department-teams
+```

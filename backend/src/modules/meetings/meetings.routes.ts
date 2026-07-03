@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { requireAuth } from '../../middleware/auth.middleware.js';
-
+import { asyncHandler } from '../../utils/async-handler.js';
+import * as c from './meetings.controller.js';
 const router = Router();
-
 router.use(requireAuth);
-
-// Meetings module — placeholder (not yet implemented)
-
+router.get('/', asyncHandler(c.listMeetingsHandler));
+router.post('/', asyncHandler(c.createMeetingHandler));
+router.delete('/:id', asyncHandler(c.deleteMeetingHandler));
+router.post('/:id/respond', asyncHandler(c.respondMeetingHandler));
 export default router;

@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { requireAuth } from '../../middleware/auth.middleware.js';
-
+import { asyncHandler } from '../../utils/async-handler.js';
+import * as c from './tasks.controller.js';
 const router = Router();
-
 router.use(requireAuth);
-
-// Tasks module — placeholder (not yet implemented)
-
+router.get('/', asyncHandler(c.listTasksHandler));
+router.post('/', asyncHandler(c.createTaskHandler));
+router.patch('/:id', asyncHandler(c.updateTaskHandler));
+router.delete('/:id', asyncHandler(c.deleteTaskHandler));
 export default router;

@@ -1,9 +1,8 @@
 import { Pool } from 'pg';
 import { env } from './env.js';
 
-// The pg module drops the project-ref suffix from Supabase usernames
-// (e.g. postgres.lwmzhfvoaqnqoszyrwki becomes just "postgres").
-// Parsing with the WHATWG URL API and passing params individually avoids this.
+// pg drops the Supabase project-ref from usernames (postgres.xxx → postgres).
+// WHATWG URL API preserves the full username correctly.
 function makePool(url: string): Pool {
   const u = new URL(url);
   const needsSsl =

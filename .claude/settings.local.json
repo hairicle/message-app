@@ -1,7 +1,22 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(curl -s http://localhost:4000/health)",
+      "Bash(curl -s -X POST http://localhost:4000/api/auth/login -H \"Content-Type: application/json\" -d '{\"email\":\"admin@company.local\",\"password\":\"password123\"}')",
+      "Bash(psql -U postgres -d messenger -c \"SELECT email, username FROM users LIMIT 5;\")",
+      "PowerShell(& \"C:\\\\Program Files\\\\PostgreSQL\\\\17\\\\bin\\\\psql.exe\" -U postgres -d messenger -c \"SELECT email, username FROM users LIMIT 5;\" 2>&1)",
+      "Bash(node -e ' *)",
+      "Bash(curl -s -o /tmp/test.jpg \"https://picsum.photos/100/100\")",
+      "Bash(curl -s -X POST http://localhost:4000/api/users/me/avatar -H 'Authorization: Bearer __TRACKED_VAR__' -F 'avatar=@d:/IT INTERN/Messager App/backend/uploads/avatars/e0ed0577-2ed3-4209-8da2-b8b41090d18a.webp;type=image/webp')",
+      "Bash(git add *)",
+      "Bash(git commit -m ' *)",
+      "Bash(git push *)",
+      "Bash(git checkout *)",
+      "Bash(git pull *)",
+      "Bash(git merge *)",
+      "Bash(git commit *)",
+      "Bash(docker compose *)"
     ]
   }
 }
