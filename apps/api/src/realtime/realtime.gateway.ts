@@ -1,0 +1,191 @@
+import {
+  WebSocketGateway,
+  WebSocketServer,
+  SubscribeMessage,
+  MessageBody,
+  ConnectedSocket,
+  OnGatewayConnection,
+  OnGatewayDisconnect,
+  WsException,
+} from '@nestjs/websockets';
+import { Server, Socket } from 'socket.io';
+import { JwtService } from '@nestjs/jwt';
+import { DatabaseService } from '../database/database.service';
+import { RedisService } from '../redis/redis.service';
+import type { AuthPayload } from '@messenger/shared';
+
+interface AuthedSocket extends Socket {
+  data: { user: AuthPayload };
+}
+
+const PRESENCE_PREFIX = 'presence:user:';
+
+@WebSocketGateway({ cors: { origin: '*' } })
+export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {
+  @WebSocketServer() io!: Server;
+
+  constructor(
+    private readonly jwt: JwtService,
+    private readonly db: DatabaseService,
+    private readonly redis: RedisService,
+  ) {}
+
+  async handleConnection(socket: AuthedSocket) {
+    const token = socket.handshake.auth?.token as string | undefined;
+    if (!token) {
+      socket.disconnect(true);
+      return;
+    }
+    try {
+      const payload = this.jwt.verify<AuthPayload>(token);
+      socket.data.user = payload;
+    } catch {
+      socket.disconnect(true);
+      return;
+    }
+
+    const { user } = socket.data;
+    await this.joinConversationRooms(socket);
+    socket.join(`user:${user.id}`);
+    await this.markOnline(user.id);
+    await this.broadcastPresence(user.id, 'online');
+  }
+
+  async handleDisconnect(socket: AuthedSocket) {
+    const user = socket.data?.user;
+    if (!user) return;
+
+    const sockets = await this.io.in(`user:${user.id}`).fetchSockets();
+    if (sockets.length === 0) {
+      await this.markOffline(user.id);
+      await this.broadcastPresence(user.id, 'offline');
+    }
+  }
+
+  @SubscribeMessage('presence:get')
+  async handlePresenceGet(@ConnectedSocket() socket: AuthedSocket) {
+    const keys = await this.redis.scanKeys(`${PRESENCE_PREFIX}*`);
+    const snapshot: Record<string, string> = {};
+    if (keys.length) {
+      const pipeline = this.redis.pipeline();
+      for (const k of keys) pipeline.get(k);
+      const results = await pipeline.exec();
+      keys.forEach((k, i) => {
+        const uid = k.slice(PRESENCE_PREFIX.length);
+        snapshot[uid] = (results?.[i]?.[1] as string) ?? 'offline';
+      });
+    }
+    socket.emit('presence:snapshot', snapshot);
+  }
+
+  @SubscribeMessage('typing:start')
+  async handleTypingStart(
+    @ConnectedSocket() socket: AuthedSocket,
+    @MessageBody() payload: { conversationId: string },
+  ) {
+    if (!(await this.isMember(socket, payload.conversationId))) return;
+    socket.to(`conversation:${payload.conversationId}`).emit('typing:start', {
+      conversationId: payload.conversationId,
+      userId: socket.data.user.id,
+    });
+  }
+
+  @SubscribeMessage('typing:stop')
+  async handleTypingStop(
+    @ConnectedSocket() socket: AuthedSocket,
+    @MessageBody() payload: { conversationId: string },
+  ) {
+    socket.to(`conversation:${payload.conversationId}`).emit('typing:stop', {
+      conversationId: payload.conversationId,
+      userId: socket.data.user.id,
+    });
+  }
+
+  @SubscribeMessage('call:offer')
+  async handleCallOffer(
+    @ConnectedSocket() socket: AuthedSocket,
+    @MessageBody() payload: { targetUserId: string; sdp: string; callId: string; conversationId: string },
+  ) {
+    if (!(await this.isMember(socket, payload.conversationId))) return;
+    socket.to(`user:${payload.targetUserId}`).emit('call:offer', {
+      fromUserId: socket.data.user.id,
+      sdp: payload.sdp,
+      callId: payload.callId,
+    });
+  }
+
+  @SubscribeMessage('call:answer')
+  handleCallAnswer(
+    @ConnectedSocket() socket: AuthedSocket,
+    @MessageBody() payload: { targetUserId: string; sdp: string; callId: string },
+  ) {
+    socket.to(`user:${payload.targetUserId}`).emit('call:answer', {
+      fromUserId: socket.data.user.id,
+      sdp: payload.sdp,
+      callId: payload.callId,
+    });
+  }
+
+  @SubscribeMessage('call:ice-candidate')
+  async handleIceCandidate(
+    @ConnectedSocket() socket: AuthedSocket,
+    @MessageBody() payload: { targetUserId: string; candidate: unknown; callId: string; conversationId: string },
+  ) {
+    if (!(await this.isMember(socket, payload.conversationId))) return;
+    socket.to(`user:${payload.targetUserId}`).emit('call:ice-candidate', {
+      fromUserId: socket.data.user.id,
+      candidate: payload.candidate,
+      callId: payload.callId,
+    });
+  }
+
+  @SubscribeMessage('call:reject')
+  async handleCallReject(
+    @ConnectedSocket() socket: AuthedSocket,
+    @MessageBody() payload: { targetUserId: string; callId: string; conversationId: string },
+  ) {
+    if (!(await this.isMember(socket, payload.conversationId))) return;
+    socket.to(`user:${payload.targetUserId}`).emit('call:reject', {
+      fromUserId: socket.data.user.id,
+      callId: payload.callId,
+    });
+  }
+
+  async disconnectUser(userId: string) {
+    const sockets = await this.io.in(`user:${userId}`).fetchSockets();
+    for (const s of sockets) {
+      s.emit('account:disabled');
+      s.disconnect(true);
+    }
+  }
+
+  private async joinConversationRooms(socket: AuthedSocket) {
+    const r = await this.db.query<{ conversation_id: string }>(
+      'SELECT conversation_id FROM conversation_members WHERE user_id = $1',
+      [socket.data.user.id],
+    );
+    for (const row of r.rows) {
+      socket.join(`conversation:${row.conversation_id}`);
+    }
+  }
+
+  private async isMember(socket: AuthedSocket, conversationId: string): Promise<boolean> {
+    const r = await this.db.query(
+      'SELECT 1 FROM conversation_members WHERE conversation_id = $1 AND user_id = $2',
+      [conversationId, socket.data.user.id],
+    );
+    return r.rows.length > 0;
+  }
+
+  private async markOnline(userId: string) {
+    await this.redis.set(`${PRESENCE_PREFIX}${userId}`, 'online', 'EX', 86400);
+  }
+
+  private async markOffline(userId: string) {
+    await this.redis.del(`${PRESENCE_PREFIX}${userId}`);
+  }
+
+  private async broadcastPresence(userId: string, status: 'online' | 'offline') {
+    this.io.emit('presence:update', { userId, status });
+  }
+}
