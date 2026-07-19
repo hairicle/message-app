@@ -4,6 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import type { Message } from '../api/types';
 import { decodeMessageText, encodeMessageText } from '../utils/text';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faUsers, faThumbTack, faFile, faLink, faMagnifyingGlass, faPaperclip, faPaperPlane, faXmark, faChevronLeft } from '@fortawesome/free-solid-svg-icons';
 
 // ── Types (aligned to actual API responses) ───────────────────────────────────
 interface TeamSummary {
@@ -41,15 +43,6 @@ interface TeamMessage {
   attachment?: { name: string; sizeKb: number };
 }
 
-// ── Icons ─────────────────────────────────────────────────────────────────────
-function IconUsers(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><circle cx="9" cy="7" r="3.2"/><path d="M2.5 19c0-3.3 3-5.5 6.5-5.5S15.5 15.7 15.5 19"/><circle cx="17" cy="8.5" r="2.5"/><path d="M16 13.2c2.6.4 4.5 2.2 4.5 5"/></svg>; }
-function IconPin(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><path d="M12 17v5M8 3h8l-1 6 3 3v2H6v-2l3-3z"/></svg>; }
-function IconFile(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><path d="M14 3v5h5M6 3h8l5 5v11a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/></svg>; }
-function IconLink(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><path d="M9 17H7a5 5 0 0 1 0-10h2M15 7h2a5 5 0 0 1 0 10h-2M8 12h8"/></svg>; }
-function IconSearch(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>; }
-function IconPaperclip(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><path d="M21.4 11.4l-9 9a5 5 0 0 1-7-7l9-9a3.5 3.5 0 0 1 5 5l-9 9a2 2 0 0 1-3-3l8-8"/></svg>; }
-function IconSend(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg>; }
-function IconClose(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}><path d="M6 6l12 12M18 6L6 18"/></svg>; }
 
 function Badge({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: 'neutral' | 'accent' | 'warning' }) {
   const styles = {
@@ -64,7 +57,7 @@ function Badge({ children, tone = 'neutral' }: { children: React.ReactNode; tone
   );
 }
 
-export function TeamWorkspace() {
+export function TeamWorkspace({ onMobileDetailChange }: { onMobileDetailChange?: (open: boolean) => void }) {
   const { user } = useAuth();
   const socket = useSocket();
 
@@ -77,13 +70,14 @@ export function TeamWorkspace() {
   const [pinned, setPinned] = useState<PinnedItem[]>([]);
   const [messages, setMessages] = useState<TeamMessage[]>([]);
   const [draft, setDraft] = useState('');
-  const [showMembers, setShowMembers] = useState(true);
+  const [showMembers, setShowMembers] = useState(false);
   const [sending, setSending] = useState(false);
 
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const generalConvIdRef = useRef<string | null>(null);
   useEffect(() => { generalConvIdRef.current = generalConvId; }, [generalConvId]);
+  useEffect(() => { onMobileDetailChange?.(!!activeTeamId); }, [activeTeamId]);
 
   // Always-current roster ref so socket handler never has stale member list
   const membersRef = useRef<TeamMember[]>([]);
@@ -92,10 +86,7 @@ export function TeamWorkspace() {
   // Load team list
   useEffect(() => {
     apiFetch<{ teams: TeamSummary[] }>('/api/teams')
-      .then(({ teams }) => {
-        setTeams(teams);
-        if (teams.length > 0) setActiveTeamId(teams[0].id);
-      })
+      .then(({ teams }) => setTeams(teams))
       .catch(() => {});
   }, []);
 
@@ -221,16 +212,16 @@ export function TeamWorkspace() {
   const activeTeam = teams.find((t) => t.id === activeTeamId) ?? null;
 
   return (
-    <div className="flex-1 flex overflow-hidden team-root" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+    <div className="flex-1 flex overflow-hidden relative team-root" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
 
-      {/* ── LEFT: team list ── */}
-      <div className="flex flex-col flex-shrink-0" style={{ width: 260, borderRight: '1px solid var(--border)', background: 'var(--bg)' }}>
+      {/* ── LEFT: team list — full-screen on mobile when no team selected, hidden when team open ── */}
+      <div className={`flex-col flex-shrink-0 sm:w-[260px] ${activeTeamId ? 'hidden sm:flex' : 'flex w-full'}`} style={{ borderRight: '1px solid var(--border)', background: 'var(--bg)' }}>
         <div className="px-5 pt-6 pb-4">
           <h1 className="text-[22px] font-bold tracking-tight mb-3" style={{ color: 'var(--text)' }}>Teams</h1>
           <div className="relative">
-            <IconSearch width={14} height={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-dim)' }} />
+            <FontAwesomeIcon icon={faMagnifyingGlass} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ fontSize: 13, color: 'var(--text-dim)' }} />
             <input value={teamSearch} onChange={(e) => setTeamSearch(e.target.value)}
-              placeholder="Find a team…" className="input-base w-full pl-8" style={{ fontSize: 14 }} />
+              placeholder="Find a team…" className="input-base w-full" style={{ fontSize: 14, paddingLeft: '2rem' }} />
           </div>
         </div>
         <div className="flex-1 overflow-y-auto px-2 pb-4">
@@ -268,7 +259,10 @@ export function TeamWorkspace() {
       {activeTeam ? (
         <div className="flex-1 flex flex-col min-w-0" style={{ background: 'var(--bg)' }}>
           {/* Header */}
-          <div className="flex items-center gap-3 px-6 py-4 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}>
+          <div className="flex items-center gap-3 px-4 py-4 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}>
+            <button onClick={() => setActiveTeamId(null)} className="sm:hidden p-2 -ml-1 rounded-xl transition-colors btn-icon flex-shrink-0" aria-label="Back">
+              <FontAwesomeIcon icon={faChevronLeft} style={{ fontSize: 16 }} />
+            </button>
             <div className="team-icon" style={{ width: 36, height: 36, fontSize: 14 }}>
               {activeTeam.name.slice(0, 1).toUpperCase()}
             </div>
@@ -279,7 +273,7 @@ export function TeamWorkspace() {
               </p>
             </div>
             <button onClick={() => setShowMembers((v) => !v)} className="btn-ghost">
-              <IconUsers width={13} height={13} /> {members.length}
+              <FontAwesomeIcon icon={faUsers} style={{ fontSize: 13 }} /> {members.length}
             </button>
           </div>
 
@@ -354,7 +348,7 @@ export function TeamWorkspace() {
                       {m.attachment && (
                         <div className="inline-flex items-center gap-2 px-2 py-1.5 rounded-lg"
                           style={{ background: isMe ? 'rgba(255,255,255,0.15)' : 'var(--panel-alt)', border: `1px solid ${isMe ? 'rgba(255,255,255,0.2)' : 'var(--border)'}` }}>
-                          <IconFile width={13} height={13} style={{ color: isMe ? '#fff' : 'var(--text-muted)', flexShrink: 0 }} />
+                          <FontAwesomeIcon icon={faFile} style={{ fontSize: 13, color: isMe ? '#fff' : 'var(--text-muted)', flexShrink: 0 }} />
                           <span className="text-[13px]" style={{ color: isMe ? '#fff' : 'var(--text)' }}>{m.attachment.name}</span>
                           <span className="font-mono text-[11px]" style={{ color: isMe ? 'rgba(255,255,255,0.6)' : 'var(--text-dim)' }}>{m.attachment.sizeKb} KB</span>
                         </div>
@@ -378,7 +372,7 @@ export function TeamWorkspace() {
           {/* Composer */}
           <form onSubmit={handleSend} className="flex items-center gap-2 px-6 py-4 flex-shrink-0" style={{ borderTop: '1px solid var(--border)', background: 'var(--panel)' }}>
             <button type="button" onClick={() => fileInputRef.current?.click()} className="btn-icon" title="Attach file">
-              <IconPaperclip width={15} height={15} />
+              <FontAwesomeIcon icon={faPaperclip} style={{ fontSize: 15 }} />
             </button>
             <input ref={fileInputRef} type="file" className="hidden" onChange={handleAttach} />
             <input value={draft} onChange={(e) => setDraft(e.target.value)}
@@ -386,7 +380,7 @@ export function TeamWorkspace() {
               placeholder={`Message ${activeTeam.name}…`}
               className="input-base flex-1" />
             <button type="submit" disabled={!draft.trim() || sending} className="btn-primary disabled:opacity-40">
-              <IconSend width={13} height={13} />
+              <FontAwesomeIcon icon={faPaperPlane} style={{ fontSize: 13 }} />
             </button>
           </form>
         </div>
@@ -396,13 +390,16 @@ export function TeamWorkspace() {
         </div>
       )}
 
-      {/* ── RIGHT: members + pinned ── */}
+      {/* ── RIGHT: members + pinned — overlay on mobile, sidebar on desktop ── */}
       {activeTeam && showMembers && (
-        <div className="flex-shrink-0 flex flex-col overflow-hidden" style={{ width: 260, borderLeft: '1px solid var(--border)', background: 'var(--bg)' }}>
+        <>
+          {/* Mobile backdrop */}
+          <div className="sm:hidden absolute inset-0 z-10 bg-black/30" onClick={() => setShowMembers(false)} />
+          <div className="flex flex-col overflow-hidden absolute right-0 inset-y-0 z-20 w-4/5 max-w-[280px] sm:relative sm:inset-auto sm:z-auto sm:flex-shrink-0 sm:w-[260px]" style={{ borderLeft: '1px solid var(--border)', background: 'var(--bg)' }}>
           <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
             <span className="font-mono text-[13px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Workspace</span>
             <button onClick={() => setShowMembers(false)} className="btn-icon" style={{ width: 22, height: 22 }}>
-              <IconClose width={11} height={11} />
+              <FontAwesomeIcon icon={faXmark} style={{ fontSize: 11 }} />
             </button>
           </div>
 
@@ -410,7 +407,7 @@ export function TeamWorkspace() {
             {/* Pinned shelf */}
             <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
               <div className="flex items-center gap-1.5 mb-3">
-                <IconPin width={13} height={13} style={{ color: 'var(--text-dim)' }} />
+                <FontAwesomeIcon icon={faThumbTack} style={{ fontSize: 13, color: 'var(--text-dim)' }} />
                 <span className="font-mono text-[12.5px] uppercase tracking-wide" style={{ color: 'var(--text-dim)' }}>Pinned</span>
               </div>
               {pinned.length > 0 ? (
@@ -420,8 +417,8 @@ export function TeamWorkspace() {
                       className="flex items-center gap-2 px-2.5 py-2 rounded-lg border transition-colors"
                       style={{ borderColor: 'var(--border)', background: 'var(--panel)' }}>
                       {p.type === 'file'
-                        ? <IconFile width={13} height={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
-                        : <IconLink width={13} height={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
+                        ? <FontAwesomeIcon icon={faFile} style={{ fontSize: 13, color: 'var(--text-muted)', flexShrink: 0 }} />
+                        : <FontAwesomeIcon icon={faLink} style={{ fontSize: 13, color: 'var(--text-muted)', flexShrink: 0 }} />}
                       <div className="min-w-0">
                         <p className="text-[13.5px] truncate" style={{ color: 'var(--text)' }}>{p.title}</p>
                         <p className="font-mono text-[12px]" style={{ color: 'var(--text-dim)' }}>
@@ -460,6 +457,7 @@ export function TeamWorkspace() {
             </div>
           </div>
         </div>
+        </>
       )}
 
       <style>{`

@@ -502,7 +502,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
       {/* Header */}
       <header className="flex items-center gap-3 px-4 py-3 flex-shrink-0" style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
         {onBack && (
-          <button onClick={onBack} className="md:hidden p-2 -ml-1 rounded-xl transition-colors flex-shrink-0 btn-icon" aria-label="Back">
+          <button onClick={onBack} className="sm:hidden p-2 -ml-1 rounded-xl transition-colors flex-shrink-0 btn-icon" aria-label="Back">
             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           </button>
         )}
@@ -981,7 +981,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
               </div>
 
               {/* Column: name+time header + bubble + reactions */}
-              <div className="flex flex-col max-w-[62%]" style={{ alignItems: mine ? 'flex-end' : 'flex-start' }}>
+              <div className="flex flex-col max-w-[80%] sm:max-w-[62%]" style={{ alignItems: mine ? 'flex-end' : 'flex-start' }}>
                 {/* Forwarded label — shows original sender, preserved through chains */}
                 {message.forwardedFromMessageId && message.forwardedFromDisplayName && !message.deletedAt && (
                   <div className="flex items-center gap-1 mb-0.5 px-1" style={{ flexDirection: mine ? 'row-reverse' : 'row' }}>
@@ -1082,12 +1082,12 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
 
               {/* Hover toolbar — sibling to the column */}
               {!isEditing && !message.deletedAt && (
-                <div className={`flex-shrink-0 transition-all duration-150 ${(msgDirs[message.id] ?? 'up') === 'up' ? 'self-end mb-0.5' : 'self-start mt-0.5'} ${openMenuId === message.id ? 'opacity-100 pointer-events-auto' : openMenuId !== null ? 'opacity-0 pointer-events-none' : 'opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto'}`}>
+                <div className={`flex-shrink-0 transition-all duration-150 ${(msgDirs[message.id] ?? 'up') === 'up' ? 'self-end mb-0.5' : 'self-start mt-0.5'} ${openMenuId === message.id ? 'opacity-100 pointer-events-auto' : openMenuId !== null ? 'opacity-0 pointer-events-none' : 'opacity-100 sm:opacity-0 sm:group-hover:opacity-100 pointer-events-auto sm:pointer-events-none sm:group-hover:pointer-events-auto'}`}>
                   <div className="flex items-center rounded-2xl overflow-visible" style={{ background: 'var(--panel)', border: '1px solid var(--border)', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
                     {QUICK_EMOJIS.map((e) => (
-                      <button key={e} onClick={() => toggleReaction(message.id, e)} className="w-8 h-8 text-[16px] flex items-center justify-center transition-colors first:rounded-l-2xl hover-panel-alt">{e}</button>
+                      <button key={e} onClick={() => toggleReaction(message.id, e)} className="hidden sm:flex w-8 h-8 text-[16px] items-center justify-center transition-colors first:rounded-l-2xl hover-panel-alt">{e}</button>
                     ))}
-                    <div className="w-px h-5 mx-0.5 flex-shrink-0" style={{ background: 'var(--border)' }} />
+                    <div className="hidden sm:block w-px h-5 mx-0.5 flex-shrink-0" style={{ background: 'var(--border)' }} />
                     <div className="relative">
                       <button onClick={(e) => { e.stopPropagation(); calcToolbarDir(e.currentTarget, message.id); setOpenMenuId(openMenuId === message.id ? null : message.id); }}
                         className="w-8 h-8 flex items-center justify-center transition-colors rounded-r-2xl hover-panel-alt" style={{ color: 'var(--text-dim)' }}>
@@ -1200,7 +1200,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
       )}
 
       {/* Input bar */}
-      <form className="flex items-center gap-2 px-4 py-3 flex-shrink-0" style={{ background: 'var(--panel)', borderTop: '1px solid var(--border)' }} onSubmit={handleSend}>
+      <form className="flex items-center gap-2 px-4 pt-3 flex-shrink-0" style={{ background: 'var(--panel)', borderTop: '1px solid var(--border)', paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }} onSubmit={handleSend}>
         <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} />
         <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading || isRecording} title="Attach file" className="p-2 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0 btn-icon">
           <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
@@ -1228,7 +1228,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
       {showInfoPanel && (
         <>
           <div className="absolute inset-0 z-20 bg-black/20" onClick={() => setShowInfoPanel(false)} />
-          <div className="absolute inset-y-0 right-0 w-80 z-30 shadow-2xl">
+          <div className="absolute inset-y-0 right-0 w-full sm:w-80 z-30 shadow-2xl">
             <ConversationInfoPanel conversation={conversation} currentUserId={user!.id} presence={presence} onClose={() => setShowInfoPanel(false)} onOpenLightbox={(file, type) => setLightboxItem({ file, type })} initialTab="media" />
           </div>
         </>

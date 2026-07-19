@@ -230,3 +230,55 @@ Tracks what's been done on the Internal Messenger App, session by session.
 ### Status
 ✅ Message editing & deletion working end-to-end (backend verified via curl;
    frontend type-checks cleanly, manual browser test pending).
+
+---
+
+## 2026-06-29 — Mobile-Responsive Layout, PWA, FontAwesome Migration
+
+### Mobile / Responsive Layout
+- Converted app to MS Teams-style responsive layout: desktop left-rail nav
+  (`hidden sm:flex`) replaced by a fixed bottom tab bar on mobile (`sm:hidden`)
+- Bottom tab bar hides when a chat is open (`section === 'chat' && selectedId`)
+  or a team/announcement detail is open (`mobileDetailOpen`); `pb-14` body
+  padding is also removed in those states to prevent dead whitespace
+- `TeamWorkspace`: left panel goes full-width on mobile when no team is
+  selected; team detail hides the list panel (`hidden sm:flex`); back chevron
+  button (`sm:hidden`) returns to the list
+- `TeamWorkspace` members panel converted from desktop sidebar to mobile
+  overlay (absolute, full-height, `z-20`) with semi-transparent backdrop;
+  defaults to `showMembers = false` so it no longer auto-opens on tap
+- `AnnounceWorkspace`: same full-screen list → detail pattern with back button;
+  subscriber panel is `hidden sm:flex` on mobile
+- `mobileDetailOpen` callback prop (`onMobileDetailChange`) threads from
+  `TeamWorkspace` / `AnnounceWorkspace` up to `ChatPage` via `useEffect` to
+  control bottom bar and padding visibility
+- Fixed auto-team-selection bug: removed `setActiveTeamId(teams[0].id)` from
+  the teams load effect — Teams tab now always opens the list first on mobile
+
+### PWA Support
+- Added `frontend/public/manifest.json` (name, icons, display, theme colour)
+- Added `frontend/public/sw.js` (service worker stub, cache-first strategy)
+- Added PWA meta tags to `index.html`: `theme-color`, `mobile-web-app-capable`,
+  `apple-mobile-web-app-status-bar-style`, `apple-mobile-web-app-title`,
+  `<link rel="manifest">`
+
+### FontAwesome Migration
+- Installed `@fortawesome/fontawesome-svg-core`,
+  `@fortawesome/free-solid-svg-icons`, `@fortawesome/react-fontawesome`
+- Removed all inline `function Icon*` SVG components from `TeamWorkspace.tsx`,
+  `AnnounceWorkspace.tsx`, and `AdminDashboard.tsx`
+- Replaced with `<FontAwesomeIcon icon={fa...} style={{ fontSize: N }} />`
+  across all three files; `AdminDashboard` tabs array type changed from
+  `(p: SVGProps) => JSX.Element` to `IconDefinition`
+- Replaced all remaining inline SVGs and emoji icons (`📢`, `🌐`, `🏢`,
+  back-arrow, empty-state) in `ChatPage.tsx` with FontAwesome equivalents
+- Fixed badge wrapper: `<span className="relative">` → `inline-flex` so the
+  red dot positions correctly at the icon corner (inline baseline gap was
+  causing misalignment)
+- Fixed Teams search field icon overlap: `pl-8` Tailwind class was being
+  overridden by the component's `<style>` block shorthand `padding`; switched
+  to inline `style={{ paddingLeft: '2rem' }}` which wins via specificity
+
+### Status
+✅ App is mobile-responsive with PWA manifest; all icons migrated to
+   FontAwesome; badge positioning fixed; Teams nav flow corrected on mobile.

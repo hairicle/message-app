@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTheme } from '../context/ThemeContext';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faBullhorn, faMessage, faUsers, faGauge, faRightFromBracket, faSun, faMoon, faComments, faGlobe, faBuilding } from '@fortawesome/free-solid-svg-icons';
 
 const AVATAR_HEX = [
   '#6366f1','#a855f7','#ec4899','#ef4444','#f97316',
@@ -44,6 +46,10 @@ export function ChatPage() {
   // Teams state
   const [showProfile, setShowProfile] = useState(false);
   const [teams, setTeams] = useState<Team[]>([]);
+  const [mobileDetailOpen, setMobileDetailOpen] = useState(false);
+
+  // Reset inner detail when switching sections
+  useEffect(() => { setMobileDetailOpen(false); }, [section]);
 
   useEffect(() => {
     conversationsApi.listConversations().then(({ conversations }) => {
@@ -121,30 +127,28 @@ export function ChatPage() {
   if (!user) return null;
 
   // ── Nav item helper ──────────────────────────────────────────────────
-  function NavItem({ id, label, icon, badge }: { id: Section; label: string; icon: React.ReactNode; badge?: number }) {
+  function NavItem({ id, label, icon, badge, bottom }: { id: Section; label: string; icon: React.ReactNode; badge?: number; bottom?: boolean }) {
     const active = section === id;
     return (
       <button
         onClick={() => {
           setSection(id);
-          // When switching to Teams, clear unread for all team channels
           if (id === 'teams') {
             setConversations((prev) =>
               prev.map((c) => c.type === 'channel' && c.team_id ? { ...c, unread_count: 0 } : c)
             );
           }
-          // When switching to Announce, clear unread for general channels
           if (id === 'announcements') {
             setConversations((prev) =>
               prev.map((c) => c.type === 'channel' && !c.team_id ? { ...c, unread_count: 0 } : c)
             );
           }
         }}
-        className="relative flex flex-col items-center gap-1 w-full py-3 px-1 transition-colors rounded-xl"
+        className={`relative flex flex-col items-center gap-1 transition-colors rounded-xl ${bottom ? 'flex-1 py-2 px-1' : 'w-full py-3 px-1'}`}
         style={{ color: active ? 'var(--accent)' : 'var(--text-dim)', background: active ? 'var(--accent-wash)' : 'transparent' }}
         title={label}
       >
-        <span className="relative">
+        <span className="relative inline-flex">
           {icon}
           {(badge ?? 0) > 0 && (
             <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
@@ -161,8 +165,8 @@ export function ChatPage() {
     <div className="relative flex h-full overflow-hidden" style={{ background: 'var(--bg)' }}>
       {showProfile && <ProfilePanel onClose={() => setShowProfile(false)} />}
 
-      {/* ── Icon navigation (like MS Teams left rail) ─────────────────── */}
-      <nav className="w-16 flex flex-col items-center py-3 gap-1 flex-shrink-0" style={{ background: 'var(--bg)', borderRight: '1px solid var(--border)' }}>
+      {/* ── Icon navigation — desktop only, replaced by bottom bar on mobile ── */}
+      <nav className="hidden sm:flex w-16 flex-col items-center py-3 gap-1 flex-shrink-0" style={{ background: 'var(--bg)', borderRight: '1px solid var(--border)' }}>
         {/* User avatar — click to open profile */}
         <button onClick={() => setShowProfile(true)} title="My profile"
           style={{ backgroundColor: avatarBg(user.username) }}
@@ -177,55 +181,31 @@ export function ChatPage() {
           </span>
         </button>
 
-        <NavItem id="chat" label="Chat" badge={chatUnread} icon={
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
-          </svg>
-        } />
-
-        <NavItem id="teams" label="Teams" badge={teamUnread} icon={
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z" />
-          </svg>
-        } />
-
-        <NavItem id="announcements" label="Announce" badge={announceUnread} icon={
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" />
-          </svg>
-        } />
-
+        <NavItem id="chat" label="Chat" badge={chatUnread} icon={<FontAwesomeIcon icon={faMessage} style={{ fontSize: 18 }} />} />
+        <NavItem id="teams" label="Teams" badge={teamUnread} icon={<FontAwesomeIcon icon={faUsers} style={{ fontSize: 18 }} />} />
+        <NavItem id="announcements" label="Announce" badge={announceUnread} icon={<FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 18 }} />} />
         {user.role === 'admin' && (
-          <NavItem id="dashboard" label="Dashboard" icon={
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z" />
-            </svg>
-          } />
+          <NavItem id="dashboard" label="Dashboard" icon={<FontAwesomeIcon icon={faGauge} style={{ fontSize: 18 }} />} />
         )}
 
         <div className="flex-1" />
-        {/* Theme toggle */}
         <button onClick={toggleTheme} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           className="transition-colors p-2 rounded-xl mb-1 hover-panel-alt" style={{ color: 'var(--text-dim)' }}>
-          {theme === 'dark' ? (
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.6} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707M17.657 17.657l-.707-.707M6.343 6.343l-.707-.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
-            </svg>
-          ) : (
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.6} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />
-            </svg>
-          )}
+          <FontAwesomeIcon icon={theme === 'dark' ? faSun : faMoon} style={{ fontSize: 18 }} />
         </button>
         <button onClick={logout} className="transition-colors p-2 rounded-xl hover-panel-alt" style={{ color: 'var(--text-dim)' }} title="Sign out">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-          </svg>
+          <FontAwesomeIcon icon={faRightFromBracket} style={{ fontSize: 18 }} />
         </button>
       </nav>
 
-      {/* ── Secondary panel — hidden when dashboard or teams is active ── */}
-      <aside className={`w-72 flex flex-col flex-shrink-0 ${section === 'dashboard' || section === 'teams' || section === 'announcements' ? 'hidden' : ''}`} style={{ background: 'var(--bg)', borderRight: '1px solid var(--border)' }}>
+      {/* ── Secondary panel ─────────────────────────────────────────────── */}
+      <aside className={
+        section === 'dashboard' || section === 'teams' || section === 'announcements'
+          ? 'hidden'
+          : selectedId
+            ? 'hidden sm:flex sm:flex-col sm:flex-shrink-0 sm:w-72'
+            : 'flex flex-col flex-shrink-0 w-full sm:w-72 sm:pb-0'
+      } style={{ background: 'var(--bg)', borderRight: '1px solid var(--border)', paddingBottom: selectedId ? undefined : 'calc(56px + env(safe-area-inset-bottom))' }}>
 
         {/* ── CHAT panel ── */}
         {section === 'chat' && (
@@ -266,7 +246,7 @@ export function ChatPage() {
                       <button key={c.id} onClick={() => setSelectedId(c.id)}
                         className="w-full flex items-center gap-3 px-4 py-2 text-left transition-colors"
                         style={selectedId === c.id ? { background: 'var(--accent-wash)', borderLeft: '2px solid var(--accent)' } : { borderLeft: '2px solid transparent' }}>
-                        <span className="text-base">📢</span>
+                        <FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 16, color: 'var(--text-dim)' }} />
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate" style={{ color: selectedId === c.id ? 'var(--text)' : 'var(--text-muted)' }}>{c.name ?? 'Announcement'}</p>
                           {c.unread_count ? <span className="text-xs font-mono" style={{ color: 'var(--accent)' }}>{c.unread_count} new</span> : null}
@@ -289,7 +269,7 @@ export function ChatPage() {
                       <button key={c.id} onClick={() => setSelectedId(c.id)}
                         className="w-full flex items-center gap-3 px-4 py-2 text-left transition-colors"
                         style={selectedId === c.id ? { background: 'var(--accent-wash)', borderLeft: '2px solid var(--accent)' } : { borderLeft: '2px solid transparent' }}>
-                        <span className="text-base">📢</span>
+                        <FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 16, color: 'var(--text-dim)' }} />
                         <div className="min-w-0">
                           <p className="text-sm font-medium truncate" style={{ color: selectedId === c.id ? 'var(--text)' : 'var(--text-muted)' }}>{c.name ?? 'Announcement'}</p>
                           {c.unread_count ? <span className="text-xs font-mono" style={{ color: 'var(--accent)' }}>{c.unread_count} new</span> : null}
@@ -302,7 +282,7 @@ export function ChatPage() {
 
               {announcements.length === 0 && (
                 <div className="flex flex-col items-center justify-center h-full gap-3 px-6 text-center mt-12" style={{ color: 'var(--text-dim)' }}>
-                  <span className="text-4xl opacity-40">📢</span>
+                  <FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 36, opacity: 0.4, color: 'var(--text-dim)' }} />
                   <p className="text-sm">No announcement channels yet.<br/>Create a channel conversation to get started.</p>
                 </div>
               )}
@@ -317,13 +297,13 @@ export function ChatPage() {
       </aside>
 
       {/* ── Main content area ─────────────────────────────────────────── */}
-      <main className="flex-1 flex flex-col min-w-0 overflow-hidden">
+      <main className={`flex-1 flex-col min-w-0 overflow-hidden ${section === 'chat' && !selectedId ? 'hidden sm:flex' : 'flex'}`}>
 
         {/* Teams: full workspace replaces both sidebar and main content */}
         {section === 'teams' ? (
-          <TeamWorkspace />
+          <TeamWorkspace onMobileDetailChange={setMobileDetailOpen} />
         ) : section === 'announcements' ? (
-          <AnnounceWorkspace />
+          <AnnounceWorkspace onMobileDetailChange={setMobileDetailOpen} />
         ) : section === 'dashboard' ? (
           <AdminDashboard />
         ) : selectedId ? (
@@ -335,14 +315,38 @@ export function ChatPage() {
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-3" style={{ color: 'var(--text-dim)' }}>
-            <svg className="w-16 h-16 opacity-20" fill="currentColor" viewBox="0 0 20 20">
-              <path d="M2 5a2 2 0 012-2h7a2 2 0 012 2v4a2 2 0 01-2 2H9l-3 3v-3H4a2 2 0 01-2-2V5z" />
-              <path d="M15 7v2a4 4 0 01-4 4H9.828l-1.766 1.767c.28.149.599.233.938.233h2l3 3v-3h2a2 2 0 002-2V9a2 2 0 00-2-2h-1z" />
-            </svg>
+            <FontAwesomeIcon icon={faComments} style={{ fontSize: 64, opacity: 0.2 }} />
             <p className="text-sm">Select a conversation to start chatting</p>
           </div>
         )}
       </main>
+
+      {/* ── Mobile bottom tab bar ───────────────────────────────────────── */}
+      <nav className={`sm:hidden fixed bottom-0 inset-x-0 z-50 ${(section === 'chat' && selectedId) || mobileDetailOpen ? 'hidden' : 'flex'}`} style={{ background: 'var(--bg)', borderTop: '1px solid var(--border)', paddingBottom: 'env(safe-area-inset-bottom)', minHeight: 56 }}>
+        <NavItem bottom id="chat" label="Chat" badge={chatUnread} icon={<FontAwesomeIcon icon={faMessage} style={{ fontSize: 18 }} />} />
+        <NavItem bottom id="teams" label="Teams" badge={teamUnread} icon={<FontAwesomeIcon icon={faUsers} style={{ fontSize: 18 }} />} />
+        <NavItem bottom id="announcements" label="Announce" badge={announceUnread} icon={<FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 18 }} />} />
+        {user.role === 'admin' && (
+          <NavItem bottom id="dashboard" label="Dashboard" icon={<FontAwesomeIcon icon={faGauge} style={{ fontSize: 18 }} />} />
+        )}
+        <button
+          onClick={() => setShowProfile(true)}
+          className="flex-1 flex flex-col items-center justify-center gap-0.5 py-2 px-1 transition-colors"
+          style={{ color: 'var(--text-dim)' }}
+          title="My profile"
+        >
+          <span className="relative w-6 h-6 rounded-full overflow-hidden flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0"
+            style={{ backgroundColor: avatarBg(user.username) }}>
+            {user.avatarUrl && (
+              <img src={user.avatarUrl} alt={user.displayName}
+                className="absolute inset-0 w-full h-full object-cover"
+                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
+            )}
+            {user.displayName.slice(0, 1).toUpperCase()}
+          </span>
+          <span className="text-[10px] font-medium leading-none">Me</span>
+        </button>
+      </nav>
     </div>
   );
 }

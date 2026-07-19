@@ -5,15 +5,8 @@ import type { Conversation, Message } from '../api/types';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { decodeMessageText, encodeMessageText } from '../utils/text';
-
-// ── Icons ─────────────────────────────────────────────────────────────────────
-function IconSearch(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>; }
-function IconSend(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><path d="M22 2L11 13M22 2l-7 20-4-9-9-4z"/></svg>; }
-function IconMegaphone(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><path d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z"/></svg>; }
-function IconLock(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>; }
-function IconUsers(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><circle cx="9" cy="7" r="3.2"/><path d="M2.5 19c0-3.3 3-5.5 6.5-5.5S15.5 15.7 15.5 19"/><circle cx="17" cy="8.5" r="2.5"/><path d="M16 13.2c2.6.4 4.5 2.2 4.5 5"/></svg>; }
-function IconGlobe(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8M12 3c-2.8 3-4.5 5.7-4.5 9s1.7 6 4.5 9M12 3c2.8 3 4.5 5.7 4.5 9s-1.7 6-4.5 9"/></svg>; }
-function IconBuilding(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><path d="M4 21V8l8-5 8 5v13"/><path d="M9 21v-6h6v6"/><path d="M9 11h.01M15 11h.01M9 15h.01M15 15h.01"/></svg>; }
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import { faMagnifyingGlass, faPaperPlane, faBullhorn, faLock, faUsers, faGlobe, faBuilding, faChevronLeft } from '@fortawesome/free-solid-svg-icons';
 
 interface ChannelGroup {
   label: string;
@@ -28,7 +21,7 @@ interface ChannelMember {
   role: string;
 }
 
-export function AnnounceWorkspace() {
+export function AnnounceWorkspace({ onMobileDetailChange }: { onMobileDetailChange?: (open: boolean) => void }) {
   const { user } = useAuth();
   const socket = useSocket();
 
@@ -42,6 +35,7 @@ export function AnnounceWorkspace() {
   const [sending, setSending] = useState(false);
   const [showInfo, setShowInfo] = useState(true);
   const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => { onMobileDetailChange?.(!!selectedId); }, [selectedId]);
 
   // Load channels (type=channel only) and teams
   useEffect(() => {
@@ -115,13 +109,13 @@ export function AnnounceWorkspace() {
   const groups: ChannelGroup[] = [
     {
       label: 'General',
-      icon: <IconGlobe width={11} height={11} />,
+      icon: <FontAwesomeIcon icon={faGlobe} style={{ fontSize: 11 }} />,
       channels: channels.filter((c) => !c.team_id),
     },
     ...teams
       .map((t) => ({
         label: t.name,
-        icon: <IconBuilding width={11} height={11} />,
+        icon: <FontAwesomeIcon icon={faBuilding} style={{ fontSize: 11 }} />,
         channels: channels.filter((c) => c.team_id === t.id),
       }))
       .filter((g) => g.channels.length > 0),
@@ -134,14 +128,14 @@ export function AnnounceWorkspace() {
     <div className="flex-1 flex overflow-hidden" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
 
       {/* ── LEFT: channel list ── */}
-      <div className="flex flex-col flex-shrink-0" style={{ width: 260, borderRight: '1px solid var(--border)', background: 'var(--bg)' }}>
+      <div className={`flex-col flex-shrink-0 sm:w-[260px] ${selectedId ? 'hidden sm:flex' : 'flex w-full'}`} style={{ borderRight: '1px solid var(--border)', background: 'var(--bg)' }}>
         <div className="px-5 pt-6 pb-4">
           <div className="flex items-center gap-2 mb-4">
-            <IconMegaphone width={16} height={16} style={{ color: 'var(--accent)' }} />
+            <FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 16, color: 'var(--accent)' }} />
             <h1 className="text-[22px] font-bold tracking-tight" style={{ color: 'var(--text)' }}>Announcements</h1>
           </div>
           <div className="relative">
-            <IconSearch width={13} height={13} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-dim)' }} />
+            <FontAwesomeIcon icon={faMagnifyingGlass} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ fontSize: 13, color: 'var(--text-dim)' }} />
             <input value={search} onChange={(e) => setSearch(e.target.value)}
               placeholder="Find a channel…"
               className="w-full pl-8 pr-3 py-2 rounded-lg text-[14px] focus:outline-none"
@@ -164,7 +158,7 @@ export function AnnounceWorkspace() {
                   <button key={c.id} onClick={() => setSelectedId(c.id)}
                     className="w-full flex items-center gap-2.5 px-4 py-2 text-left transition-colors"
                     style={{ background: active ? 'var(--accent-wash)' : 'transparent' }}>
-                    <span className="text-[14px] flex-shrink-0">📢</span>
+                    <FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 14, flexShrink: 0 }} />
                     <div className="flex-1 min-w-0">
                       <p className="text-[15px] font-medium truncate" style={{ color: active ? 'var(--accent)' : 'var(--text-muted)' }}>
                         {c.name ?? 'Unnamed'}
@@ -184,7 +178,7 @@ export function AnnounceWorkspace() {
 
           {groups.every((g) => g.channels.length === 0) && (
             <div className="flex flex-col items-center justify-center py-12 gap-3 px-6 text-center">
-              <IconMegaphone width={32} height={32} style={{ color: 'var(--text-dim)', opacity: 0.4 }} />
+              <FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 32, color: 'var(--text-dim)', opacity: 0.4 }} />
               <p className="text-[12px]" style={{ color: 'var(--text-dim)' }}>
                 No announcement channels yet
               </p>
@@ -197,8 +191,11 @@ export function AnnounceWorkspace() {
       {selected ? (
         <div className="flex-1 flex flex-col min-w-0" style={{ background: 'var(--bg)' }}>
           {/* Header */}
-          <div className="flex items-center gap-3 px-6 py-4 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)', background: 'var(--panel)' }}>
-            <span className="text-xl">📢</span>
+          <div className="flex items-center gap-3 px-4 py-4 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)', background: 'var(--panel)' }}>
+            <button onClick={() => setSelectedId(null)} className="sm:hidden p-2 -ml-1 rounded-xl transition-colors flex-shrink-0" style={{ color: 'var(--text-dim)', border: '1px solid var(--border)' }} aria-label="Back">
+              <FontAwesomeIcon icon={faChevronLeft} style={{ fontSize: 16 }} />
+            </button>
+            <FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 20 }} />
             <div className="flex-1 min-w-0">
               <p className="text-[18px] font-semibold truncate" style={{ color: 'var(--text)' }}>{selected.name}</p>
               <p className="text-[14px]" style={{ color: 'var(--text-dim)' }}>
@@ -208,14 +205,14 @@ export function AnnounceWorkspace() {
             <button onClick={() => setShowInfo((v) => !v)}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[14px] font-mono transition-colors"
               style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-              <IconUsers width={12} height={12} /> {members.length}
+              <FontAwesomeIcon icon={faUsers} style={{ fontSize: 12 }} /> {members.length}
             </button>
           </div>
 
           {/* Channel-only notice for non-admins */}
           {!isAdmin && (
             <div className="flex items-center gap-2 px-6 py-2 flex-shrink-0" style={{ background: 'var(--panel-alt)', borderBottom: '1px solid var(--border)' }}>
-              <IconLock width={12} height={12} style={{ color: 'var(--text-dim)' }} />
+              <FontAwesomeIcon icon={faLock} style={{ fontSize: 12, color: 'var(--text-dim)' }} />
               <p className="text-[13px] font-mono" style={{ color: 'var(--text-dim)' }}>
                 This is a broadcast channel — only admins and owners can post
               </p>
@@ -226,7 +223,7 @@ export function AnnounceWorkspace() {
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-6 flex flex-col gap-5" style={{ background: 'var(--bg)' }}>
             {messages.length === 0 && (
               <div className="flex flex-col items-center justify-center h-full gap-3">
-                <span className="text-4xl opacity-30">📢</span>
+                <FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 36, opacity: 0.3 }} />
                 <p className="text-[13px]" style={{ color: 'var(--text-dim)' }}>No announcements yet</p>
               </div>
             )}
@@ -272,21 +269,21 @@ export function AnnounceWorkspace() {
               <button type="submit" disabled={!draft.trim() || sending}
                 className="flex items-center gap-2 px-4 py-2.5 rounded-lg font-mono text-[14.5px] font-medium disabled:opacity-40 transition-opacity"
                 style={{ background: 'var(--accent)', color: '#ffffff', border: '1px solid var(--accent)' }}>
-                <IconSend width={13} height={13} /> Post
+                <FontAwesomeIcon icon={faPaperPlane} style={{ fontSize: 13 }} /> Post
               </button>
             </form>
           )}
         </div>
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center gap-4" style={{ background: 'var(--bg)' }}>
-          <IconMegaphone width={48} height={48} style={{ color: 'var(--text-dim)', opacity: 0.3 }} />
+          <FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 48, color: 'var(--text-dim)', opacity: 0.3 }} />
           <p className="text-[13px]" style={{ color: 'var(--text-dim)' }}>Select a channel to read announcements</p>
         </div>
       )}
 
-      {/* ── RIGHT: subscriber list ── */}
+      {/* ── RIGHT: subscriber list — desktop only ── */}
       {selected && showInfo && members.length > 0 && (
-        <div className="flex-shrink-0 flex flex-col overflow-hidden" style={{ width: 240, borderLeft: '1px solid var(--border)', background: 'var(--bg)' }}>
+        <div className="hidden sm:flex flex-shrink-0 flex-col overflow-hidden" style={{ width: 240, borderLeft: '1px solid var(--border)', background: 'var(--bg)' }}>
           <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
             <p className="font-mono text-[12.5px] uppercase tracking-wide" style={{ color: 'var(--text-dim)' }}>
               Subscribers · {members.length}
