@@ -107,6 +107,9 @@ export function MessageAttachment({ type, file, isMine, compact, onOpen }: Messa
   const loadingStyle = { color: isMine ? 'var(--bg-deep)' : 'var(--text-dim)', opacity: 0.7 };
 
   if (type === 'image') {
+    if (previewUrl === 'error') {
+      return <p className="text-xs italic mb-1" style={loadingStyle}>Image unavailable</p>;
+    }
     if (!previewUrl) {
       return <p className="text-xs italic mb-1" style={loadingStyle}>Loading {file.fileName}...</p>;
     }
@@ -133,6 +136,9 @@ export function MessageAttachment({ type, file, isMine, compact, onOpen }: Messa
   }
 
   if (type === 'video') {
+    if (previewUrl === 'error') {
+      return <p className="text-xs italic mb-1" style={loadingStyle}>Video unavailable</p>;
+    }
     if (!previewUrl) {
       return <p className="text-xs italic mb-1" style={loadingStyle}>Loading {file.fileName}...</p>;
     }
@@ -169,7 +175,7 @@ export function MessageAttachment({ type, file, isMine, compact, onOpen }: Messa
   }
 
   if (!previewUrl) {
-    return <p className={`text-xs italic mb-1 ${isMine ? 'text-white/70' : 'text-gray-400'}`}>Loading {file.fileName}...</p>;
+    return <p className="text-xs italic mb-1" style={loadingStyle}>Loading {file.fileName}...</p>;
   }
 
   return (

@@ -3,6 +3,9 @@ import * as XLSX from 'xlsx';
 import { API_URL, apiFetch, getAuthToken } from '../api/client';
 import * as departmentsApi from '../api/departments';
 import type { Department } from '../api/departments';
+import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
+import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
+import { faChartLine, faUsers, faSitemap, faFileLines, faMagnifyingGlass, faPlus, faUpload, faDownload, faRotate, faPen, faTrash, faChevronRight, faPause, faPlay, faXmark, faArrowsRotate } from '@fortawesome/free-solid-svg-icons';
 
 type AdminTab = 'overview' | 'users' | 'departments' | 'logs';
 
@@ -10,23 +13,6 @@ interface Stats { totalUsers: number; activeUsers: number; totalMessages: number
 interface AdminUser { id: string; email: string; username: string; display_name: string; role: string; department: string | null; status: string; created_at: string }
 interface AuditLog { id: string; action: string; userEmail: string | null; ipAddress: string | null; createdAt: string; metadata: Record<string, unknown> | null }
 
-// ── Icon set ──────────────────────────────────────────────────────────────────
-function IconOverview(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><path d="M3 3v18h18"/><path d="M7 14l4-5 3 3 5-7"/></svg>; }
-function IconUsers(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><circle cx="9" cy="7" r="3.2"/><path d="M2.5 19c0-3.3 3-5.5 6.5-5.5S15.5 15.7 15.5 19"/><circle cx="17" cy="8.5" r="2.5"/><path d="M16 13.2c2.6.4 4.5 2.2 4.5 5"/></svg>; }
-function IconDepartments(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><path d="M4 21V8l8-5 8 5v13"/><path d="M9 21v-6h6v6"/><path d="M9 11h.01M15 11h.01M9 15h.01M15 15h.01"/></svg>; }
-function IconLogs(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><path d="M5 3h11l3 3v15H5z"/><path d="M9 9h6M9 13h6M9 17h3"/></svg>; }
-function IconSearch(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>; }
-function IconPlus(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}><path d="M12 5v14M5 12h14"/></svg>; }
-function IconUpload(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><path d="M12 16V4M7 9l5-5 5 5"/><path d="M4 17v3h16v-3"/></svg>; }
-function IconDownload(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><path d="M12 4v12M7 11l5 5 5-5"/><path d="M4 19h16"/></svg>; }
-function IconSync(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><path d="M3 21v-5h5"/></svg>; }
-function IconEdit(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg>; }
-function IconTrash(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>; }
-function IconChevron(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}><path d="M9 6l6 6-6 6"/></svg>; }
-function IconPause(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}><path d="M7 5h3v14H7zM14 5h3v14h-3z"/></svg>; }
-function IconPlay(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}><path d="M6 4l13 8-13 8z"/></svg>; }
-function IconClose(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" {...p}><path d="M6 6l12 12M18 6L6 18"/></svg>; }
-function IconRefresh(p: React.SVGProps<SVGSVGElement>) { return <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M21 3v5h-5"/></svg>; }
 
 function StatusDot({ ok = true }: { ok?: boolean }) {
   return (
@@ -256,11 +242,11 @@ export function AdminDashboard() {
     u.username.toLowerCase().includes(userSearch.toLowerCase()),
   );
 
-  const tabs: { id: AdminTab; label: string; icon: (p: React.SVGProps<SVGSVGElement>) => React.JSX.Element; count?: number }[] = [
-    { id: 'overview',    label: 'Overview',    icon: IconOverview },
-    { id: 'users',       label: 'Users',       icon: IconUsers, count: users.length || undefined },
-    { id: 'departments', label: 'Departments', icon: IconDepartments, count: departments.length || undefined },
-    { id: 'logs',        label: 'Audit Logs',  icon: IconLogs },
+  const tabs: { id: AdminTab; label: string; icon: IconDefinition; count?: number }[] = [
+    { id: 'overview',    label: 'Overview',    icon: faChartLine },
+    { id: 'users',       label: 'Users',       icon: faUsers, count: users.length || undefined },
+    { id: 'departments', label: 'Departments', icon: faSitemap, count: departments.length || undefined },
+    { id: 'logs',        label: 'Audit Logs',  icon: faFileLines },
   ];
 
   return (
@@ -279,12 +265,11 @@ export function AdminDashboard() {
         <div className="flex px-8 mt-5 gap-1">
           {tabs.map((t) => {
             const active = tab === t.id;
-            const Icon = t.icon;
             return (
               <button key={t.id} onClick={() => setTab(t.id)}
                 className="flex items-center gap-1.5 px-4 py-2.5 font-mono text-[14px] font-medium border-b-2 transition-colors"
                 style={{ borderColor: active ? 'var(--accent)' : 'transparent', color: active ? 'var(--text)' : 'var(--text-muted)', marginBottom: '-1px' }}>
-                <Icon width={14} height={14} />
+                <FontAwesomeIcon icon={t.icon} style={{ fontSize: 14 }} />
                 {t.label}
                 {t.count !== undefined && (
                   <span className="text-[10.5px] px-1.5 rounded-full" style={{ color: active ? 'var(--accent)' : 'var(--text-dim)', background: active ? 'var(--accent-wash)' : 'var(--panel-alt)' }}>
@@ -327,10 +312,10 @@ export function AdminDashboard() {
                     .then(({ synced }) => { window.alert(`Synced ${synced} users to department teams.`); apiFetch<{ stats: Stats }>('/api/admin/stats').then(({ stats }) => setStats(stats)).catch(() => {}); })
                     .catch((e) => window.alert((e as Error).message));
                 }} className="btn-primary">
-                  <IconSync width={13} height={13} /> Sync department teams
+                  <FontAwesomeIcon icon={faRotate} style={{ fontSize: 13 }} /> Sync department teams
                 </button>
-                <button onClick={() => setTab('users')} className="btn-ghost"><IconUsers width={13} height={13} /> Manage users</button>
-                <button onClick={() => setTab('departments')} className="btn-ghost"><IconDepartments width={13} height={13} /> Manage departments</button>
+                <button onClick={() => setTab('users')} className="btn-ghost"><FontAwesomeIcon icon={faUsers} style={{ fontSize: 13 }} /> Manage users</button>
+                <button onClick={() => setTab('departments')} className="btn-ghost"><FontAwesomeIcon icon={faSitemap} style={{ fontSize: 13 }} /> Manage departments</button>
               </div>
             </div>
           </div>
@@ -341,17 +326,17 @@ export function AdminDashboard() {
           <div className="space-y-4">
             <div className="flex items-center gap-2.5 flex-wrap">
               <div className="relative flex-1 min-w-48">
-                <IconSearch width={14} height={14} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ color: 'var(--text-dim)' }} />
+                <FontAwesomeIcon icon={faMagnifyingGlass} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ fontSize: 13, color: 'var(--text-dim)' }} />
                 <input value={userSearch} onChange={(e) => setUserSearch(e.target.value)}
                   placeholder="Search by name, email or username…"
                   className="input-base w-full pl-9" />
               </div>
-              <button onClick={() => setShowCreateUser((v) => !v)} className="btn-primary"><IconPlus width={13} height={13} /> New user</button>
+              <button onClick={() => setShowCreateUser((v) => !v)} className="btn-primary"><FontAwesomeIcon icon={faPlus} style={{ fontSize: 13 }} /> New user</button>
               <button onClick={() => importInputRef.current?.click()} disabled={importing} className="btn-ghost disabled:opacity-50">
-                <IconUpload width={13} height={13} /> {importing ? 'Importing…' : 'Import Excel'}
+                <FontAwesomeIcon icon={faUpload} style={{ fontSize: 13 }} /> {importing ? 'Importing…' : 'Import Excel'}
               </button>
-              <button onClick={downloadTemplate} className="btn-ghost"><IconDownload width={13} height={13} /> Template</button>
-              <button onClick={loadUsers} className="btn-icon" title="Refresh"><IconRefresh width={14} height={14} /></button>
+              <button onClick={downloadTemplate} className="btn-ghost"><FontAwesomeIcon icon={faDownload} style={{ fontSize: 13 }} /> Template</button>
+              <button onClick={loadUsers} className="btn-icon" title="Refresh"><FontAwesomeIcon icon={faArrowsRotate} style={{ fontSize: 14 }} /></button>
               <input ref={importInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportFile} />
             </div>
 
@@ -365,7 +350,7 @@ export function AdminDashboard() {
                     Import complete — <span style={{ color: 'var(--accent)' }}>{importResult.created} created</span>
                     {importResult.failed.length > 0 && <span style={{ color: 'var(--warning)', marginLeft: 8 }}>{importResult.failed.length} failed</span>}
                   </p>
-                  <button onClick={() => setImportResult(null)} className="btn-icon" style={{ width: 22, height: 22 }}><IconClose width={12} height={12} /></button>
+                  <button onClick={() => setImportResult(null)} className="btn-icon" style={{ width: 22, height: 22 }}><FontAwesomeIcon icon={faXmark} style={{ fontSize: 12 }} /></button>
                 </div>
                 {importResult.failed.length > 0 && (
                   <ul className="space-y-1">
@@ -451,13 +436,13 @@ export function AdminDashboard() {
                         <td className="td-cell">
                           <div className="flex gap-1.5 justify-end items-center">
                             <button onClick={() => editingUser?.id === u.id ? setEditingUser(null) : startEditUser(u)} className="btn-icon" title="Edit">
-                              {editingUser?.id === u.id ? <IconClose width={13} height={13} /> : <IconEdit width={13} height={13} />}
+                              {editingUser?.id === u.id ? <FontAwesomeIcon icon={faXmark} style={{ fontSize: 13 }} /> : <FontAwesomeIcon icon={faPen} style={{ fontSize: 13 }} />}
                             </button>
                             <button onClick={() => handleToggleStatus(u.id, u.status)} className="btn-icon" title={u.status === 'active' ? 'Disable' : 'Enable'}>
-                              {u.status === 'active' ? <IconPause width={13} height={13} /> : <IconPlay width={13} height={13} />}
+                              {u.status === 'active' ? <FontAwesomeIcon icon={faPause} style={{ fontSize: 13 }} /> : <FontAwesomeIcon icon={faPlay} style={{ fontSize: 13 }} />}
                             </button>
                             <button onClick={() => handleDeleteUser(u.id, u.display_name)} className="btn-icon" style={{ color: 'var(--danger)' }} title="Delete">
-                              <IconTrash width={13} height={13} />
+                              <FontAwesomeIcon icon={faTrash} style={{ fontSize: 13 }} />
                             </button>
                           </div>
                         </td>
@@ -526,7 +511,7 @@ export function AdminDashboard() {
               <form onSubmit={handleCreateDept} className="flex gap-3">
                 <input value={newDeptName} onChange={(e) => setNewDeptName(e.target.value)} placeholder="Department name" required className="input-base flex-1" />
                 <input value={newDeptDesc} onChange={(e) => setNewDeptDesc(e.target.value)} placeholder="Description (optional)" className="input-base flex-1" />
-                <button type="submit" className="btn-primary"><IconPlus width={13} height={13} /> Add</button>
+                <button type="submit" className="btn-primary"><FontAwesomeIcon icon={faPlus} style={{ fontSize: 13 }} /> Add</button>
               </form>
             </div>
 
@@ -539,7 +524,7 @@ export function AdminDashboard() {
                   <div key={d.id} className="rounded-lg overflow-hidden border" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
                     <div className="flex items-center gap-3 px-5 py-4">
                       <button onClick={() => setExpandedDept(isExpanded ? null : d.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
-                        <IconChevron width={14} height={14} style={{ color: 'var(--text-dim)', transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
+                        <FontAwesomeIcon icon={faChevronRight} style={{ fontSize: 14, color: 'var(--text-dim)', transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
                         <div className="dept-icon">{d.name.slice(0, 1).toUpperCase()}</div>
                         <div className="min-w-0">
                           {editingDept?.id !== d.id && (
@@ -551,8 +536,8 @@ export function AdminDashboard() {
                         </div>
                         <span className="ml-auto flex-shrink-0"><Badge tone="accent">{members.length} member{members.length !== 1 ? 's' : ''}</Badge></span>
                       </button>
-                      <button onClick={() => setEditingDept(editingDept?.id === d.id ? null : d)} className="btn-icon" title="Edit"><IconEdit width={13} height={13} /></button>
-                      <button onClick={() => handleDeleteDept(d.id, d.name)} className="btn-icon" style={{ color: 'var(--danger)' }} title="Delete"><IconTrash width={13} height={13} /></button>
+                      <button onClick={() => setEditingDept(editingDept?.id === d.id ? null : d)} className="btn-icon" title="Edit"><FontAwesomeIcon icon={faPen} style={{ fontSize: 13 }} /></button>
+                      <button onClick={() => handleDeleteDept(d.id, d.name)} className="btn-icon" style={{ color: 'var(--danger)' }} title="Delete"><FontAwesomeIcon icon={faTrash} style={{ fontSize: 13 }} /></button>
                     </div>
                     {editingDept?.id === d.id && (
                       <div className="px-5 pb-4 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
@@ -577,7 +562,7 @@ export function AdminDashboard() {
                                 </div>
                                 <Badge tone={u.role === 'admin' ? 'warning' : 'neutral'}>{u.role}</Badge>
                                 <Badge tone={u.status === 'active' ? 'accent' : 'danger'}>{u.status}</Badge>
-                                <button onClick={() => handleRemoveFromDept(u.id)} title="Remove" className="btn-icon ml-1"><IconClose width={12} height={12} /></button>
+                                <button onClick={() => handleRemoveFromDept(u.id)} title="Remove" className="btn-icon ml-1"><FontAwesomeIcon icon={faXmark} style={{ fontSize: 12 }} /></button>
                               </li>
                             ))}
                           </ul>
