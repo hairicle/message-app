@@ -204,8 +204,8 @@ export function ChatPage() {
           ? 'hidden'
           : selectedId
             ? 'hidden sm:flex sm:flex-col sm:flex-shrink-0 sm:w-72'
-            : 'flex flex-col flex-shrink-0 w-full sm:w-72 pb-14 sm:pb-0'
-      } style={{ background: 'var(--bg)', borderRight: '1px solid var(--border)' }}>
+            : 'flex flex-col flex-shrink-0 w-full sm:w-72 sm:pb-0'
+      } style={{ background: 'var(--bg)', borderRight: '1px solid var(--border)', paddingBottom: selectedId ? undefined : 'calc(56px + env(safe-area-inset-bottom))' }}>
 
         {/* ── CHAT panel ── */}
         {section === 'chat' && (
@@ -297,7 +297,7 @@ export function ChatPage() {
       </aside>
 
       {/* ── Main content area ─────────────────────────────────────────── */}
-      <main className={`flex-1 flex-col min-w-0 overflow-hidden ${section === 'chat' && !selectedId ? 'hidden sm:flex' : 'flex'} ${(section === 'chat' && selectedId) || mobileDetailOpen ? '' : 'pb-14 sm:pb-0'}`}>
+      <main className={`flex-1 flex-col min-w-0 overflow-hidden ${section === 'chat' && !selectedId ? 'hidden sm:flex' : 'flex'}`}>
 
         {/* Teams: full workspace replaces both sidebar and main content */}
         {section === 'teams' ? (
@@ -322,7 +322,7 @@ export function ChatPage() {
       </main>
 
       {/* ── Mobile bottom tab bar ───────────────────────────────────────── */}
-      <nav className={`sm:hidden fixed bottom-0 inset-x-0 z-50 h-14 ${(section === 'chat' && selectedId) || mobileDetailOpen ? 'hidden' : 'flex'}`} style={{ background: 'var(--bg)', borderTop: '1px solid var(--border)' }}>
+      <nav className={`sm:hidden fixed bottom-0 inset-x-0 z-50 ${(section === 'chat' && selectedId) || mobileDetailOpen ? 'hidden' : 'flex'}`} style={{ background: 'var(--bg)', borderTop: '1px solid var(--border)', paddingBottom: 'env(safe-area-inset-bottom)', minHeight: 56 }}>
         <NavItem bottom id="chat" label="Chat" badge={chatUnread} icon={<FontAwesomeIcon icon={faMessage} style={{ fontSize: 18 }} />} />
         <NavItem bottom id="teams" label="Teams" badge={teamUnread} icon={<FontAwesomeIcon icon={faUsers} style={{ fontSize: 18 }} />} />
         <NavItem bottom id="announcements" label="Announce" badge={announceUnread} icon={<FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 18 }} />} />
