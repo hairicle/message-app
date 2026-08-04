@@ -9,6 +9,7 @@ import { decodeMessageText, encodeMessageText } from '../utils/text';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faUsers, faThumbTack, faFile, faLink, faPaperclip, faPaperPlane, faXmark, faChevronLeft } from '@fortawesome/free-solid-svg-icons';
 import { Avatar, Badge, SearchInput } from './ui';
+import { Linkify } from './Linkify';
 
 // ── Types (aligned to actual API responses) ───────────────────────────────────
 interface TeamSummary {
@@ -205,7 +206,7 @@ export function TeamWorkspace({ onMobileDetailChange }: { onMobileDetailChange?:
     <div className="flex-1 flex overflow-hidden relative team-root" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
 
       {/* ── LEFT: team list — full-screen on mobile when no team selected, hidden when team open ── */}
-      <div className={`flex-col flex-shrink-0 sm:w-[260px] ${activeTeamId ? 'hidden sm:flex' : 'flex w-full'}`} style={{ borderRight: '1px solid var(--border)', background: 'var(--bg)' }}>
+      <div className={`flex-col flex-shrink-0 lg:w-[260px] ${activeTeamId ? 'hidden lg:flex' : 'flex w-full'}`} style={{ borderRight: '1px solid var(--border)', background: 'var(--bg)' }}>
         <div className="px-5 pt-6 pb-4">
           <h1 className="text-[22px] font-bold tracking-tight mb-3" style={{ color: 'var(--text)' }}>Teams</h1>
           <SearchInput value={teamSearch} onChange={setTeamSearch} placeholder="Find a team…" />
@@ -244,7 +245,7 @@ export function TeamWorkspace({ onMobileDetailChange }: { onMobileDetailChange?:
         <div className="flex-1 flex flex-col min-w-0" style={{ background: 'var(--bg)' }}>
           {/* Header */}
           <div className="flex items-center gap-3 px-4 py-4 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}>
-            <button onClick={() => setActiveTeamId(null)} className="sm:hidden p-2 -ml-1 rounded-xl transition-colors btn-icon flex-shrink-0" aria-label="Back">
+            <button onClick={() => setActiveTeamId(null)} className="lg:hidden p-2 -ml-1 rounded-xl transition-colors btn-icon flex-shrink-0" aria-label="Back">
               <FontAwesomeIcon icon={faChevronLeft} style={{ fontSize: 16 }} />
             </button>
             <Avatar name={activeTeam.name} size={36} radius={8} fontSize={14} />
@@ -324,7 +325,7 @@ export function TeamWorkspace({ onMobileDetailChange }: { onMobileDetailChange?:
                     }}>
                       {m.content && (
                         <p className="text-[14px]" style={{ color: isMe ? '#fff' : 'var(--text)', lineHeight: 1.55, whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
-                          {decodeMessageText(m.content)}
+                          <Linkify text={decodeMessageText(m.content)} linkStyle={{ color: isMe ? '#fff' : 'var(--accent)' }} />
                         </p>
                       )}
                       {m.attachment && (
@@ -376,8 +377,8 @@ export function TeamWorkspace({ onMobileDetailChange }: { onMobileDetailChange?:
       {activeTeam && showMembers && (
         <>
           {/* Mobile backdrop */}
-          <div className="sm:hidden absolute inset-0 z-10 bg-black/30" onClick={() => setShowMembers(false)} />
-          <div className="flex flex-col overflow-hidden absolute right-0 inset-y-0 z-20 w-4/5 max-w-[280px] sm:relative sm:inset-auto sm:z-auto sm:flex-shrink-0 sm:w-[260px]" style={{ borderLeft: '1px solid var(--border)', background: 'var(--bg)' }}>
+          <div className="lg:hidden absolute inset-0 z-10 bg-black/30" onClick={() => setShowMembers(false)} />
+          <div className="flex flex-col overflow-hidden absolute right-0 inset-y-0 z-20 w-4/5 max-w-[280px] lg:relative lg:inset-auto lg:z-auto lg:flex-shrink-0 lg:w-[260px]" style={{ borderLeft: '1px solid var(--border)', background: 'var(--bg)' }}>
           <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
             <span className="font-mono text-[13px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Workspace</span>
             <button onClick={() => setShowMembers(false)} className="btn-icon" style={{ width: 22, height: 22 }}>

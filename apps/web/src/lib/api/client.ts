@@ -40,6 +40,17 @@ export class ApiError extends Error {
   }
 }
 
+// A 401 from these is a failed sign-in attempt (bad password / bad TOTP code) — it belongs in the
+// form, not treated as an expired session. Every other 401 means the JWT lapsed or was revoked.
+const SIGN_IN_PATHS = ['/api/auth/login'];
+
+let onSessionExpired: (() => void) | null = null;
+
+/** Registered by AuthContext so an expired token clears auth state instead of throwing blindly. */
+export function setSessionExpiredHandler(handler: (() => void) | null) {
+  onSessionExpired = handler;
+}
+
 export async function apiFetch<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   if (!(options.body instanceof FormData)) {
@@ -53,6 +64,15 @@ export async function apiFetch<T>(path: string, options: RequestInit = {}): Prom
 
   if (!res.ok) {
     const body = await res.json().catch(() => null);
+
+    // Expired/invalid session: drop the dead credentials and let the app route back to login,
+    // rather than letting every in-flight request reject and surface as a crash overlay.
+    if (res.status === 401 && !SIGN_IN_PATHS.some((p) => path.startsWith(p))) {
+      setAuthToken(null);
+      setDeviceId(null);
+      onSessionExpired?.();
+    }
+
     throw new ApiError(res.status, body?.error ?? `Request failed with status ${res.status}`);
   }
 

@@ -10,6 +10,7 @@ import { decodeMessageText, encodeMessageText } from '../utils/text';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import { faPaperPlane, faBullhorn, faLock, faUsers, faGlobe, faBuilding, faChevronLeft } from '@fortawesome/free-solid-svg-icons';
 import { Avatar, Badge, SearchInput } from './ui';
+import { Linkify } from './Linkify';
 
 interface ChannelGroup {
   label: string;
@@ -132,7 +133,7 @@ export function AnnounceWorkspace({ onMobileDetailChange }: { onMobileDetailChan
     <div className="flex-1 flex overflow-hidden" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
 
       {/* ── LEFT: channel list ── */}
-      <div className={`flex-col flex-shrink-0 sm:w-[260px] ${selectedId ? 'hidden sm:flex' : 'flex w-full'}`} style={{ borderRight: '1px solid var(--border)', background: 'var(--bg)' }}>
+      <div className={`flex-col flex-shrink-0 lg:w-[260px] ${selectedId ? 'hidden lg:flex' : 'flex w-full'}`} style={{ borderRight: '1px solid var(--border)', background: 'var(--bg)' }}>
         <div className="px-5 pt-6 pb-4">
           <div className="flex items-center gap-2 mb-4">
             <FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 16, color: 'var(--accent)' }} />
@@ -190,7 +191,7 @@ export function AnnounceWorkspace({ onMobileDetailChange }: { onMobileDetailChan
         <div className="flex-1 flex flex-col min-w-0" style={{ background: 'var(--bg)' }}>
           {/* Header */}
           <div className="flex items-center gap-3 px-4 py-4 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}>
-            <button onClick={() => setSelectedId(null)} className="sm:hidden p-2 -ml-1 rounded-xl transition-colors flex-shrink-0" style={{ color: 'var(--text-dim)', border: '1px solid var(--border)' }} aria-label="Back">
+            <button onClick={() => setSelectedId(null)} className="lg:hidden p-2 -ml-1 rounded-xl transition-colors flex-shrink-0" style={{ color: 'var(--text-dim)', border: '1px solid var(--border)' }} aria-label="Back">
               <FontAwesomeIcon icon={faChevronLeft} style={{ fontSize: 16 }} />
             </button>
             <FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 20 }} />
@@ -241,7 +242,7 @@ export function AnnounceWorkspace({ onMobileDetailChange }: { onMobileDetailChan
                     <div className="rounded-xl px-4 py-3 inline-block max-w-[85%]"
                       style={{ background: 'var(--panel)', border: '1px solid var(--border)' }}>
                       <p className="text-[15px] whitespace-pre-wrap break-words leading-relaxed" style={{ color: 'var(--text-muted)' }}>
-                        {m.deletedAt ? <em style={{ color: 'var(--text-dim)' }}>Message deleted</em> : decodeMessageText(m.ciphertext)}
+                        {m.deletedAt ? <em style={{ color: 'var(--text-dim)' }}>Message deleted</em> : <Linkify text={decodeMessageText(m.ciphertext)} linkStyle={{ color: 'var(--accent)' }} />}
                       </p>
                     </div>
                   </div>
@@ -273,7 +274,7 @@ export function AnnounceWorkspace({ onMobileDetailChange }: { onMobileDetailChan
 
       {/* ── RIGHT: subscriber list — desktop only ── */}
       {selected && showInfo && members.length > 0 && (
-        <div className="hidden sm:flex flex-shrink-0 flex-col overflow-hidden" style={{ width: 240, borderLeft: '1px solid var(--border)', background: 'var(--bg)' }}>
+        <div className="hidden lg:flex flex-shrink-0 flex-col overflow-hidden" style={{ width: 240, borderLeft: '1px solid var(--border)', background: 'var(--bg)' }}>
           <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
             <p className="font-mono text-[12.5px] uppercase tracking-wide" style={{ color: 'var(--text-dim)' }}>
               Subscribers · {members.length}

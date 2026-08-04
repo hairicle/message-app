@@ -18,6 +18,8 @@ import type {
 import { ConversationInfoPanel } from './ConversationInfoPanel';
 import { Lightbox } from './Lightbox';
 import { MessageAttachment } from './MessageAttachment';
+import { Linkify } from './Linkify';
+import { useConfirm } from './ConfirmDialog';
 import { Avatar } from './ui';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
@@ -48,6 +50,7 @@ function addMessage(messages: Message[], message: Message): Message[] {
 export function MessageThread({ conversationId, presence, onBack }: MessageThreadProps) {
   const { user } = useAuth();
   const socket = useSocket();
+  const { confirm, confirmDialog } = useConfirm();
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -105,12 +108,12 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
 
     conversationsApi.getConversation(conversationId).then(({ conversation }) => {
       if (!cancelled) setConversation(conversation);
-    });
+    }).catch(() => {});
 
     messagesApi.listMessages(conversationId).then(({ messages }) => {
       // Backend already returns oldest → newest (ORDER BY created_at DESC, then reversed server-side)
       if (!cancelled) setMessages(messages);
-    });
+    }).catch(() => {});
 
     messagesApi.getPinnedMessages(conversationId).then(({ pinned }) => {
       if (!cancelled) {
@@ -251,7 +254,13 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
   }
 
   async function handleDelete(messageId: string) {
-    if (!window.confirm('Delete this message?')) return;
+    const ok = await confirm({
+      title: 'Delete this message?',
+      description: <>The message will be removed for everyone in this conversation. <b style={{ color: 'var(--text-muted)' }}>This cannot be undone.</b></>,
+      confirmLabel: 'Delete',
+      cancelLabel: 'Keep',
+    });
+    if (!ok) return;
     if (socket) {
       socket.emit('message:delete', { messageId }, (res: { ok: boolean; error?: string }) => { if (!res.ok) window.alert(res.error ?? 'Failed to delete message'); });
     } else {
@@ -509,7 +518,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
       {/* Header */}
       <header className="flex items-center gap-3 px-4 py-4 flex-shrink-0" style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
         {onBack && (
-          <button onClick={onBack} className="sm:hidden p-2 -ml-1 rounded-xl transition-colors flex-shrink-0 btn-icon" aria-label="Back">
+          <button onClick={onBack} className="lg:hidden p-2 -ml-1 rounded-xl transition-colors flex-shrink-0 btn-icon" aria-label="Back">
             <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           </button>
         )}
@@ -1061,7 +1070,11 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                             <button type="button" onClick={cancelEdit} className="flex-1 py-1 rounded-lg text-xs font-mono" style={{ color: mine ? 'rgba(8,10,15,0.6)' : 'var(--text-dim)' }}>Cancel</button>
                           </div>
                         </form>
-                      ) : (text && <p className="text-sm whitespace-pre-wrap break-words">{text}</p>)}
+                      ) : (text && (
+                        <p className="text-sm whitespace-pre-wrap break-words">
+                          <Linkify text={text} linkStyle={{ color: mine ? 'var(--bg-deep)' : 'var(--accent)' }} />
+                        </p>
+                      ))}
                     </>)}
                     {/* Link preview */}
                     {!message.deletedAt && message.linkPreview?.title && (
@@ -1251,13 +1264,15 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
       {showInfoPanel && (
         <>
           <div className="absolute inset-0 z-20 bg-black/20" onClick={() => setShowInfoPanel(false)} />
-          <div className="absolute inset-y-0 right-0 w-full sm:w-80 z-30 shadow-2xl">
+          <div className="absolute inset-y-0 right-0 w-full lg:w-80 z-30 shadow-2xl">
             <ConversationInfoPanel conversation={conversation} currentUserId={user!.id} presence={presence} onClose={() => setShowInfoPanel(false)} onOpenLightbox={(file, type) => setLightboxItem({ file, type })} initialTab="media" />
           </div>
         </>
       )}
 
       {lightboxItem && <Lightbox file={lightboxItem.file} type={lightboxItem.type} onClose={() => setLightboxItem(null)} />}
+
+      {confirmDialog}
 
       {/* ── Toast notification ── */}
       {toast && (

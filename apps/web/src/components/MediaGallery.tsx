@@ -18,7 +18,7 @@ export function MediaGallery({ conversationId, onClose, onOpen }: MediaGalleryPr
     let cancelled = false;
     conversationsApi.getConversationMedia(conversationId).then(({ media }) => {
       if (!cancelled) setMedia(media);
-    });
+    }).catch(() => { if (!cancelled) setMedia([]); });
     return () => {
       cancelled = true;
     };

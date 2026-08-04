@@ -5,6 +5,7 @@ import * as profileApi from '../lib/api/profile';
 import type { UserProfile } from '@messenger/shared';
 import { useAuth } from '../context/AuthContext';
 import { Badge } from './ui';
+import { useConfirm } from './ConfirmDialog';
 
 type Tab = 'profile' | 'security' | 'alerts';
 
@@ -119,8 +120,19 @@ export function ProfilePanel({ onClose, onPrefsChange }: ProfilePanelProps) {
   // Avatar lightbox
   const [previewOpen, setPreviewOpen] = useState(false);
 
-  // Sign-out confirmation (click once to arm, again to confirm)
-  const [confirmingSignOut, setConfirmingSignOut] = useState(false);
+  const { confirm, confirmDialog } = useConfirm();
+
+  async function handleSignOut() {
+    const ok = await confirm({
+      title: 'Sign out of your account?',
+      description: 'You will need to enter your email and password again to get back in.',
+      confirmLabel: 'Sign Out',
+      cancelLabel: 'Stay Signed In',
+    });
+    if (!ok) return;
+    onClose();
+    logout();
+  }
 
   useEffect(() => {
     profileApi.getMyProfile()
@@ -679,41 +691,17 @@ export function ProfilePanel({ onClose, onPrefsChange }: ProfilePanelProps) {
 
         {/* ── Sign out footer ───────────────────────────────────────────── */}
         <div className="flex-shrink-0 px-5 py-4" style={{ borderTop: '1px solid var(--border)' }}>
-          {confirmingSignOut ? (
-            <div className="flex gap-2">
-              <button
-                onClick={() => { onClose(); logout(); }}
-                className="flex-1 flex items-center justify-center gap-2 font-mono font-semibold text-[13px] py-2.5 rounded-lg transition-all"
-                style={{ background: 'var(--danger)', color: '#fff', border: '1px solid var(--danger)' }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.filter = 'brightness(0.9)'; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.filter = 'none'; }}>
-                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-                </svg>
-                Confirm sign out
-              </button>
-              <button
-                onClick={() => setConfirmingSignOut(false)}
-                className="px-4 font-mono font-semibold text-[13px] py-2.5 rounded-lg transition-colors"
-                style={{ background: 'var(--panel)', color: 'var(--text-dim)', border: '1px solid var(--border)' }}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text)'; }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.color = 'var(--text-dim)'; }}>
-                Cancel
-              </button>
-            </div>
-          ) : (
-            <button
-              onClick={() => setConfirmingSignOut(true)}
-              className="w-full flex items-center justify-center gap-2 font-mono font-semibold text-[13px] py-2.5 rounded-lg transition-colors"
-              style={{ background: 'var(--danger-wash)', color: 'var(--danger)', border: '1px solid var(--danger-border)' }}
-              onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.filter = 'brightness(0.92)'; }}
-              onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.filter = 'none'; }}>
-              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
-              </svg>
-              Sign out
-            </button>
-          )}
+          <button
+            onClick={handleSignOut}
+            className="w-full flex items-center justify-center gap-2 font-mono font-semibold text-[13px] py-2.5 rounded-lg transition-colors"
+            style={{ background: 'var(--danger-wash)', color: 'var(--danger)', border: '1px solid var(--danger-border)' }}
+            onMouseEnter={(e) => { (e.currentTarget as HTMLButtonElement).style.filter = 'brightness(0.92)'; }}
+            onMouseLeave={(e) => { (e.currentTarget as HTMLButtonElement).style.filter = 'none'; }}>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />
+            </svg>
+            Sign out
+          </button>
         </div>
       </div>
 
@@ -751,6 +739,8 @@ export function ProfilePanel({ onClose, onPrefsChange }: ProfilePanelProps) {
           </div>
         </div>
       )}
+
+      {confirmDialog}
     </div>
   );
 }

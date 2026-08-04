@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import * as authApi from '../lib/api/auth';
-import { getAuthToken, getDeviceId, setAuthToken, setDeviceId } from '../lib/api/client';
+import { getAuthToken, getDeviceId, setAuthToken, setDeviceId, setSessionExpiredHandler } from '../lib/api/client';
 import type { User } from '@messenger/shared';
 
 interface AuthContextValue {
@@ -73,6 +73,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const updateUser = useCallback((fields: Partial<User>) => {
     setUser((prev) => (prev ? { ...prev, ...fields } : prev));
+  }, []);
+
+  // When any request comes back 401 the JWT has lapsed — mirror that into React state so the
+  // authenticated layout routes back to /login instead of the app sitting on a dead session.
+  useEffect(() => {
+    setSessionExpiredHandler(() => {
+      setToken(null);
+      setDeviceIdState(null);
+      setUser(null);
+    });
+    return () => setSessionExpiredHandler(null);
   }, []);
 
   return (

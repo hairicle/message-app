@@ -16,6 +16,7 @@ import { NewConversationDialog } from '@/components/NewConversationDialog';
 import { AdminDashboard } from '@/components/AdminDashboard';
 import { AnnounceWorkspace } from '@/components/AnnounceWorkspace';
 import { ProfilePanel } from '@/components/ProfilePanel';
+import { useConfirm } from '@/components/ConfirmDialog';
 import { TeamWorkspace } from '@/components/TeamWorkspace';
 import { Avatar } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
@@ -25,6 +26,17 @@ type Section = 'chat' | 'teams' | 'dashboard' | 'announcements';
 
 export default function ChatPage() {
   const { user, logout } = useAuth();
+  const { confirm, confirmDialog } = useConfirm();
+
+  async function handleSignOut() {
+    const ok = await confirm({
+      title: 'Sign out of your account?',
+      description: 'You will need to enter your email and password again to get back in.',
+      confirmLabel: 'Sign Out',
+      cancelLabel: 'Stay Signed In',
+    });
+    if (ok) logout();
+  }
   const { theme, toggleTheme } = useTheme();
   const socket = useSocket();
 
@@ -66,7 +78,14 @@ export default function ChatPage() {
   useEffect(() => {
     conversationsApi.listConversations().then(({ conversations }) => {
       setConversations(conversations);
-      setSelectedId((cur) => cur ?? conversations[0]?.id ?? null);
+      // Auto-open the first conversation only where the list and thread render side by side
+      // (Tailwind `lg:` = 1024px). Below that they're mutually exclusive, so auto-selecting would
+      // drop the user straight into a thread — past the conversation list and past the bottom
+      // tab bar, which is hidden while a thread is open.
+      const isWideLayout = window.matchMedia('(min-width: 1024px)').matches;
+      if (isWideLayout) {
+        setSelectedId((cur) => cur ?? conversations[0]?.id ?? null);
+      }
     }).catch(() => {});
     teamsApi.listMyTeams().then(({ teams }) => setTeams(teams)).catch(() => {});
   }, []);
@@ -204,7 +223,7 @@ export default function ChatPage() {
       {showProfile && <ProfilePanel onClose={() => setShowProfile(false)} onPrefsChange={applyNotifyPrefs} />}
 
       {/* ── Icon navigation — desktop only, replaced by bottom bar on mobile ── */}
-      <nav className="hidden sm:flex w-16 flex-col items-center py-3 gap-1 flex-shrink-0" style={{ background: 'var(--bg)', borderRight: '1px solid var(--border)' }}>
+      <nav className="hidden lg:flex w-16 flex-col items-center py-3 gap-1 flex-shrink-0" style={{ background: 'var(--bg)', borderRight: '1px solid var(--border)' }}>
         {/* User avatar — click to open profile */}
         <button onClick={() => setShowProfile(true)} title="My profile"
           className="mb-3 flex-shrink-0 rounded-lg hover:ring-2 hover:ring-[var(--accent-dim)] transition-all">
@@ -223,19 +242,22 @@ export default function ChatPage() {
           className="transition-colors p-2 rounded-xl mb-1 hover-panel-alt" style={{ color: 'var(--text-dim)' }}>
           <FontAwesomeIcon icon={theme === 'dark' ? faSun : faMoon} style={{ fontSize: 18 }} />
         </button>
-        <button onClick={logout} className="transition-colors p-2 rounded-xl hover-panel-alt" style={{ color: 'var(--text-dim)' }} title="Sign out">
+        <button onClick={handleSignOut} className="transition-colors p-2 rounded-xl hover-panel-alt" style={{ color: 'var(--text-dim)' }} title="Sign out">
           <FontAwesomeIcon icon={faRightFromBracket} style={{ fontSize: 18 }} />
         </button>
       </nav>
 
       {/* ── Secondary panel ─────────────────────────────────────────────── */}
+      {/* The split (list + thread side by side) only kicks in at lg. Below that — including
+          portrait tablets, where a side-by-side split leaves the thread too cramped — the app
+          uses the phone pattern: full-width list, then full-screen thread once one is opened. */}
       <aside className={
         section === 'dashboard' || section === 'teams' || section === 'announcements'
           ? 'hidden'
           : selectedId
-            ? 'hidden sm:flex sm:flex-col sm:flex-shrink-0 sm:w-72'
-            : 'flex flex-col flex-shrink-0 w-full sm:w-72 sm:pb-0'
-      } style={{ background: 'var(--bg)', borderRight: '1px solid var(--border)', paddingBottom: selectedId ? undefined : 'calc(56px + env(safe-area-inset-bottom))' }}>
+            ? 'hidden lg:flex lg:flex-col lg:flex-shrink-0 lg:w-72'
+            : 'flex flex-col flex-shrink-0 w-full lg:w-72'
+      } style={{ background: 'var(--bg)', borderRight: '1px solid var(--border)' }}>
 
         {/* ── CHAT panel ── */}
         {section === 'chat' && (
@@ -258,10 +280,15 @@ export default function ChatPage() {
 
         {/* Teams and Announcements sections are handled by their own full-screen workspace components below */}
 
+        {/* Clears the fixed bottom tab bar so the last row / "New Conversation" isn't hidden
+            underneath it. Height is inline (env() in a Tailwind arbitrary value doesn't compile);
+            `lg:hidden` removes it entirely once the bar is gone on desktop. */}
+        <div className="lg:hidden flex-shrink-0" style={{ height: 'calc(56px + env(safe-area-inset-bottom))' }} />
+
       </aside>
 
       {/* ── Main content area ─────────────────────────────────────────── */}
-      <main className={`flex-1 flex-col min-w-0 overflow-hidden ${section === 'chat' && !selectedId ? 'hidden sm:flex' : 'flex'}`}>
+      <main className={`flex-1 flex-col min-w-0 overflow-hidden ${section === 'chat' && !selectedId ? 'hidden lg:flex' : 'flex'}`}>
 
         {/* Teams: full workspace replaces both sidebar and main content */}
         {section === 'teams' ? (
@@ -286,7 +313,7 @@ export default function ChatPage() {
       </main>
 
       {/* ── Mobile bottom tab bar ───────────────────────────────────────── */}
-      <nav className={`sm:hidden fixed bottom-0 inset-x-0 z-50 ${(section === 'chat' && selectedId) || mobileDetailOpen ? 'hidden' : 'flex'}`} style={{ background: 'var(--bg)', borderTop: '1px solid var(--border)', paddingBottom: 'env(safe-area-inset-bottom)', minHeight: 56 }}>
+      <nav className={`lg:hidden fixed bottom-0 inset-x-0 z-50 ${(section === 'chat' && selectedId) || mobileDetailOpen ? 'hidden' : 'flex'}`} style={{ background: 'var(--bg)', borderTop: '1px solid var(--border)', paddingBottom: 'env(safe-area-inset-bottom)', minHeight: 56 }}>
         <NavItem bottom id="chat" label="Chat" badge={chatUnread} icon={<FontAwesomeIcon icon={faMessage} style={{ fontSize: 18 }} />} />
         <NavItem bottom id="teams" label="Teams" badge={teamUnread} icon={<FontAwesomeIcon icon={faUsers} style={{ fontSize: 18 }} />} />
         <NavItem bottom id="announcements" label="Announce" badge={announceUnread} icon={<FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 18 }} />} />
@@ -303,6 +330,8 @@ export default function ChatPage() {
           <span className="text-[10px] font-medium leading-none">Me</span>
         </button>
       </nav>
+
+      {confirmDialog}
     </div>
   );
 }

@@ -9,6 +9,7 @@ import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
 import { faChartLine, faUsers, faSitemap, faFileLines, faPlus, faUpload, faDownload, faRotate, faPen, faTrash, faChevronRight, faPause, faPlay, faXmark, faArrowsRotate } from '@fortawesome/free-solid-svg-icons';
 import { Avatar, Badge, StatusDot, SearchInput } from './ui';
+import { useConfirm } from './ConfirmDialog';
 
 type AdminTab = 'overview' | 'users' | 'departments' | 'logs';
 
@@ -18,6 +19,7 @@ interface AuditLog { id: string; action: string; userEmail: string | null; ipAdd
 
 export function AdminDashboard() {
   const [tab, setTab] = useState<AdminTab>('overview');
+  const { confirm, confirmDialog } = useConfirm();
 
   const [stats, setStats] = useState<Stats | null>(null);
   const [users, setUsers] = useState<AdminUser[]>([]);
@@ -157,13 +159,34 @@ export function AdminDashboard() {
 
   async function handleToggleStatus(userId: string, currentStatus: string) {
     const next = currentStatus === 'active' ? 'disabled' : 'active';
-    if (!window.confirm(next === 'disabled' ? 'Disable this user? They will not be able to log in.' : 'Re-enable this user?')) return;
+    const disabling = next === 'disabled';
+    const ok = await confirm({
+      title: disabling ? 'Disable this user?' : 'Re-enable this user?',
+      description: disabling
+        ? 'They will be signed out and will not be able to log in until re-enabled.'
+        : 'They will be able to log in again straight away.',
+      confirmLabel: disabling ? 'Disable' : 'Re-enable',
+      cancelLabel: 'Cancel',
+      tone: disabling ? 'danger' : 'primary',
+    });
+    if (!ok) return;
     await apiFetch(`/api/admin/users/${userId}`, { method: 'PATCH', body: JSON.stringify({ status: next }) });
     await loadUsers();
   }
 
   async function handleDeleteUser(userId: string, displayName: string) {
-    if (!window.confirm(`Permanently delete "${displayName}"?\n\nThis cannot be undone.`)) return;
+    const ok = await confirm({
+      title: `Delete ${displayName} permanently?`,
+      description: (
+        <>
+          Their account, messages and files will be removed.{' '}
+          <b style={{ color: 'var(--text)' }}>This cannot be undone.</b>
+        </>
+      ),
+      confirmLabel: 'Delete Account',
+      cancelLabel: 'Keep Account',
+    });
+    if (!ok) return;
     await apiFetch(`/api/admin/users/${userId}`, { method: 'DELETE' });
     setUsers((prev) => prev.filter((u) => u.id !== userId));
     apiFetch<{ stats: Stats }>('/api/admin/stats').then(({ stats }) => setStats(stats)).catch(() => {});
@@ -205,7 +228,13 @@ export function AdminDashboard() {
   }
 
   async function handleDeleteDept(id: string, name: string) {
-    if (!window.confirm(`Delete department "${name}"?`)) return;
+    const ok = await confirm({
+      title: `Delete department "${name}"?`,
+      description: 'Members stay in the workspace but lose this department assignment.',
+      confirmLabel: 'Delete',
+      cancelLabel: 'Cancel',
+    });
+    if (!ok) return;
     try {
       await departmentsApi.deleteDepartment(id);
       setDepartments((prev) => prev.filter((d) => d.id !== id));
@@ -601,6 +630,8 @@ export function AdminDashboard() {
         )}
 
       </div>
+
+      {confirmDialog}
 
       <style>{`
         .th-cell { text-align: left; padding: 12px 18px; font-size: 12.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; font-family: monospace; font-weight: 600; }
