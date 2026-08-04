@@ -7,37 +7,14 @@ import * as departmentsApi from '../lib/api/departments';
 import type { Department } from '../lib/api/departments';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
 import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
-import { faChartLine, faUsers, faSitemap, faFileLines, faMagnifyingGlass, faPlus, faUpload, faDownload, faRotate, faPen, faTrash, faChevronRight, faPause, faPlay, faXmark, faArrowsRotate } from '@fortawesome/free-solid-svg-icons';
+import { faChartLine, faUsers, faSitemap, faFileLines, faPlus, faUpload, faDownload, faRotate, faPen, faTrash, faChevronRight, faPause, faPlay, faXmark, faArrowsRotate } from '@fortawesome/free-solid-svg-icons';
+import { Avatar, Badge, StatusDot, SearchInput } from './ui';
 
 type AdminTab = 'overview' | 'users' | 'departments' | 'logs';
 
 interface Stats { totalUsers: number; activeUsers: number; totalMessages: number; messagesLast24h: number; totalConversations: number }
 interface AdminUser { id: string; email: string; username: string; display_name: string; role: string; department: string | null; status: string; created_at: string }
 interface AuditLog { id: string; action: string; userEmail: string | null; ipAddress: string | null; createdAt: string; metadata: Record<string, unknown> | null }
-
-
-function StatusDot({ ok = true }: { ok?: boolean }) {
-  return (
-    <span className="inline-flex items-center gap-1.5 font-mono text-[13px] tracking-wide" style={{ color: ok ? 'var(--accent)' : 'var(--danger)' }}>
-      <span className="w-1.5 h-1.5 rounded-full" style={{ background: ok ? 'var(--accent)' : 'var(--danger)', boxShadow: `0 0 6px ${ok ? 'var(--accent)' : 'var(--danger)'}` }} />
-      {ok ? 'ALL SYSTEMS NORMAL' : 'ATTENTION NEEDED'}
-    </span>
-  );
-}
-
-function Badge({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: 'neutral' | 'accent' | 'danger' | 'warning' }) {
-  const toneClass = {
-    neutral: 'text-[var(--text-muted)] border-[var(--border)]',
-    accent:  'text-[var(--accent)] border-[var(--accent-dim)] bg-[var(--accent-wash)]',
-    danger:  'text-[var(--danger)] border-[var(--danger-border)] bg-[var(--danger-wash)]',
-    warning: 'text-[var(--warning)] border-[var(--warning-border)] bg-[var(--warning-wash)]',
-  }[tone];
-  return (
-    <span className={`font-mono text-[12px] uppercase tracking-wide px-1.5 py-0.5 rounded border whitespace-nowrap ${toneClass}`}>
-      {children}
-    </span>
-  );
-}
 
 export function AdminDashboard() {
   const [tab, setTab] = useState<AdminTab>('overview');
@@ -327,11 +304,8 @@ export function AdminDashboard() {
         {tab === 'users' && (
           <div className="space-y-4">
             <div className="flex items-center gap-2.5 flex-wrap">
-              <div className="relative flex-1 min-w-48">
-                <FontAwesomeIcon icon={faMagnifyingGlass} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ fontSize: 13, color: 'var(--text-dim)' }} />
-                <input value={userSearch} onChange={(e) => setUserSearch(e.target.value)}
-                  placeholder="Search by name, email or username…"
-                  className="input-base w-full pl-9" />
+              <div className="flex-1 min-w-48">
+                <SearchInput value={userSearch} onChange={setUserSearch} placeholder="Search by name, email or username…" />
               </div>
               <button onClick={() => setShowCreateUser((v) => !v)} className="btn-primary"><FontAwesomeIcon icon={faPlus} style={{ fontSize: 13 }} /> New user</button>
               <button onClick={() => importInputRef.current?.click()} disabled={importing} className="btn-ghost disabled:opacity-50">
@@ -424,7 +398,7 @@ export function AdminDashboard() {
                       }}>
                         <td className="td-cell">
                           <div className="flex items-center gap-3">
-                            <div className="avatar-box">{u.display_name.slice(0, 1).toUpperCase()}</div>
+                            <Avatar name={u.display_name} />
                             <div>
                               <p className="font-medium text-[15px]" style={{ color: 'var(--text)' }}>{u.display_name}</p>
                               <p className="font-mono text-[13px]" style={{ color: 'var(--text-dim)' }}>@{u.username} · {u.email}</p>
@@ -557,7 +531,7 @@ export function AdminDashboard() {
                           <ul>
                             {members.map((u) => (
                               <li key={u.id} className="flex items-center gap-3 px-5 py-3" style={{ borderBottom: '1px solid var(--border)' }}>
-                                <div className="avatar-box" style={{ width: 26, height: 26 }}>{u.display_name.slice(0, 1).toUpperCase()}</div>
+                                <Avatar name={u.display_name} size={26} />
                                 <div className="flex-1 min-w-0">
                                   <p className="text-[15px] font-medium truncate" style={{ color: 'var(--text)' }}>{u.display_name}</p>
                                   <p className="font-mono text-[13px]" style={{ color: 'var(--text-dim)' }}>@{u.username}</p>
@@ -629,26 +603,13 @@ export function AdminDashboard() {
       </div>
 
       <style>{`
-        .admin-root { background: var(--bg); }
-        .admin-root * { box-sizing: border-box; }
         .th-cell { text-align: left; padding: 12px 18px; font-size: 12.5px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; font-family: monospace; font-weight: 600; }
         .td-cell { padding: 14px 18px; }
-        .avatar-box { width: 32px; height: 32px; border-radius: 7px; background: var(--panel-alt); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-family: monospace; font-size: 13px; font-weight: 700; color: var(--accent); flex-shrink: 0; }
         .dept-icon { width: 36px; height: 36px; border-radius: 8px; background: var(--accent-wash); border: 1px solid var(--accent-dim); display: flex; align-items: center; justify-content: center; font-family: monospace; font-weight: 700; font-size: 14px; color: var(--accent); flex-shrink: 0; }
         .row-hover:hover { background: var(--panel-alt) !important; }
-        .input-base { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-size: 14px; color: var(--text); outline: none; }
-        .input-base:focus { border-color: var(--accent-dim); }
-        .btn-primary { display: inline-flex; align-items: center; gap: 7px; font-family: monospace; font-size: 14px; font-weight: 500; padding: 9px 15px; border-radius: 8px; cursor: pointer; background: var(--accent); color: #ffffff; border: 1px solid var(--accent); transition: opacity 0.15s; }
-        .btn-primary:hover { opacity: 0.9; }
-        .btn-ghost { display: inline-flex; align-items: center; gap: 7px; font-family: monospace; font-size: 14px; font-weight: 500; padding: 9px 15px; border-radius: 8px; cursor: pointer; background: transparent; color: var(--text-muted); border: 1px solid var(--border); transition: all 0.15s; }
-        .btn-ghost:hover { color: var(--text); border-color: var(--text-dim); }
-        .btn-icon { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border: 1px solid var(--border); border-radius: 7px; color: var(--text-muted); cursor: pointer; transition: all 0.15s; }
-        .btn-icon:hover { border-color: var(--text-dim); color: var(--text); }
       `}</style>
     </div>
   );
 }
 
-// CSS variables now come from index.css (:root and .dark)
-// fontFamily only needed here as inline style
 const rootFont: React.CSSProperties = { fontFamily: "'Inter', system-ui, sans-serif" };

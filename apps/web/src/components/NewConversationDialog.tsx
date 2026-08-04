@@ -4,6 +4,7 @@ import { useEffect, useState, type FormEvent } from 'react';
 import * as conversationsApi from '../lib/api/conversations';
 import { ApiError } from '../lib/api/client';
 import type { Conversation, DirectoryUser } from '@messenger/shared';
+import { Avatar, SearchInput } from './ui';
 
 interface NewConversationDialogProps {
   onCreated: (conversation: Conversation) => void;
@@ -15,6 +16,7 @@ export function NewConversationDialog({ onCreated }: NewConversationDialogProps)
   const [open, setOpen] = useState(false);
   const [mode, setMode] = useState<Mode>('direct');
   const [users, setUsers] = useState<DirectoryUser[]>([]);
+  const [search, setSearch] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [creatingId, setCreatingId] = useState<string | null>(null);
   const [groupName, setGroupName] = useState('');
@@ -33,6 +35,7 @@ export function NewConversationDialog({ onCreated }: NewConversationDialogProps)
     setOpen(false);
     setMode('direct');
     setError(null);
+    setSearch('');
     setGroupName('');
     setSelectedIds(new Set());
   }
@@ -83,13 +86,16 @@ export function NewConversationDialog({ onCreated }: NewConversationDialogProps)
     }
   }
 
+  const filteredUsers = users.filter((u) =>
+    !search ||
+    u.display_name.toLowerCase().includes(search.toLowerCase()) ||
+    u.username.toLowerCase().includes(search.toLowerCase()),
+  );
+
   return (
     <>
       {/* Trigger button */}
-      <button
-        onClick={() => setOpen(true)}
-        className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-sm font-semibold transition-colors"
-      >
+      <button onClick={() => setOpen(true)} className="btn-primary w-full justify-center">
         <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
         </svg>
@@ -99,86 +105,84 @@ export function NewConversationDialog({ onCreated }: NewConversationDialogProps)
       {/* Modal */}
       {open && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+          className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: 'rgba(0,0,0,0.55)', backdropFilter: 'blur(2px)' }}
           onClick={close}
         >
           <div
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-md flex flex-col max-h-[80vh] overflow-hidden"
+            className="w-full max-w-md flex flex-col max-h-[80vh] overflow-hidden rounded-2xl"
+            style={{ background: 'var(--panel)', border: '1px solid var(--border)' }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
-            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100 flex-shrink-0">
-              <h2 className="font-semibold text-slate-900">Start a conversation</h2>
-              <button
-                onClick={close}
-                className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition-colors"
-                aria-label="Close"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex items-center justify-between px-5 py-4 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
+              <h2 className="text-[16px] font-bold tracking-tight" style={{ color: 'var(--text)' }}>Start a conversation</h2>
+              <button onClick={close} className="btn-icon" style={{ width: 30, height: 30 }} aria-label="Close">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
                 </svg>
               </button>
             </div>
 
-            {/* Tabs */}
-            <div className="flex gap-1 p-3 bg-slate-50 border-b border-slate-100 flex-shrink-0">
-              <button
-                type="button"
-                onClick={() => setMode('direct')}
-                className={`flex-1 py-2 px-3 rounded-xl text-sm font-semibold transition-colors ${
-                  mode === 'direct'
-                    ? 'bg-white text-indigo-600 shadow-sm border border-slate-200'
-                    : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                Direct message
-              </button>
-              <button
-                type="button"
-                onClick={() => setMode('group')}
-                className={`flex-1 py-2 px-3 rounded-xl text-sm font-semibold transition-colors ${
-                  mode === 'group'
-                    ? 'bg-white text-indigo-600 shadow-sm border border-slate-200'
-                    : 'text-slate-500 hover:text-slate-700'
-                }`}
-              >
-                Group chat
-              </button>
+            {/* Tabs — matches ProfilePanel/AdminDashboard tab pattern */}
+            <div className="flex px-2 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
+              {([
+                { id: 'direct' as const, label: 'Direct message' },
+                { id: 'group' as const, label: 'Group chat' },
+              ]).map((t) => {
+                const active = mode === t.id;
+                return (
+                  <button
+                    key={t.id}
+                    type="button"
+                    onClick={() => setMode(t.id)}
+                    className="flex-1 py-2.5 px-3 font-mono text-[13px] font-medium border-b-2 transition-colors"
+                    style={{ borderColor: active ? 'var(--accent)' : 'transparent', color: active ? 'var(--accent)' : 'var(--text-dim)', marginBottom: '-1px' }}
+                  >
+                    {t.label}
+                  </button>
+                );
+              })}
             </div>
 
             {error && (
-              <p className="mx-4 mt-3 px-3 py-2 bg-red-50 border border-red-200 rounded-lg text-sm text-red-600 flex-shrink-0">
+              <p className="mx-4 mt-3 px-3 py-2 rounded-lg text-[12.5px] font-mono flex-shrink-0"
+                style={{ background: 'var(--danger-wash)', border: '1px solid var(--danger-border)', color: 'var(--danger)' }}>
                 {error}
               </p>
             )}
 
+            <div className="px-4 pt-3 flex-shrink-0">
+              <SearchInput value={search} onChange={setSearch} placeholder="Find a person…" />
+            </div>
+
             {/* Direct message list */}
             {mode === 'direct' && (
               <ul className="overflow-y-auto flex-1 p-2">
-                {users.map((user) => (
+                {filteredUsers.map((user) => (
                   <li key={user.id}>
                     <button
-                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 text-left transition-colors disabled:opacity-50"
+                      className="w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-colors hover-panel-alt disabled:opacity-50"
                       onClick={() => startDirectConversation(user.id)}
                       disabled={creatingId === user.id}
                     >
-                      <span className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-sm font-bold flex-shrink-0">
-                        {user.display_name.slice(0, 1).toUpperCase()}
-                      </span>
+                      <Avatar name={user.display_name} avatarUrl={user.avatar_url} size={36} radius={8} fontSize={14} />
                       <span className="flex flex-col min-w-0">
-                        <span className="text-sm font-semibold text-slate-800 truncate">
+                        <span className="text-[14px] font-medium truncate" style={{ color: 'var(--text)' }}>
                           {user.display_name}
                         </span>
-                        <span className="text-xs text-slate-400 truncate">@{user.username}</span>
+                        <span className="font-mono text-[12px] truncate" style={{ color: 'var(--text-dim)' }}>@{user.username}</span>
                       </span>
                       {creatingId === user.id && (
-                        <span className="ml-auto text-xs text-slate-400">Starting...</span>
+                        <span className="ml-auto font-mono text-[11.5px]" style={{ color: 'var(--text-dim)' }}>Starting…</span>
                       )}
                     </button>
                   </li>
                 ))}
-                {users.length === 0 && !error && (
-                  <li className="text-center py-8 text-sm text-slate-400">No other users found.</li>
+                {filteredUsers.length === 0 && !error && (
+                  <li className="text-center py-8 text-[13px]" style={{ color: 'var(--text-dim)' }}>
+                    {search ? 'No matches found' : 'No other users found.'}
+                  </li>
                 )}
               </ul>
             )}
@@ -191,43 +195,40 @@ export function NewConversationDialog({ onCreated }: NewConversationDialogProps)
                     placeholder="Group name"
                     value={groupName}
                     onChange={(e) => setGroupName(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    className="input-base w-full"
                   />
                 </div>
                 <ul className="overflow-y-auto flex-1 p-2">
-                  {users.map((user) => (
+                  {filteredUsers.map((user) => (
                     <li key={user.id}>
-                      <label className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-slate-50 cursor-pointer transition-colors">
+                      <label className="flex items-center gap-3 px-3 py-2.5 rounded-xl cursor-pointer transition-colors hover-panel-alt">
                         <input
                           type="checkbox"
                           checked={selectedIds.has(user.id)}
                           onChange={() => toggleSelected(user.id)}
-                          className="w-4 h-4 rounded accent-indigo-600"
+                          className="w-4 h-4 rounded flex-shrink-0"
+                          style={{ accentColor: 'var(--accent)' }}
                         />
-                        <span className="w-9 h-9 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center text-sm font-bold flex-shrink-0">
-                          {user.display_name.slice(0, 1).toUpperCase()}
-                        </span>
+                        <Avatar name={user.display_name} avatarUrl={user.avatar_url} size={36} radius={8} fontSize={14} />
                         <span className="flex flex-col min-w-0">
-                          <span className="text-sm font-semibold text-slate-800 truncate">
+                          <span className="text-[14px] font-medium truncate" style={{ color: 'var(--text)' }}>
                             {user.display_name}
                           </span>
-                          <span className="text-xs text-slate-400 truncate">@{user.username}</span>
+                          <span className="font-mono text-[12px] truncate" style={{ color: 'var(--text-dim)' }}>@{user.username}</span>
                         </span>
                       </label>
                     </li>
                   ))}
-                  {users.length === 0 && !error && (
-                    <li className="text-center py-8 text-sm text-slate-400">No other users found.</li>
+                  {filteredUsers.length === 0 && !error && (
+                    <li className="text-center py-8 text-[13px]" style={{ color: 'var(--text-dim)' }}>
+                      {search ? 'No matches found' : 'No other users found.'}
+                    </li>
                   )}
                 </ul>
-                <div className="p-4 border-t border-slate-100 flex-shrink-0">
-                  <button
-                    type="submit"
-                    disabled={!groupName.trim() || selectedIds.size === 0 || creatingGroup}
-                    className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-semibold rounded-xl text-sm transition-colors"
-                  >
+                <div className="p-4 flex-shrink-0" style={{ borderTop: '1px solid var(--border)' }}>
+                  <button type="submit" disabled={!groupName.trim() || selectedIds.size === 0 || creatingGroup} className="btn-primary w-full justify-center disabled:opacity-40">
                     {creatingGroup
-                      ? 'Creating...'
+                      ? 'Creating…'
                       : `Create group${selectedIds.size ? ` (${selectedIds.size + 1} members)` : ''}`}
                   </button>
                 </div>

@@ -12,5 +12,8 @@
     "build": "npm run build --workspace=packages/shared && npm run build --workspace=apps/api && npm run build --workspace=apps/web",
     "build:api": "npm run build --workspace=apps/api",
     "build:web": "npm run build --workspace=apps/web"
+  },
+  "dependencies": {
+    "@nestjs/platform-express": "^11.1.28"
   }
 }

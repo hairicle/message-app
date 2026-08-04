@@ -22,12 +22,16 @@ export class TasksController {
   }
 
   @Patch(':id')
-  update(@Param('id') id: string, @Body() body: { title?: string; description?: string; status?: string; dueAt?: string }) {
-    return this.tasksService.updateTask(id, body);
+  update(
+    @Param('id') id: string,
+    @Body() body: { title?: string; description?: string; status?: string; dueAt?: string },
+    @CurrentUser() user: AuthPayload,
+  ) {
+    return this.tasksService.updateTask(id, body, user.id);
   }
 
   @Delete(':id')
-  delete(@Param('id') id: string) {
-    return this.tasksService.deleteTask(id);
+  delete(@Param('id') id: string, @CurrentUser() user: AuthPayload) {
+    return this.tasksService.deleteTask(id, user.id);
   }
 }

@@ -17,7 +17,7 @@ export function SocketProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    const instance = io('', { auth: { token } });
+    const instance = io(API_URL || 'http://localhost:4000', { auth: { token } });
     setSocket(instance);
 
     // Server sends this when an admin disables the account

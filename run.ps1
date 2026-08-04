@@ -2,8 +2,8 @@
 <#
   Starts the full Messenger App stack:
     - Docker Desktop (Postgres + Redis containers)
-    - Backend dev server (http://localhost:4000)
-    - Frontend dev server (http://localhost:5173)
+    - NestJS API dev server  (http://localhost:4000)
+    - Next.js web dev server (http://localhost:3100)
 
   Usage: ./run.ps1
 #>
@@ -27,27 +27,28 @@ Write-Host "Docker is ready." -ForegroundColor Green
 
 # 2. Start Postgres + Redis containers
 Write-Host "Starting Postgres + Redis containers..." -ForegroundColor Cyan
-Push-Location "$root\backend"
-docker compose up -d
+Push-Location "$root"
+docker compose up -d postgres redis
 Pop-Location
 
-# 3. Start backend dev server in its own window
-Write-Host "Starting backend dev server (http://localhost:4000)..." -ForegroundColor Cyan
+# 3. Start NestJS API dev server in its own window
+Write-Host "Starting NestJS API dev server (http://localhost:4000)..." -ForegroundColor Cyan
 Start-Process pwsh -ArgumentList @(
     "-NoExit",
     "-Command",
-    "cd '$root\backend'; npm run dev"
+    "cd '$root\apps\api'; npx nest start --watch"
 )
 
-# 4. Start frontend dev server in its own window
-Write-Host "Starting frontend dev server (http://localhost:5173)..." -ForegroundColor Cyan
+# 4. Start Next.js web dev server in its own window
+Write-Host "Starting Next.js web dev server (http://localhost:3100)..." -ForegroundColor Cyan
 Start-Process pwsh -ArgumentList @(
     "-NoExit",
     "-Command",
-    "cd '$root\frontend'; npm run dev"
+    "cd '$root\apps\web'; npm run dev"
 )
 
 Write-Host ""
-Write-Host "Backend:  http://localhost:4000" -ForegroundColor Green
-Write-Host "Frontend: http://localhost:5173" -ForegroundColor Green
+Write-Host "API:     http://localhost:4000" -ForegroundColor Green
+Write-Host "Web:     http://localhost:3100" -ForegroundColor Green
+Write-Host "Health:  http://localhost:4000/health" -ForegroundColor Green
 Write-Host "(Each dev server is running in its own PowerShell window. Close those windows to stop them.)"

@@ -42,6 +42,7 @@ export class AuthController {
 
   @Post('login/totp')
   @HttpCode(HttpStatus.OK)
+  @Throttle({ default: { limit: 5, ttl: 900_000 } })
   async completeTotpLogin(@Body() body: unknown) {
     const { totpToken, code, deviceName } = z
       .object({ totpToken: z.string(), code: z.string().length(6), deviceName: z.string().optional() })

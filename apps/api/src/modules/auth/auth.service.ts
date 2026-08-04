@@ -1,9 +1,11 @@
 import { Injectable, UnauthorizedException, ForbiddenException, BadRequestException, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
+import { randomUUID } from 'crypto';
 import { DatabaseService } from '../../database/database.service';
 import { RedisService } from '../../redis/redis.service';
+import { evictActiveUser } from '../../common/guards/jwt-auth.guard';
 import type { User } from '@messenger/shared';
 
 interface UserRow {
@@ -17,6 +19,7 @@ interface UserRow {
   ldap_dn: string | null;
   totp_secret: string | null;
   totp_enabled: boolean;
+  avatar_url: string | null;
 }
 
 @Injectable()
@@ -36,13 +39,13 @@ export class AuthService {
   }
 
   private issueTotpPendingToken(userId: string) {
-    return this.jwt.sign({ sub: userId, scope: 'totp_pending' }, { expiresIn: '5m' });
+    return this.jwt.sign({ sub: userId, scope: 'totp_pending', jti: randomUUID() }, { expiresIn: '5m' });
   }
 
   async login(email: string, password: string, deviceName = 'default') {
     const result = await this.db.query<UserRow>(
       `SELECT id, email, username, display_name, role, status, password_hash,
-              ldap_dn, totp_secret, totp_enabled
+              ldap_dn, totp_secret, totp_enabled, avatar_url
        FROM users WHERE email = $1`,
       [email],
     );
@@ -65,12 +68,12 @@ export class AuthService {
       requiresTotp: false as const,
       token,
       deviceId,
-      user: { id: user.id, email: user.email, username: user.username, displayName: user.display_name, role: user.role },
+      user: { id: user.id, email: user.email, username: user.username, displayName: user.display_name, role: user.role, avatarUrl: user.avatar_url },
     };
   }
 
   async completeTotpLogin(totpToken: string, code: string, deviceName = 'default') {
-    let payload: { sub: string; scope: string };
+    let payload: { sub: string; scope: string; jti: string };
     try {
       payload = this.jwt.verify(totpToken) as typeof payload;
     } catch {
@@ -78,11 +81,16 @@ export class AuthService {
     }
     if (payload.scope !== 'totp_pending') throw new UnauthorizedException('Invalid token scope');
 
+    const replayKey = `totp:used:${payload.jti}`;
+    const alreadyUsed = await this.redis.get(replayKey);
+    if (alreadyUsed) throw new UnauthorizedException('TOTP session has already been used');
+
     const result = await this.db.query<{
       id: string; email: string; username: string; display_name: string;
       role: string; status: string; totp_secret: string | null; totp_enabled: boolean;
+      avatar_url: string | null;
     }>(
-      'SELECT id, email, username, display_name, role, status, totp_secret, totp_enabled FROM users WHERE id = $1',
+      'SELECT id, email, username, display_name, role, status, totp_secret, totp_enabled, avatar_url FROM users WHERE id = $1',
       [payload.sub],
     );
     const user = result.rows[0];
@@ -97,10 +105,13 @@ export class AuthService {
     const deviceId = await this.getOrCreateDevice(user.id, deviceName);
     const token = this.issueFullToken({ id: user.id, email: user.email, role: user.role }, deviceId);
 
+    // Consume the TOTP session so it cannot be replayed
+    await this.redis.set(replayKey, '1', 'EX', 300);
+
     return {
       token,
       deviceId,
-      user: { id: user.id, email: user.email, username: user.username, displayName: user.display_name, role: user.role },
+      user: { id: user.id, email: user.email, username: user.username, displayName: user.display_name, role: user.role, avatarUrl: user.avatar_url },
     };
   }
 
@@ -127,10 +138,12 @@ export class AuthService {
     const expiresIn = this.config.get<string>('JWT_EXPIRES_IN') ?? '1h';
     const ttl = this.jwtExpiryToSeconds(expiresIn) + 60;
     await this.redis.set(`disabled:user:${userId}`, '1', 'EX', ttl);
+    evictActiveUser(userId);
   }
 
   async unblockUser(userId: string): Promise<void> {
     await this.redis.del(`disabled:user:${userId}`);
+    evictActiveUser(userId);
   }
 
   private jwtExpiryToSeconds(expiry: string): number {

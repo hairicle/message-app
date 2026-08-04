@@ -16,6 +16,7 @@ import { TeamsModule } from './modules/teams/teams.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { DepartmentsModule } from './modules/departments/departments.module';
 import { RealtimeModule } from './realtime/realtime.module';
+import { HealthController } from './health/health.controller';
 
 @Module({
   imports: [
@@ -36,5 +37,6 @@ import { RealtimeModule } from './realtime/realtime.module';
     DepartmentsModule,
     RealtimeModule,
   ],
+  controllers: [HealthController],
 })
 export class AppModule {}

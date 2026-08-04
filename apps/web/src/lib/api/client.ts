@@ -1,4 +1,4 @@
-export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:4000';
+export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? '';
 
 const TOKEN_STORAGE_KEY = 'messenger.token';
 const DEVICE_ID_STORAGE_KEY = 'messenger.deviceId';
@@ -27,6 +27,7 @@ export function setDeviceId(deviceId: string | null) {
 }
 
 export function getDeviceId() {
+  if (typeof window === 'undefined') return null;
   return localStorage.getItem(DEVICE_ID_STORAGE_KEY);
 }
 

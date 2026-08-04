@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { Conversation } from '@messenger/shared';
 import { getConversationTitle, getOtherMember } from '../utils/conversation';
 import { decodeMessageText } from '../utils/text';
+import { Avatar, SearchInput } from './ui';
 
 interface ConversationListProps {
   conversations: Conversation[];
@@ -31,26 +32,8 @@ export function ConversationList({
   return (
     <div className="flex flex-col flex-1 min-h-0">
       {/* Search — matches TeamWorkspace "Find a team…" */}
-      <div className="px-3 pt-3 pb-2 flex-shrink-0">
-        <div className="relative">
-          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5" style={{ color: 'var(--text-dim)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <circle cx="11" cy="11" r="7" /><path d="M21 21l-4.3-4.3" strokeLinecap="round" strokeLinejoin="round" />
-          </svg>
-          <input
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="Find a conversation…"
-            className="w-full pl-8 pr-3 py-2 rounded-lg text-[13px] focus:outline-none"
-            style={{
-              background: 'var(--panel)',
-              border: '1px solid var(--border)',
-              color: 'var(--text)',
-              fontSize: 13,
-            }}
-            onFocus={(e) => (e.target.style.borderColor = 'var(--accent-dim)')}
-            onBlur={(e) => (e.target.style.borderColor = 'var(--border)')}
-          />
-        </div>
+      <div className="px-5 pb-4 flex-shrink-0">
+        <SearchInput value={search} onChange={setSearch} placeholder="Find a conversation…" />
       </div>
 
       {/* Conversation rows — mirrors TeamWorkspace team rows exactly */}
@@ -94,30 +77,8 @@ export function ConversationList({
                   background: isActive ? 'var(--accent-wash)' : 'transparent',
                 }}
               >
-                {/* Square avatar — matches team-icon */}
-                <div
-                  className="flex-shrink-0 flex items-center justify-center font-mono font-bold text-[13px] relative"
-                  style={{
-                    width: 36,
-                    height: 36,
-                    borderRadius: 8,
-                    border: `1px solid ${isActive ? 'var(--accent-dim)' : 'var(--border)'}`,
-                    background: isActive ? 'var(--accent-dim)' : 'var(--panel)',
-                    color: isActive ? '#fff' : 'var(--accent)',
-                  }}
-                >
-                  {title.slice(0, 1).toUpperCase()}
-                  {/* Presence dot for direct messages */}
-                  {other && (
-                    <span
-                      className="absolute -right-0.5 -bottom-0.5 w-2.5 h-2.5 rounded-full"
-                      style={{
-                        background: isOnline ? '#22c55e' : 'var(--text-dim)',
-                        border: '1.5px solid var(--bg)',
-                      }}
-                    />
-                  )}
-                </div>
+                {/* Square avatar */}
+                <Avatar name={title} avatarUrl={other?.avatar_url} size={36} radius={8} fontSize={13} showPresence={!!other} online={isOnline} />
 
                 {/* Name + subtitle */}
                 <div className="flex-1 min-w-0">

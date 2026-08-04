@@ -13,9 +13,9 @@ const ThemeContext = createContext<ThemeContextValue>({ theme: 'dark', toggleThe
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
+    if (typeof window === 'undefined') return 'dark';
     const saved = localStorage.getItem('theme') as Theme | null;
     const initial = saved ?? 'dark';
-    // Apply synchronously so the first paint already has the correct class
     document.documentElement.setAttribute('data-theme', initial);
     return initial;
   });

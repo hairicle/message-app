@@ -18,6 +18,7 @@ import type {
 import { ConversationInfoPanel } from './ConversationInfoPanel';
 import { Lightbox } from './Lightbox';
 import { MessageAttachment } from './MessageAttachment';
+import { Avatar } from './ui';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { getConversationTitle, getOtherMember } from '../utils/conversation';
@@ -38,7 +39,10 @@ interface MessageThreadProps {
 
 function addMessage(messages: Message[], message: Message): Message[] {
   if (messages.some((m) => m.id === message.id)) return messages;
-  return [...messages, message];
+  const newTime = new Date(message.createdAt).getTime();
+  const insertAt = messages.findIndex((m) => new Date(m.createdAt).getTime() > newTime);
+  if (insertAt === -1) return [...messages, message];
+  return [...messages.slice(0, insertAt), message, ...messages.slice(insertAt)];
 }
 
 export function MessageThread({ conversationId, presence, onBack }: MessageThreadProps) {
@@ -104,7 +108,8 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
     });
 
     messagesApi.listMessages(conversationId).then(({ messages }) => {
-      if (!cancelled) setMessages([...messages].reverse());
+      // Backend already returns oldest → newest (ORDER BY created_at DESC, then reversed server-side)
+      if (!cancelled) setMessages(messages);
     });
 
     messagesApi.getPinnedMessages(conversationId).then(({ pinned }) => {
@@ -502,19 +507,17 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
   return (
     <div className="relative flex flex-col h-full overflow-hidden">
       {/* Header */}
-      <header className="flex items-center gap-3 px-4 py-3 flex-shrink-0" style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
+      <header className="flex items-center gap-3 px-4 py-4 flex-shrink-0" style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
         {onBack && (
           <button onClick={onBack} className="sm:hidden p-2 -ml-1 rounded-xl transition-colors flex-shrink-0 btn-icon" aria-label="Back">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
           </button>
         )}
         <button type="button" onClick={() => setShowInfoPanel(true)} className="flex items-center gap-3 flex-1 min-w-0 rounded-xl -mx-2 px-2 py-1 transition-colors text-left hover-panel-alt">
-          <div className="flex-shrink-0" style={{ width: 36, height: 36, borderRadius: 8, border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'monospace', fontWeight: 700, fontSize: 14, color: 'var(--text-muted)', background: 'var(--panel)' }}>
-            {title.slice(0, 1).toUpperCase()}
-          </div>
+          <Avatar name={title} avatarUrl={other?.avatar_url} size={36} radius={8} fontSize={14} />
           <div className="flex-1 min-w-0">
-            <h2 className="font-semibold text-sm leading-tight truncate" style={{ color: 'var(--text)' }}>{title}</h2>
-            <div className="text-xs leading-tight mt-0.5 font-mono">
+            <h2 className="text-[18px] font-semibold leading-tight truncate" style={{ color: 'var(--text)' }}>{title}</h2>
+            <div className="text-[13.5px] leading-tight mt-0.5 font-mono">
               {isTyping ? (
                 <span className="italic" style={{ color: 'var(--accent)' }}>typing...</span>
               ) : other ? (
@@ -528,7 +531,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
           </div>
         </button>
         <button type="button" onClick={() => setSearchOpen((v) => !v)} className="p-2 rounded-xl transition-colors flex-shrink-0 btn-icon" title="Search messages">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
         </button>
         {/* Call buttons — hidden, re-enable by changing false → true when calling is ready */}
         {false && (activeCall ? (
@@ -910,10 +913,24 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
           }
           // ─────────────────────────────────────────────────────────────────
 
-          // No grouping — every message shows its own avatar + name/timestamp
+          // ── Consecutive-message grouping (same sender, within 3 min, same day) ──
+          const prevMsg = index > 0 ? messages[index - 1] : null;
+          const nextMsg = index < messages.length - 1 ? messages[index + 1] : null;
+          const nextDay = nextMsg ? new Date(nextMsg.createdAt).toDateString() : null;
+
+          const sameAsPrev = !showDivider && !!prevMsg &&
+            prevMsg.senderId === message.senderId &&
+            (msgDate.getTime() - new Date(prevMsg.createdAt).getTime()) < 3 * 60 * 1000;
+          const sameAsNext = !!nextMsg &&
+            nextMsg.senderId === message.senderId &&
+            nextDay === msgDay &&
+            (new Date(nextMsg.createdAt).getTime() - msgDate.getTime()) < 3 * 60 * 1000;
+
+          const R = 16;
+          const POINT = 6;
           const bubbleBorderRadius = mine
-            ? '16px 6px 16px 16px'
-            : '6px 16px 16px 16px';
+            ? `${R}px ${sameAsPrev ? R : POINT}px ${sameAsNext ? R : R}px ${R}px`
+            : `${sameAsPrev ? R : POINT}px ${R}px ${R}px ${sameAsNext ? R : R}px`;
 
           // Helper: reply quote block
           const ReplyQuote = ({ replyId }: { replyId: string }) => {
@@ -971,16 +988,18 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
               )}
             <div
               ref={(el) => { if (el) msgRefs.current.set(message.id, el); else msgRefs.current.delete(message.id); }}
-              className={`flex items-end gap-2 group mt-3 ${mine ? 'flex-row-reverse' : 'flex-row'} transition-colors duration-300`}
+              className={`flex items-end gap-2 group ${sameAsPrev ? 'mt-0.5' : 'mt-3'} ${mine ? 'flex-row-reverse' : 'flex-row'} transition-colors duration-300`}
               style={highlightedMsgId === message.id ? { background: 'var(--accent-wash)', borderRadius: 12, margin: '12px -4px', padding: '0 4px' } : undefined}
               onMouseEnter={(e) => calcToolbarDir(e.currentTarget, message.id)}
             >
-              {/* Avatar — shown on every message */}
-              <div className="w-8 h-8 rounded-lg flex items-center justify-center font-mono font-bold text-[13px] flex-shrink-0 self-end mb-0.5"
-                style={{ background: mine ? 'var(--accent-dim)' : 'var(--panel-alt)', border: '1px solid var(--border)', color: mine ? '#fff' : 'var(--accent)' }}
-                title={mine ? user!.displayName : sender?.display_name ?? 'Unknown'}>
-                {(mine ? user!.displayName : sender?.display_name ?? '?').slice(0, 1).toUpperCase()}
-              </div>
+              {/* Avatar — only on the last message in a consecutive group from the same sender */}
+              {sameAsNext ? (
+                <div className="flex-shrink-0" style={{ width: 32 }} />
+              ) : (() => {
+                const avatarUrl = mine ? user!.avatarUrl : sender?.avatar_url;
+                const name = mine ? user!.displayName : (sender?.display_name ?? '?');
+                return <Avatar name={name} avatarUrl={avatarUrl} size={32} radius={8} fontSize={13} className="self-end mb-0.5" title={name} />;
+              })()}
 
               {/* Column: name+time header + bubble + reactions */}
               <div className="flex flex-col max-w-[80%] sm:max-w-[62%]" style={{ alignItems: mine ? 'flex-end' : 'flex-start' }}>
@@ -996,8 +1015,8 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                   </div>
                 )}
 
-                {/* Name + timestamp — every message */}
-                {!message.deletedAt && (
+                {/* Name + timestamp — only on the first message in a group */}
+                {!message.deletedAt && !sameAsPrev && (
                   <div className="flex items-baseline gap-2 mb-1 px-1" style={{ flexDirection: mine ? 'row-reverse' : 'row' }}>
                     <span className="text-[13px] font-semibold" style={{ color: mine ? 'var(--accent)' : 'var(--text)' }}>
                       {mine ? 'You' : sender?.display_name ?? 'Unknown'}
@@ -1059,6 +1078,13 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                     )}
                     {message.editedAt && !message.deletedAt && (
                       <span className="block text-right text-[10.5px] mt-1 select-none italic font-mono" style={{ color: mine ? 'rgba(8,10,15,0.5)' : 'var(--text-dim)' }}>(edited)</span>
+                    )}
+                    {/* Timestamp on the last bubble of a group (name header is hidden here) */}
+                    {sameAsPrev && !sameAsNext && !message.deletedAt && (
+                      <span className="block mt-1 text-[10px] font-mono select-none" style={{ color: mine ? 'rgba(8,10,15,0.55)' : 'var(--text-dim)', textAlign: mine ? 'right' : 'left' }}>
+                        {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        {mine && read && ' · ✓✓'}
+                      </span>
                     )}
                   </div>
                 )}
@@ -1204,25 +1230,20 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
       {/* Input bar */}
       <form className="flex items-center gap-2 px-4 pt-3 flex-shrink-0" style={{ background: 'var(--panel)', borderTop: '1px solid var(--border)', paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }} onSubmit={handleSend}>
         <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} />
-        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading || isRecording} title="Attach file" className="p-2 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0 btn-icon">
-          <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+        <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading || isRecording} title="Attach file" className="disabled:opacity-40 disabled:cursor-not-allowed btn-icon">
+          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
         </button>
         <button type="button" onClick={isRecording ? stopRecording : startRecording} disabled={uploading} title={isRecording ? 'Stop recording' : 'Record voice note'}
-          className={`p-2 rounded-xl disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0 ${isRecording ? '' : 'btn-icon'}`}
-          style={isRecording ? { color: 'var(--danger)', background: 'var(--danger-wash)' } : undefined}>
-          <svg className="w-5 h-5" fill={isRecording ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+          className={`disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0 ${isRecording ? 'rounded-lg' : 'btn-icon'}`}
+          style={isRecording ? { width: 34, height: 34, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--danger)', background: 'var(--danger-wash)', border: '1px solid var(--danger-border)' } : undefined}>
+          <svg className="w-4 h-4" fill={isRecording ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
         </button>
         <input value={input} onChange={(e) => handleInputChange(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') setReplyingTo(null); }}
           placeholder={isRecording ? 'Recording...' : uploading ? 'Uploading...' : replyingTo ? 'Reply...' : 'Message...'}
           autoComplete="off" disabled={isRecording || uploading}
-          className="flex-1 disabled:opacity-60 transition-all focus:outline-none"
-          style={{ background: 'var(--bg)', border: '1px solid var(--border)', borderRadius: 8, padding: '10px 14px', fontSize: 15, color: 'var(--text)' }}
-          onFocus={(e) => (e.target.style.borderColor = 'var(--accent-dim)')}
-          onBlur={(e) => (e.target.style.borderColor = 'var(--border)')} />
-        <button type="submit" disabled={!input.trim() || uploading || isRecording} title="Send"
-          className="disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors flex-shrink-0"
-          style={{ background: 'var(--accent)', padding: '10px 15px', borderRadius: 8, border: '1px solid var(--accent)' }}>
-          <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" /></svg>
+          className="input-base flex-1 disabled:opacity-60 transition-all" />
+        <button type="submit" disabled={!input.trim() || uploading || isRecording} title="Send" className="btn-primary disabled:opacity-40">
+          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" /></svg>
         </button>
       </form>
 
@@ -1253,9 +1274,6 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
       )}
 
       <style>{`
-        .btn-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border: 1px solid var(--border); border-radius: 8px; color: var(--text-muted); cursor: pointer; transition: all 0.15s; flex-shrink: 0; }
-        .btn-icon:hover { border-color: var(--text-dim); color: var(--accent); }
-        .hover-panel-alt:hover { background: var(--panel-alt); }
         @keyframes fadeInUp { from { opacity: 0; transform: translateX(-50%) translateY(8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }
       `}</style>
     </div>

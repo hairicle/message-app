@@ -12,6 +12,7 @@ import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { DatabaseService } from '../database/database.service';
 import { RedisService } from '../redis/redis.service';
+import { MessagesService } from '../modules/messages/messages.service';
 import type { AuthPayload } from '@messenger/shared';
 
 interface AuthedSocket extends Socket {
@@ -20,7 +21,7 @@ interface AuthedSocket extends Socket {
 
 const PRESENCE_PREFIX = 'presence:user:';
 
-@WebSocketGateway({ cors: { origin: '*' } })
+@WebSocketGateway({ cors: { origin: true, credentials: true } })
 export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer() io!: Server;
 
@@ -28,6 +29,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     private readonly jwt: JwtService,
     private readonly db: DatabaseService,
     private readonly redis: RedisService,
+    private readonly messages: MessagesService,
   ) {}
 
   async handleConnection(socket: AuthedSocket) {
@@ -149,6 +151,91 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       fromUserId: socket.data.user.id,
       callId: payload.callId,
     });
+  }
+
+  @SubscribeMessage('message:send')
+  async handleMessageSend(
+    @ConnectedSocket() socket: AuthedSocket,
+    @MessageBody() payload: { conversationId: string; type?: string; ciphertext?: string; replyToMessageId?: string; fileId?: string },
+  ) {
+    try {
+      const message = await this.messages.sendMessage(payload.conversationId, socket.data.user.id, payload);
+      this.io.to(`conversation:${payload.conversationId}`).emit('message:new', message);
+      return { ok: true, message };
+    } catch (err: unknown) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Failed to send message' };
+    }
+  }
+
+  @SubscribeMessage('message:edit')
+  async handleMessageEdit(
+    @ConnectedSocket() socket: AuthedSocket,
+    @MessageBody() payload: { messageId: string; ciphertext: string },
+  ) {
+    try {
+      const message = await this.messages.editMessage(payload.messageId, socket.data.user.id, payload.ciphertext);
+      this.io.to(`conversation:${message.conversationId}`).emit('message:edited', message);
+      return { ok: true };
+    } catch (err: unknown) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Failed to edit message' };
+    }
+  }
+
+  @SubscribeMessage('message:delete')
+  async handleMessageDelete(
+    @ConnectedSocket() socket: AuthedSocket,
+    @MessageBody() payload: { messageId: string },
+  ) {
+    try {
+      const result = await this.messages.deleteMessage(payload.messageId, socket.data.user.id);
+      this.io.to(`conversation:${result.conversationId}`).emit('message:deleted', result);
+      return { ok: true };
+    } catch (err: unknown) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Failed to delete message' };
+    }
+  }
+
+  @SubscribeMessage('message:react')
+  async handleMessageReact(
+    @ConnectedSocket() socket: AuthedSocket,
+    @MessageBody() payload: { messageId: string; emoji: string; conversationId: string },
+  ) {
+    try {
+      await this.messages.addReaction(payload.messageId, socket.data.user.id, payload.emoji);
+      const userRow = await this.db.query<{ username: string; display_name: string }>(
+        'SELECT username, display_name FROM users WHERE id = $1',
+        [socket.data.user.id],
+      );
+      this.io.to(`conversation:${payload.conversationId}`).emit('reaction:added', {
+        messageId: payload.messageId,
+        conversationId: payload.conversationId,
+        userId: socket.data.user.id,
+        emoji: payload.emoji,
+        username: userRow.rows[0]?.username ?? '',
+        displayName: userRow.rows[0]?.display_name ?? '',
+      });
+      return { ok: true };
+    } catch (err: unknown) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Failed to add reaction' };
+    }
+  }
+
+  @SubscribeMessage('message:unreact')
+  async handleMessageUnreact(
+    @ConnectedSocket() socket: AuthedSocket,
+    @MessageBody() payload: { messageId: string; emoji: string; conversationId: string },
+  ) {
+    try {
+      await this.messages.removeReaction(payload.messageId, socket.data.user.id, payload.emoji);
+      this.io.to(`conversation:${payload.conversationId}`).emit('reaction:removed', {
+        messageId: payload.messageId,
+        userId: socket.data.user.id,
+        emoji: payload.emoji,
+      });
+      return { ok: true };
+    } catch (err: unknown) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Failed to remove reaction' };
+    }
   }
 
   async disconnectUser(userId: string) {

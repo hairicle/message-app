@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
 import { DatabaseService } from '../../database/database.service';
 
 @Injectable()
@@ -26,20 +26,26 @@ export class TasksService {
     return { id: r.rows[0].id };
   }
 
-  async updateTask(taskId: string, data: { title?: string; description?: string; status?: string; dueAt?: string }) {
-    await this.db.query(
+  async updateTask(taskId: string, data: { title?: string; description?: string; status?: string; dueAt?: string }, userId: string) {
+    const r = await this.db.query(
       `UPDATE tasks SET
          title = COALESCE($1, title),
          description = COALESCE($2, description),
          status = COALESCE($3, status),
          due_at = COALESCE($4, due_at),
          updated_at = now()
-       WHERE id = $5`,
-      [data.title ?? null, data.description ?? null, data.status ?? null, data.dueAt ?? null, taskId],
+       WHERE id = $5 AND (created_by = $6 OR assignee_id = $6)
+       RETURNING id`,
+      [data.title ?? null, data.description ?? null, data.status ?? null, data.dueAt ?? null, taskId, userId],
     );
+    if (!r.rows[0]) throw new ForbiddenException('Task not found or access denied');
   }
 
-  async deleteTask(taskId: string) {
-    await this.db.query('DELETE FROM tasks WHERE id = $1', [taskId]);
+  async deleteTask(taskId: string, userId: string) {
+    const r = await this.db.query(
+      'DELETE FROM tasks WHERE id = $1 AND (created_by = $2 OR assignee_id = $2) RETURNING id',
+      [taskId, userId],
+    );
+    if (!r.rows[0]) throw new ForbiddenException('Task not found or access denied');
   }
 }

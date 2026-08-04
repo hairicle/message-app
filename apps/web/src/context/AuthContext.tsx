@@ -10,7 +10,8 @@ interface AuthContextValue {
   token: string | null;
   deviceId: string | null;
   loading: boolean;
-  login: (email: string, password: string, deviceName: string) => Promise<void>;
+  login: (email: string, password: string, deviceName: string) => Promise<{ requiresTotp: true; totpToken: string } | void>;
+  completeTotpLogin: (totpToken: string, code: string, deviceName: string) => Promise<void>;
   logout: () => void;
   updateUser: (fields: Partial<User>) => void;
 }
@@ -43,6 +44,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string, deviceName: string) => {
     const result = await authApi.login(email, password, deviceName);
+    if (!('token' in result)) {
+      return { requiresTotp: true as const, totpToken: result.totpToken };
+    }
+    setAuthToken(result.token);
+    setDeviceId(result.deviceId);
+    setToken(result.token);
+    setDeviceIdState(result.deviceId);
+    setUser(result.user);
+  }, []);
+
+  const completeTotpLogin = useCallback(async (totpToken: string, code: string, deviceName: string) => {
+    const result = await authApi.completeTotpLogin(totpToken, code, deviceName);
     setAuthToken(result.token);
     setDeviceId(result.deviceId);
     setToken(result.token);
@@ -63,7 +76,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ user, token, deviceId, loading, login, logout, updateUser }}>
+    <AuthContext.Provider value={{ user, token, deviceId, loading, login, completeTotpLogin, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   );

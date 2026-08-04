@@ -3,19 +3,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTheme } from '@/context/ThemeContext';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBullhorn, faMessage, faUsers, faGauge, faRightFromBracket, faSun, faMoon, faComments, faGlobe, faBuilding } from '@fortawesome/free-solid-svg-icons';
-
-const AVATAR_HEX = [
-  '#6366f1','#a855f7','#ec4899','#ef4444','#f97316',
-  '#273c8d','#3d52a8','#1a2d6b','#4a6fa8','#2d4a9e',
-];
-function avatarBg(seed: string): string {
-  let h = 0;
-  for (let i = 0; i < seed.length; i++) h = seed.charCodeAt(i) + ((h << 5) - h);
-  return AVATAR_HEX[Math.abs(h) % AVATAR_HEX.length];
-}
+import { faBullhorn, faMessage, faUsers, faGauge, faRightFromBracket, faSun, faMoon, faComments } from '@fortawesome/free-solid-svg-icons';
 import * as conversationsApi from '@/lib/api/conversations';
 import * as teamsApi from '@/lib/api/teams';
+import * as profileApi from '@/lib/api/profile';
+import { playNotificationSound } from '@/utils/notificationSound';
+import { decodeMessageText } from '@/utils/text';
 import type { Conversation, Message, Team } from '@messenger/shared';
 import { ConversationList } from '@/components/ConversationList';
 import { MessageThread } from '@/components/MessageThread';
@@ -24,6 +17,7 @@ import { AdminDashboard } from '@/components/AdminDashboard';
 import { AnnounceWorkspace } from '@/components/AnnounceWorkspace';
 import { ProfilePanel } from '@/components/ProfilePanel';
 import { TeamWorkspace } from '@/components/TeamWorkspace';
+import { Avatar } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { useSocket } from '@/context/SocketContext';
 
@@ -53,11 +47,27 @@ export default function ChatPage() {
   // Reset inner detail when switching sections
   useEffect(() => { setMobileDetailOpen(false); }, [section]);
 
+  // Notification preferences — synced live from ProfilePanel via onPrefsChange, drives the sound + desktop alert below
+  const [notifyPrefs, setNotifyPrefs] = useState({ soundEnabled: true, desktopEnabled: true, emailEnabled: false });
+  const notifyPrefsRef = useRef(notifyPrefs);
+  useEffect(() => { notifyPrefsRef.current = notifyPrefs; }, [notifyPrefs]);
+
+  const applyNotifyPrefs = useCallback((prefs: { soundEnabled: boolean; desktopEnabled: boolean; emailEnabled: boolean }) => {
+    setNotifyPrefs(prefs);
+    if (prefs.desktopEnabled && typeof Notification !== 'undefined' && Notification.permission === 'default') {
+      Notification.requestPermission().catch(() => {});
+    }
+  }, []);
+
+  useEffect(() => {
+    profileApi.getNotificationPrefs().then(({ prefs }) => applyNotifyPrefs(prefs)).catch(() => {});
+  }, [applyNotifyPrefs]);
+
   useEffect(() => {
     conversationsApi.listConversations().then(({ conversations }) => {
       setConversations(conversations);
       setSelectedId((cur) => cur ?? conversations[0]?.id ?? null);
-    });
+    }).catch(() => {});
     teamsApi.listMyTeams().then(({ teams }) => setTeams(teams)).catch(() => {});
   }, []);
 
@@ -79,8 +89,28 @@ export default function ChatPage() {
         // Use refs to avoid stale closure — always see current selectedId/section
         const isMyMessage = m.senderId === user?.id;
         const isActive = c.id === selectedIdRef.current && sectionRef.current === 'chat';
-        const isTeamActive = sectionRef.current === 'teams';
-        const shouldIncrement = !isMyMessage && !isActive && !isTeamActive;
+        // Only suppress team-channel messages while broadly in the Teams section (TeamWorkspace
+        // manages its own open-channel state that this component can't see) — DMs and announcements
+        // must still notify even while the user happens to be browsing Teams.
+        const isTeamChannelActive = sectionRef.current === 'teams' && !!c.team_id;
+        const shouldIncrement = !isMyMessage && !isActive && !isTeamChannelActive;
+
+        if (shouldIncrement) {
+          const prefs = notifyPrefsRef.current;
+          if (prefs.soundEnabled) playNotificationSound();
+          // Fires whenever this conversation isn't the one you're looking at — not gated on the
+          // whole tab being backgrounded, since you're usually still "in" the app on another section.
+          if (prefs.desktopEnabled && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
+            const senderName = m.senderId ? (c.members?.find((mb) => mb.user_id === m.senderId)?.display_name ?? 'New message') : 'New message';
+            const body = m.type === 'text' ? decodeMessageText(m.ciphertext) : `Sent a ${m.type === 'file' ? 'file' : m.type}`;
+            try {
+              new Notification(senderName, { body, tag: c.id });
+            } catch (err) {
+              console.warn('Desktop notification failed to display:', err);
+            }
+          }
+        }
+
         next.unshift({
           ...c,
           updated_at: m.createdAt,
@@ -112,12 +142,18 @@ export default function ChatPage() {
   const teamChannels    = conversations.filter((c) => c.type === 'channel' && c.team_id);
   const announceChannels = conversations.filter((c) => c.type === 'channel' && !c.team_id);
   const chats           = conversations.filter((c) => c.type !== 'channel');
-  const announcements   = conversations.filter((c) => c.type === 'channel');
 
   // Unread badge counts per section
   const chatUnread     = chats.reduce((s, c) => s + (c.unread_count ?? 0), 0);
   const teamUnread     = teamChannels.reduce((s, c) => s + (c.unread_count ?? 0), 0);
   const announceUnread = announceChannels.reduce((s, c) => s + (c.unread_count ?? 0), 0);
+  const totalUnread    = chatUnread + teamUnread + announceUnread;
+
+  // Tab-title badge — mirrors the nav-rail red dots so unread state is visible even when the tab isn't focused
+  useEffect(() => {
+    document.title = totalUnread > 0 ? `(${totalUnread > 99 ? '99+' : totalUnread}) Internal Messenger` : 'Internal Messenger';
+    return () => { document.title = 'Internal Messenger'; };
+  }, [totalUnread]);
 
   // Reset unread for a conversation when user navigates to it
   const clearConvUnread = useCallback((convId: string) => {
@@ -165,22 +201,14 @@ export default function ChatPage() {
 
   return (
     <div className="relative flex h-full overflow-hidden" style={{ background: 'var(--bg)' }}>
-      {showProfile && <ProfilePanel onClose={() => setShowProfile(false)} />}
+      {showProfile && <ProfilePanel onClose={() => setShowProfile(false)} onPrefsChange={applyNotifyPrefs} />}
 
       {/* ── Icon navigation — desktop only, replaced by bottom bar on mobile ── */}
       <nav className="hidden sm:flex w-16 flex-col items-center py-3 gap-1 flex-shrink-0" style={{ background: 'var(--bg)', borderRight: '1px solid var(--border)' }}>
         {/* User avatar — click to open profile */}
         <button onClick={() => setShowProfile(true)} title="My profile"
-          style={{ backgroundColor: avatarBg(user.username) }}
-          className="relative w-9 h-9 rounded-full mb-3 flex-shrink-0 hover:ring-2 hover:ring-white/40 transition-all overflow-hidden">
-          {user.avatarUrl && (
-            <img src={user.avatarUrl} alt={user.displayName}
-              className="absolute inset-0 w-full h-full object-cover"
-              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
-          )}
-          <span className="absolute inset-0 flex items-center justify-center text-white text-sm font-bold">
-            {user.displayName.slice(0, 1).toUpperCase()}
-          </span>
+          className="mb-3 flex-shrink-0 rounded-lg hover:ring-2 hover:ring-[var(--accent-dim)] transition-all">
+          <Avatar name={user.displayName} avatarUrl={user.avatarUrl} size={36} radius={8} fontSize={14} />
         </button>
 
         <NavItem id="chat" label="Chat" badge={chatUnread} icon={<FontAwesomeIcon icon={faMessage} style={{ fontSize: 18 }} />} />
@@ -212,7 +240,7 @@ export default function ChatPage() {
         {/* ── CHAT panel ── */}
         {section === 'chat' && (
           <>
-            <div className="px-5 pt-6 pb-0 flex-shrink-0">
+            <div className="px-5 pt-6 pb-3 flex-shrink-0">
               <h1 className="text-[22px] font-bold tracking-tight mb-3" style={{ color: 'var(--text)' }}>Chat</h1>
             </div>
             <ConversationList
@@ -228,73 +256,7 @@ export default function ChatPage() {
           </>
         )}
 
-        {/* Teams section is handled by TeamWorkspace (full screen) */}
-
-        {/* ── ANNOUNCEMENTS panel ── */}
-        {section === 'announcements' && (
-          <>
-            <div className="px-4 py-4 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
-              <h2 className="text-base font-bold" style={{ color: 'var(--text)' }}>Announcements</h2>
-              <p className="text-xs mt-0.5" style={{ color: 'var(--text-dim)' }}>Grouped by division</p>
-            </div>
-
-            <div className="flex-1 overflow-y-auto py-2">
-              {(() => {
-                const general = announcements.filter((c) => !c.team_id);
-                return general.length > 0 ? (
-                  <div className="mb-2">
-                    <p className="px-4 py-1 text-[10px] font-bold font-mono uppercase tracking-widest" style={{ color: 'var(--text-dim)' }}>🌐 General</p>
-                    {general.map((c) => (
-                      <button key={c.id} onClick={() => setSelectedId(c.id)}
-                        className="w-full flex items-center gap-3 px-4 py-2 text-left transition-colors"
-                        style={selectedId === c.id ? { background: 'var(--accent-wash)', borderLeft: '2px solid var(--accent)' } : { borderLeft: '2px solid transparent' }}>
-                        <FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 16, color: 'var(--text-dim)' }} />
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium truncate" style={{ color: selectedId === c.id ? 'var(--text)' : 'var(--text-muted)' }}>{c.name ?? 'Announcement'}</p>
-                          {c.unread_count ? <span className="text-xs font-mono" style={{ color: 'var(--accent)' }}>{c.unread_count} new</span> : null}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                ) : null;
-              })()}
-
-              {teams.map((team) => {
-                const teamChannels = announcements.filter((c) => c.team_id === team.id);
-                if (teamChannels.length === 0) return null;
-                return (
-                  <div key={team.id} className="mb-2">
-                    <p className="px-4 py-1 text-[10px] font-bold font-mono uppercase tracking-widest truncate" style={{ color: 'var(--text-dim)' }}>
-                      🏢 {team.name}
-                    </p>
-                    {teamChannels.map((c) => (
-                      <button key={c.id} onClick={() => setSelectedId(c.id)}
-                        className="w-full flex items-center gap-3 px-4 py-2 text-left transition-colors"
-                        style={selectedId === c.id ? { background: 'var(--accent-wash)', borderLeft: '2px solid var(--accent)' } : { borderLeft: '2px solid transparent' }}>
-                        <FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 16, color: 'var(--text-dim)' }} />
-                        <div className="min-w-0">
-                          <p className="text-sm font-medium truncate" style={{ color: selectedId === c.id ? 'var(--text)' : 'var(--text-muted)' }}>{c.name ?? 'Announcement'}</p>
-                          {c.unread_count ? <span className="text-xs font-mono" style={{ color: 'var(--accent)' }}>{c.unread_count} new</span> : null}
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                );
-              })}
-
-              {announcements.length === 0 && (
-                <div className="flex flex-col items-center justify-center h-full gap-3 px-6 text-center mt-12" style={{ color: 'var(--text-dim)' }}>
-                  <FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 36, opacity: 0.4, color: 'var(--text-dim)' }} />
-                  <p className="text-sm">No announcement channels yet.<br/>Create a channel conversation to get started.</p>
-                </div>
-              )}
-            </div>
-
-            <div className="p-3 flex-shrink-0" style={{ borderTop: '1px solid var(--border)' }}>
-              <NewConversationDialog onCreated={handleConversationCreated} />
-            </div>
-          </>
-        )}
+        {/* Teams and Announcements sections are handled by their own full-screen workspace components below */}
 
       </aside>
 
@@ -337,15 +299,7 @@ export default function ChatPage() {
           style={{ color: 'var(--text-dim)' }}
           title="My profile"
         >
-          <span className="relative w-6 h-6 rounded-full overflow-hidden flex items-center justify-center text-white text-[11px] font-bold flex-shrink-0"
-            style={{ backgroundColor: avatarBg(user.username) }}>
-            {user.avatarUrl && (
-              <img src={user.avatarUrl} alt={user.displayName}
-                className="absolute inset-0 w-full h-full object-cover"
-                onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = 'none'; }} />
-            )}
-            {user.displayName.slice(0, 1).toUpperCase()}
-          </span>
+          <Avatar name={user.displayName} avatarUrl={user.avatarUrl} size={24} radius={7} fontSize={11} />
           <span className="text-[10px] font-medium leading-none">Me</span>
         </button>
       </nav>

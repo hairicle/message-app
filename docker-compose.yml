@@ -10,7 +10,7 @@ services:
       POSTGRES_DB: ${POSTGRES_DB:-messenger}
     volumes:
       - pgdata:/var/lib/postgresql/data
-      - ./backend/db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-messenger}"]
       interval: 10s
@@ -41,18 +41,18 @@ services:
     volumes:
       - miniodata:/data
     ports:
-      - "9001:9001"   # MinIO web console (remove in production behind firewall)
+      - "9001:9001"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 30s
       timeout: 10s
       retries: 3
 
-  # ── Backend (Node.js API) ───────────────────────────────────────────────────
-  backend:
+  # ── API (NestJS) ────────────────────────────────────────────────────────────
+  api:
     build:
-      context: ./backend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/api/Dockerfile
     restart: unless-stopped
     depends_on:
       postgres:
@@ -69,38 +69,37 @@ services:
       JWT_SECRET: ${JWT_SECRET}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-8h}
       UPLOADS_DIR: /app/uploads
-      # MinIO
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ACCESS_KEY: ${MINIO_ACCESS_KEY:-minioadmin}
       MINIO_SECRET_KEY: ${MINIO_SECRET_KEY:-minioadmin}
       MINIO_BUCKET: ${MINIO_BUCKET:-messenger-files}
-      # LDAP (optional)
       LDAP_URL: ${LDAP_URL:-}
       LDAP_BASE_DN: ${LDAP_BASE_DN:-}
       LDAP_BIND_DN: ${LDAP_BIND_DN:-}
       LDAP_BIND_PASSWORD: ${LDAP_BIND_PASSWORD:-}
       LDAP_USERNAME_ATTR: ${LDAP_USERNAME_ATTR:-uid}
-      # Firebase push (optional)
       FIREBASE_SERVICE_ACCOUNT_JSON: ${FIREBASE_SERVICE_ACCOUNT_JSON:-}
-      # TOTP
       TOTP_ISSUER: ${TOTP_ISSUER:-InternalMessenger}
     volumes:
       - uploads:/app/uploads
     ports:
       - "4000:4000"
 
-  # ── Frontend (React + nginx) ────────────────────────────────────────────────
-  frontend:
+  # ── Web (Next.js) ───────────────────────────────────────────────────────────
+  web:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: apps/web/Dockerfile
       args:
-        VITE_API_URL: ${VITE_API_URL:-http://localhost:4000}
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:4000}
     restart: unless-stopped
     depends_on:
-      - backend
+      - api
     ports:
-      - "80:80"
+      - "3000:3000"
+    environment:
+      NODE_ENV: production
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://api:4000}
 
 volumes:
   pgdata:

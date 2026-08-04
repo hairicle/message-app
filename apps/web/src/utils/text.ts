@@ -7,9 +7,11 @@ export function encodeMessageText(text: string): string {
 }
 
 export function decodeMessageText(ciphertext: string): string {
+  if (!ciphertext) return '';
   try {
     return decodeURIComponent(escape(atob(ciphertext)));
   } catch {
-    return '[unreadable message]';
+    // Stored as plain UTF-8 (pre-encoding era messages)
+    return ciphertext;
   }
 }

@@ -3,6 +3,8 @@
 
 # Build output
 **/dist/
+**/.next/
+**/tsconfig.tsbuildinfo
 
 # Environment files (never commit secrets)
 .env
@@ -11,6 +13,7 @@
 
 # Uploaded user content
 backend/uploads/
+apps/api/uploads/
 
 # Logs
 *.log

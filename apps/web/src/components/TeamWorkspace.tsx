@@ -7,7 +7,8 @@ import { useSocket } from '../context/SocketContext';
 import type { Message } from '@messenger/shared';
 import { decodeMessageText, encodeMessageText } from '../utils/text';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faUsers, faThumbTack, faFile, faLink, faMagnifyingGlass, faPaperclip, faPaperPlane, faXmark, faChevronLeft } from '@fortawesome/free-solid-svg-icons';
+import { faUsers, faThumbTack, faFile, faLink, faPaperclip, faPaperPlane, faXmark, faChevronLeft } from '@fortawesome/free-solid-svg-icons';
+import { Avatar, Badge, SearchInput } from './ui';
 
 // ── Types (aligned to actual API responses) ───────────────────────────────────
 interface TeamSummary {
@@ -45,19 +46,6 @@ interface TeamMessage {
   attachment?: { name: string; sizeKb: number };
 }
 
-
-function Badge({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: 'neutral' | 'accent' | 'warning' }) {
-  const styles = {
-    neutral: 'text-[var(--text-muted)] border-[var(--border)]',
-    accent:  'text-[var(--accent)] border-[var(--accent-dim)] bg-[var(--accent-wash)]',
-    warning: 'text-[var(--warning)] border-[var(--warning-border)] bg-[var(--warning-wash)]',
-  }[tone];
-  return (
-    <span className={`font-mono text-[10.5px] uppercase tracking-wide px-1.5 py-0.5 rounded border whitespace-nowrap ${styles}`}>
-      {children}
-    </span>
-  );
-}
 
 export function TeamWorkspace({ onMobileDetailChange }: { onMobileDetailChange?: (open: boolean) => void }) {
   const { user } = useAuth();
@@ -220,11 +208,7 @@ export function TeamWorkspace({ onMobileDetailChange }: { onMobileDetailChange?:
       <div className={`flex-col flex-shrink-0 sm:w-[260px] ${activeTeamId ? 'hidden sm:flex' : 'flex w-full'}`} style={{ borderRight: '1px solid var(--border)', background: 'var(--bg)' }}>
         <div className="px-5 pt-6 pb-4">
           <h1 className="text-[22px] font-bold tracking-tight mb-3" style={{ color: 'var(--text)' }}>Teams</h1>
-          <div className="relative">
-            <FontAwesomeIcon icon={faMagnifyingGlass} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ fontSize: 13, color: 'var(--text-dim)' }} />
-            <input value={teamSearch} onChange={(e) => setTeamSearch(e.target.value)}
-              placeholder="Find a team…" className="input-base w-full" style={{ fontSize: 14, paddingLeft: '2rem' }} />
-          </div>
+          <SearchInput value={teamSearch} onChange={setTeamSearch} placeholder="Find a team…" />
         </div>
         <div className="flex-1 overflow-y-auto px-2 pb-4">
           {filteredTeams.map((t) => {
@@ -233,9 +217,7 @@ export function TeamWorkspace({ onMobileDetailChange }: { onMobileDetailChange?:
               <button key={t.id} onClick={() => setActiveTeamId(t.id)}
                 className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors mb-0.5"
                 style={{ background: active ? 'var(--accent-wash)' : 'transparent' }}>
-                <div className="team-icon" style={{ borderColor: active ? 'var(--accent-dim)' : 'var(--border)', color: active ? 'var(--accent)' : 'var(--text-muted)' }}>
-                  {t.name.slice(0, 1).toUpperCase()}
-                </div>
+                <Avatar name={t.name} size={36} radius={8} fontSize={14} />
                 <div className="flex-1 min-w-0">
                   <p className="text-[15px] font-medium truncate" style={{ color: active ? 'var(--text)' : 'var(--text-muted)' }}>{t.name}</p>
                   <p className="font-mono text-[12px]" style={{ color: 'var(--text-dim)' }}>
@@ -265,9 +247,7 @@ export function TeamWorkspace({ onMobileDetailChange }: { onMobileDetailChange?:
             <button onClick={() => setActiveTeamId(null)} className="sm:hidden p-2 -ml-1 rounded-xl transition-colors btn-icon flex-shrink-0" aria-label="Back">
               <FontAwesomeIcon icon={faChevronLeft} style={{ fontSize: 16 }} />
             </button>
-            <div className="team-icon" style={{ width: 36, height: 36, fontSize: 14 }}>
-              {activeTeam.name.slice(0, 1).toUpperCase()}
-            </div>
+            <Avatar name={activeTeam.name} size={36} radius={8} fontSize={14} />
             <div className="flex-1 min-w-0">
               <p className="text-[18px] font-semibold" style={{ color: 'var(--text)' }}>{activeTeam.name}</p>
               <p className="text-[13.5px]" style={{ color: 'var(--text-dim)' }}>
@@ -443,9 +423,7 @@ export function TeamWorkspace({ onMobileDetailChange }: { onMobileDetailChange?:
               <div className="mt-3 space-y-2.5">
                 {members.map((m) => (
                   <div key={m.userId} className="flex items-center gap-2.5">
-                    <div className="avatar-box" style={{ width: 24, height: 24 }}>
-                      {m.displayName.slice(0, 1).toUpperCase()}
-                    </div>
+                    <Avatar name={m.displayName} size={24} />
                     <div className="flex-1 min-w-0">
                       <p className="text-[14px] truncate" style={{ color: 'var(--text)' }}>{m.displayName}</p>
                       <p className="font-mono text-[12px] truncate" style={{ color: 'var(--text-dim)' }}>@{m.username}</p>
@@ -462,21 +440,6 @@ export function TeamWorkspace({ onMobileDetailChange }: { onMobileDetailChange?:
         </>
       )}
 
-      <style>{`
-        .team-root * { box-sizing: border-box; }
-        .team-icon { width: 36px; height: 36px; border-radius: 8px; border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-family: monospace; font-weight: 700; font-size: 14px; color: var(--text-muted); flex-shrink: 0; background: var(--panel); }
-        .avatar-box { width: 32px; height: 32px; border-radius: 7px; background: var(--panel-alt); border: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-family: monospace; font-size: 13px; font-weight: 700; color: var(--accent); flex-shrink: 0; }
-        .input-base { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; font-size: 15px; color: var(--text); outline: none; }
-        .input-base:focus { border-color: var(--accent-dim); }
-        .btn-primary { display: inline-flex; align-items: center; gap: 7px; font-family: monospace; font-size: 14px; font-weight: 500; padding: 10px 15px; border-radius: 8px; cursor: pointer; background: var(--accent); color: #ffffff; border: 1px solid var(--accent); transition: opacity 0.15s; }
-        .btn-primary:hover { opacity: 0.9; }
-        .btn-ghost { display: inline-flex; align-items: center; gap: 7px; font-family: monospace; font-size: 14px; font-weight: 500; padding: 8px 13px; border-radius: 8px; cursor: pointer; background: transparent; color: var(--text-muted); border: 1px solid var(--border); transition: all 0.15s; }
-        .btn-ghost:hover { color: var(--text); border-color: var(--text-dim); }
-        .btn-icon { width: 34px; height: 34px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border: 1px solid var(--border); border-radius: 8px; color: var(--text-muted); cursor: pointer; transition: all 0.15s; flex-shrink: 0; }
-        .btn-icon:hover { border-color: var(--text-dim); color: var(--text); }
-      `}</style>
     </div>
   );
 }
-
-// CSS variables now come from index.css — no hardcoded values needed here

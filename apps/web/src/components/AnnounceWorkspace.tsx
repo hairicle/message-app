@@ -8,7 +8,8 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { decodeMessageText, encodeMessageText } from '../utils/text';
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faMagnifyingGlass, faPaperPlane, faBullhorn, faLock, faUsers, faGlobe, faBuilding, faChevronLeft } from '@fortawesome/free-solid-svg-icons';
+import { faPaperPlane, faBullhorn, faLock, faUsers, faGlobe, faBuilding, faChevronLeft } from '@fortawesome/free-solid-svg-icons';
+import { Avatar, Badge, SearchInput } from './ui';
 
 interface ChannelGroup {
   label: string;
@@ -56,7 +57,8 @@ export function AnnounceWorkspace({ onMobileDetailChange }: { onMobileDetailChan
     setMembers([]);
 
     messagesApi.listMessages(selectedId)
-      .then(({ messages }) => setMessages([...messages].reverse()))
+      // Backend already returns oldest → newest — no client-side reverse needed
+      .then(({ messages }) => setMessages(messages))
       .catch(() => {});
 
     apiFetch<{ conversation: { members?: ChannelMember[] } }>(`/api/conversations/${selectedId}`)
@@ -136,13 +138,7 @@ export function AnnounceWorkspace({ onMobileDetailChange }: { onMobileDetailChan
             <FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 16, color: 'var(--accent)' }} />
             <h1 className="text-[22px] font-bold tracking-tight" style={{ color: 'var(--text)' }}>Announcements</h1>
           </div>
-          <div className="relative">
-            <FontAwesomeIcon icon={faMagnifyingGlass} className="absolute left-3 top-1/2 -translate-y-1/2" style={{ fontSize: 13, color: 'var(--text-dim)' }} />
-            <input value={search} onChange={(e) => setSearch(e.target.value)}
-              placeholder="Find a channel…"
-              className="w-full pl-8 pr-3 py-2 rounded-lg text-[14px] focus:outline-none"
-              style={{ background: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text)' }} />
-          </div>
+          <SearchInput value={search} onChange={setSearch} placeholder="Find a channel…" />
         </div>
 
         <div className="flex-1 overflow-y-auto pb-4">
@@ -167,9 +163,9 @@ export function AnnounceWorkspace({ onMobileDetailChange }: { onMobileDetailChan
                       </p>
                     </div>
                     {(c.unread_count ?? 0) > 0 && (
-                      <span className="font-mono text-[12px] px-1.5 py-0.5 rounded-full flex-shrink-0"
-                        style={{ background: 'var(--accent)', color: '#ffffff' }}>
-                        {c.unread_count}
+                      <span className="text-[11px] font-bold px-1.5 py-0.5 rounded-full flex-shrink-0"
+                        style={{ background: 'var(--danger)', color: '#fff', minWidth: 18, textAlign: 'center' }}>
+                        {c.unread_count! > 99 ? '99+' : c.unread_count}
                       </span>
                     )}
                   </button>
@@ -193,7 +189,7 @@ export function AnnounceWorkspace({ onMobileDetailChange }: { onMobileDetailChan
       {selected ? (
         <div className="flex-1 flex flex-col min-w-0" style={{ background: 'var(--bg)' }}>
           {/* Header */}
-          <div className="flex items-center gap-3 px-4 py-4 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)', background: 'var(--panel)' }}>
+          <div className="flex items-center gap-3 px-4 py-4 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}>
             <button onClick={() => setSelectedId(null)} className="sm:hidden p-2 -ml-1 rounded-xl transition-colors flex-shrink-0" style={{ color: 'var(--text-dim)', border: '1px solid var(--border)' }} aria-label="Back">
               <FontAwesomeIcon icon={faChevronLeft} style={{ fontSize: 16 }} />
             </button>
@@ -204,10 +200,8 @@ export function AnnounceWorkspace({ onMobileDetailChange }: { onMobileDetailChan
                 {selected.description ?? 'Broadcast channel'} · {members.length} subscribers
               </p>
             </div>
-            <button onClick={() => setShowInfo((v) => !v)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-[14px] font-mono transition-colors"
-              style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-              <FontAwesomeIcon icon={faUsers} style={{ fontSize: 12 }} /> {members.length}
+            <button onClick={() => setShowInfo((v) => !v)} className="btn-ghost">
+              <FontAwesomeIcon icon={faUsers} style={{ fontSize: 13 }} /> {members.length}
             </button>
           </div>
 
@@ -234,10 +228,7 @@ export function AnnounceWorkspace({ onMobileDetailChange }: { onMobileDetailChan
               const isMe = m.senderId === user?.id;
               return (
                 <div key={m.id} className="flex gap-3">
-                  <div className="flex-shrink-0 w-9 h-9 rounded-lg flex items-center justify-center font-mono font-bold text-[13px]"
-                    style={{ background: 'var(--panel-alt)', border: '1px solid var(--border)', color: 'var(--accent)' }}>
-                    {(sender?.display_name ?? 'U').slice(0, 1).toUpperCase()}
-                  </div>
+                  <Avatar name={sender?.display_name ?? 'U'} size={36} radius={8} fontSize={13} />
                   <div className="flex-1 min-w-0">
                     <div className="flex items-baseline gap-2 mb-1">
                       <span className="text-[15px] font-semibold" style={{ color: isMe ? 'var(--accent)' : 'var(--text)' }}>
@@ -266,11 +257,8 @@ export function AnnounceWorkspace({ onMobileDetailChange }: { onMobileDetailChan
               <input value={draft} onChange={(e) => setDraft(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(e); } }}
                 placeholder={`Post to ${selected.name}…`}
-                className="flex-1 rounded-lg px-4 py-2.5 text-[15px] focus:outline-none"
-                style={{ background: 'var(--bg)', border: '1px solid var(--border)', color: 'var(--text)' }} />
-              <button type="submit" disabled={!draft.trim() || sending}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-lg font-mono text-[14.5px] font-medium disabled:opacity-40 transition-opacity"
-                style={{ background: 'var(--accent)', color: '#ffffff', border: '1px solid var(--accent)' }}>
+                className="input-base flex-1" />
+              <button type="submit" disabled={!draft.trim() || sending} className="btn-primary disabled:opacity-40">
                 <FontAwesomeIcon icon={faPaperPlane} style={{ fontSize: 13 }} /> Post
               </button>
             </form>
@@ -294,19 +282,13 @@ export function AnnounceWorkspace({ onMobileDetailChange }: { onMobileDetailChan
           <div className="overflow-y-auto flex-1 py-3">
             {members.map((m) => (
               <div key={m.user_id} className="flex items-center gap-2.5 px-4 py-2">
-                <div className="w-8 h-8 rounded-md flex items-center justify-center font-mono font-bold text-[12px] flex-shrink-0"
-                  style={{ background: 'var(--panel-alt)', border: '1px solid var(--border)', color: 'var(--accent)' }}>
-                  {m.display_name.slice(0, 1).toUpperCase()}
-                </div>
+                <Avatar name={m.display_name} size={32} radius={7} fontSize={12} />
                 <div className="flex-1 min-w-0">
                   <p className="text-[14px] truncate" style={{ color: 'var(--text)' }}>{m.display_name}</p>
                   <p className="font-mono text-[12px]" style={{ color: 'var(--text-dim)' }}>@{m.username}</p>
                 </div>
                 {(m.role === 'owner' || m.role === 'admin') && (
-                  <span className="font-mono text-[9.5px] uppercase px-1.5 py-0.5 rounded border"
-                    style={{ color: 'var(--warning)', borderColor: 'var(--warning-border)', background: 'var(--warning-wash)' }}>
-                    {m.role}
-                  </span>
+                  <Badge tone="warning">{m.role}</Badge>
                 )}
               </div>
             ))}

@@ -4,11 +4,24 @@
   --bg: #ffffff;
   --bg-deep: #f4f4f5;
   --panel: #ffffff;
+  --panel-alt: #f4f4f5;
   --border: #e4e4e7;
   --text: #09090b;
+  --text-muted: #3f3f46;
   --text-dim: #71717a;
   --accent: #3b82f6;
   --accent-hover: #2563eb;
+  --accent-dim: rgba(59, 130, 246, 0.35);
+  --accent-wash: rgba(59, 130, 246, 0.08);
+  --warning: #f59e0b;
+  --warning-wash: rgba(245, 158, 11, 0.1);
+  --warning-border: rgba(245, 158, 11, 0.3);
+  --danger: #ef4444;
+  --danger-wash: rgba(239, 68, 68, 0.08);
+  --danger-border: rgba(239, 68, 68, 0.28);
+  --success: #22c55e;
+  --success-wash: rgba(34, 197, 94, 0.1);
+  --success-border: rgba(34, 197, 94, 0.3);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -16,11 +29,24 @@
     --bg: #09090b;
     --bg-deep: #18181b;
     --panel: #18181b;
+    --panel-alt: #202024;
     --border: #27272a;
     --text: #fafafa;
+    --text-muted: #d4d4d8;
     --text-dim: #a1a1aa;
     --accent: #3b82f6;
     --accent-hover: #60a5fa;
+    --accent-dim: rgba(96, 165, 250, 0.4);
+    --accent-wash: rgba(59, 130, 246, 0.14);
+    --warning: #f59e0b;
+    --warning-wash: rgba(245, 158, 11, 0.14);
+    --warning-border: rgba(245, 158, 11, 0.32);
+    --danger: #ef4444;
+    --danger-wash: rgba(239, 68, 68, 0.14);
+    --danger-border: rgba(239, 68, 68, 0.32);
+    --success: #22c55e;
+    --success-wash: rgba(34, 197, 94, 0.14);
+    --success-border: rgba(34, 197, 94, 0.32);
   }
 }
 
@@ -28,18 +54,38 @@
   --bg: #ffffff;
   --bg-deep: #f4f4f5;
   --panel: #ffffff;
+  --panel-alt: #f4f4f5;
   --border: #e4e4e7;
   --text: #09090b;
+  --text-muted: #3f3f46;
   --text-dim: #71717a;
+  --accent-dim: rgba(59, 130, 246, 0.35);
+  --accent-wash: rgba(59, 130, 246, 0.08);
+  --warning-wash: rgba(245, 158, 11, 0.1);
+  --warning-border: rgba(245, 158, 11, 0.3);
+  --danger-wash: rgba(239, 68, 68, 0.08);
+  --danger-border: rgba(239, 68, 68, 0.28);
+  --success-wash: rgba(34, 197, 94, 0.1);
+  --success-border: rgba(34, 197, 94, 0.3);
 }
 
 :root[data-theme="dark"] {
   --bg: #09090b;
   --bg-deep: #18181b;
   --panel: #18181b;
+  --panel-alt: #202024;
   --border: #27272a;
   --text: #fafafa;
+  --text-muted: #d4d4d8;
   --text-dim: #a1a1aa;
+  --accent-dim: rgba(96, 165, 250, 0.4);
+  --accent-wash: rgba(59, 130, 246, 0.14);
+  --warning-wash: rgba(245, 158, 11, 0.14);
+  --warning-border: rgba(245, 158, 11, 0.32);
+  --danger-wash: rgba(239, 68, 68, 0.14);
+  --danger-border: rgba(239, 68, 68, 0.32);
+  --success-wash: rgba(34, 197, 94, 0.14);
+  --success-border: rgba(34, 197, 94, 0.32);
 }
 
 * {
@@ -51,4 +97,98 @@ body {
   height: 100%;
   background: var(--bg);
   color: var(--text);
+}
+
+/* ── Shared UI primitives — used by Chat, Teams, Announce, Dashboard ──────── */
+/* See apps/web/src/components/ui.tsx for the React wrappers around these. */
+
+.avatar-box {
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  background: var(--panel-alt);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: monospace;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+.input-base {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 14px;
+  color: var(--text);
+  outline: none;
+}
+.input-base:focus {
+  border-color: var(--accent-dim);
+}
+
+.btn-primary {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: monospace;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 9px 15px;
+  border-radius: 8px;
+  cursor: pointer;
+  background: var(--accent);
+  color: #ffffff;
+  border: 1px solid var(--accent);
+  transition: opacity 0.15s;
+}
+.btn-primary:hover {
+  opacity: 0.9;
+}
+
+.btn-ghost {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font-family: monospace;
+  font-size: 14px;
+  font-weight: 500;
+  padding: 9px 15px;
+  border-radius: 8px;
+  cursor: pointer;
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+  transition: all 0.15s;
+}
+.btn-ghost:hover {
+  color: var(--text);
+  border-color: var(--text-dim);
+}
+
+.btn-icon {
+  width: 34px;
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+.btn-icon:hover {
+  border-color: var(--text-dim);
+  color: var(--text);
+}
+
+.hover-panel-alt:hover {
+  background: var(--panel-alt);
 }

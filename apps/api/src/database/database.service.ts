@@ -17,7 +17,9 @@ export class DatabaseService implements OnModuleInit, OnModuleDestroy {
       user: url.username,
       password: url.password,
       ssl: { rejectUnauthorized: false },
-      max: 10,
+      max: 20,
+      idleTimeoutMillis: 30_000,
+      connectionTimeoutMillis: 5_000,
     });
   }
 

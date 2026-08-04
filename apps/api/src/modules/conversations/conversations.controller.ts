@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Delete, Put, Body, Param, UseGuards, HttpCode, HttpStatus,
+  Controller, Get, Post, Delete, Put, Body, Param, Query, UseGuards, HttpCode, HttpStatus,
 } from '@nestjs/common';
 import { ConversationsService } from './conversations.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -12,20 +12,40 @@ export class ConversationsController {
   constructor(private readonly conversationsService: ConversationsService) {}
 
   @Get()
-  list(@CurrentUser() user: AuthPayload) {
-    return this.conversationsService.listConversations(user.id);
+  async list(@CurrentUser() user: AuthPayload) {
+    const conversations = await this.conversationsService.listConversations(user.id);
+    return { conversations };
   }
 
   @Post()
-  create(@CurrentUser() user: AuthPayload, @Body() body: {
+  async create(@CurrentUser() user: AuthPayload, @Body() body: {
     type: string; name?: string; description?: string; memberIds?: string[]; teamId?: string;
   }) {
-    return this.conversationsService.createConversation(user.id, body);
+    const conversation = await this.conversationsService.createConversation(user.id, body);
+    return { conversation };
   }
 
   @Get(':id')
-  get(@Param('id') id: string, @CurrentUser() user: AuthPayload) {
-    return this.conversationsService.getConversation(id, user.id);
+  async get(@Param('id') id: string, @CurrentUser() user: AuthPayload) {
+    const conversation = await this.conversationsService.getConversation(id, user.id);
+    return { conversation };
+  }
+
+  @Get(':id/media')
+  async media(@Param('id') id: string, @CurrentUser() user: AuthPayload) {
+    const media = await this.conversationsService.getMedia(id, user.id);
+    return { media };
+  }
+
+  @Get(':id/attachments')
+  async attachments(
+    @Param('id') id: string,
+    @Query('types') types: string | undefined,
+    @CurrentUser() user: AuthPayload,
+  ) {
+    const typeList = (types ?? 'file').split(',').map((t) => t.trim()).filter(Boolean);
+    const items = await this.conversationsService.getAttachments(id, user.id, typeList);
+    return { items };
   }
 
   @Get(':id/pins')

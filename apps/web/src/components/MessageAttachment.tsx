@@ -39,16 +39,22 @@ function VoicePlayer({ url, isMine, fileName, durationSecs }: { url: string | nu
   const btnBg = isMine ? 'rgba(255,255,255,0.88)' : 'var(--accent)';
   const btnIcon = isMine ? 'var(--accent)' : '#fff';
 
-  if (!url) {
+  if (!url || url === 'error') {
     return (
       <div className="flex items-center gap-2 py-1" style={{ minWidth: 180 }}>
         <div style={{ width: 32, height: 32, borderRadius: 16, background: track, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <svg className="w-4 h-4 animate-spin" style={{ color: dim }} fill="none" viewBox="0 0 24 24">
-            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
-          </svg>
+          {url === 'error' ? (
+            <svg className="w-4 h-4" style={{ color: dim }} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M12 3a9 9 0 100 18A9 9 0 0012 3z" />
+            </svg>
+          ) : (
+            <svg className="w-4 h-4 animate-spin" style={{ color: dim }} fill="none" viewBox="0 0 24 24">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+            </svg>
+          )}
         </div>
-        <span style={{ fontSize: 12, color: dim }}>Loading…</span>
+        <span style={{ fontSize: 12, color: dim }}>{url === 'error' ? 'Audio unavailable' : 'Loading…'}</span>
       </div>
     );
   }
@@ -105,8 +111,10 @@ function VoicePlayer({ url, isMine, fileName, durationSecs }: { url: string | nu
 }
 
 export function MessageAttachment({ type, file, isMine, compact, onOpen }: MessageAttachmentProps) {
-  const previewUrl = useFileBlobUrl(file.id, file.hasThumbnail ? 'thumbnail' : 'original');
+  const previewUrl = useFileBlobUrl(file?.id, file?.hasThumbnail ? 'thumbnail' : 'original');
   const loadingStyle = { color: isMine ? 'var(--bg-deep)' : 'var(--text-dim)', opacity: 0.7 };
+
+  if (!file) return null;
 
   if (type === 'image') {
     if (previewUrl === 'error') {
@@ -177,20 +185,72 @@ export function MessageAttachment({ type, file, isMine, compact, onOpen }: Messa
   }
 
   if (!previewUrl) {
-    return <p className="text-xs italic mb-1" style={loadingStyle}>Loading {file.fileName}...</p>;
+    return (
+      <div className="flex items-center gap-2.5 mb-1 py-1" style={{ minWidth: 200 }}>
+        <div className="flex-shrink-0 rounded-xl flex items-center justify-center" style={{ width: 40, height: 40, background: isMine ? 'rgba(255,255,255,0.15)' : 'var(--panel-alt)' }}>
+          <svg className="w-4 h-4 animate-spin" style={loadingStyle} fill="none" viewBox="0 0 24 24">
+            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
+          </svg>
+        </div>
+        <span className="text-xs italic truncate" style={loadingStyle}>Loading {file.fileName}...</span>
+      </div>
+    );
   }
+
+  const { label: extLabel, color: extColor } = fileTypeMeta(file.fileName);
 
   return (
     <a
       href={previewUrl}
       download={file.fileName}
-      className="flex items-center gap-2.5 mb-1 px-3 py-2 rounded-xl bg-black/10 hover:bg-black/15 transition-colors no-underline"
+      className="group flex items-center gap-3 mb-1 px-2.5 py-2.5 rounded-xl transition-colors no-underline"
+      style={{ background: isMine ? 'rgba(255,255,255,0.14)' : 'var(--panel-alt)', minWidth: 220, maxWidth: 260 }}
     >
-      <span className="text-lg flex-shrink-0">📎</span>
-      <span className="flex flex-col min-w-0">
-        <span className="text-sm font-semibold truncate max-w-[160px]">{file.fileName}</span>
-        <span className="text-xs opacity-70">{formatFileSize(file.sizeBytes)}</span>
+      {/* File-type icon badge */}
+      <span className="flex-shrink-0 rounded-lg flex items-center justify-center relative" style={{ width: 40, height: 40, background: isMine ? 'rgba(255,255,255,0.2)' : `${extColor}22` }}>
+        <svg className="w-[18px] h-[18px]" fill="none" stroke={isMine ? '#fff' : extColor} viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9 2.25H15a.75.75 0 01.53.22l4.5 4.5a.75.75 0 01.22.53V19.5A2.25 2.25 0 0118 21.75H6A2.25 2.25 0 013.75 19.5V4.5A2.25 2.25 0 016 2.25h3z" />
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M14.25 2.25v4.5a.75.75 0 00.75.75h4.5" />
+        </svg>
+        {extLabel && (
+          <span className="absolute -bottom-1 px-1 rounded font-mono font-bold leading-tight"
+            style={{ fontSize: 8.5, background: isMine ? '#fff' : extColor, color: isMine ? extColor : '#fff' }}>
+            {extLabel}
+          </span>
+        )}
       </span>
+
+      <span className="flex flex-col min-w-0 flex-1">
+        <span className="text-[13px] font-semibold truncate" style={{ color: isMine ? 'var(--bg-deep)' : 'var(--text)' }}>{file.fileName}</span>
+        <span className="text-[11.5px] font-mono" style={{ color: isMine ? 'rgba(8,10,15,0.6)' : 'var(--text-dim)' }}>{formatFileSize(file.sizeBytes)}</span>
+      </span>
+
+      {/* Download affordance */}
+      <svg className="w-4 h-4 flex-shrink-0 transition-transform group-hover:translate-y-0.5" style={{ color: isMine ? 'rgba(8,10,15,0.55)' : 'var(--text-dim)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+      </svg>
     </a>
   );
+}
+
+// ── File-type badge color/label ───────────────────────────────────────────
+const FILE_TYPE_STYLES: Record<string, { label: string; color: string }> = {
+  pdf: { label: 'PDF', color: '#ef4444' },
+  doc: { label: 'DOC', color: '#3b82f6' },
+  docx: { label: 'DOC', color: '#3b82f6' },
+  xls: { label: 'XLS', color: '#22c55e' },
+  xlsx: { label: 'XLS', color: '#22c55e' },
+  ppt: { label: 'PPT', color: '#f97316' },
+  pptx: { label: 'PPT', color: '#f97316' },
+  zip: { label: 'ZIP', color: '#f59e0b' },
+  rar: { label: 'ZIP', color: '#f59e0b' },
+  txt: { label: 'TXT', color: '#71717a' },
+  csv: { label: 'CSV', color: '#22c55e' },
+};
+
+export function fileTypeMeta(fileName: string): { label: string | null; color: string } {
+  const ext = fileName.split('.').pop()?.toLowerCase() ?? '';
+  const meta = FILE_TYPE_STYLES[ext];
+  return meta ?? { label: ext ? ext.slice(0, 4).toUpperCase() : null, color: '#3b82f6' };
 }
