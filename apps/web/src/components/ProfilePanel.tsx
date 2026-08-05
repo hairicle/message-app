@@ -316,12 +316,14 @@ export function ProfilePanel({ onClose, onPrefsChange }: ProfilePanelProps) {
   ];
 
   return (
-    <div className="absolute inset-0 z-50 flex">
-      {/* Backdrop */}
-      <div className="flex-1" style={{ background: 'rgba(0,0,0,0.48)' }} onClick={onClose} />
+    // From lg this is a real column in the app row, so the workspace reflows beside it. Below
+    // that there is not enough width to split, so it stays a full-screen overlay.
+    <div className="absolute inset-0 z-50 flex lg:relative lg:inset-auto lg:z-auto lg:w-[384px] lg:flex-shrink-0">
+      {/* Backdrop — only meaningful while the panel floats above the app */}
+      <div className="flex-1 lg:hidden" style={{ background: 'rgba(0,0,0,0.48)' }} onClick={onClose} />
 
       {/* Slide-in panel */}
-      <div className="w-full max-w-sm flex flex-col h-full overflow-hidden"
+      <div className="w-full max-w-sm lg:max-w-none flex flex-col h-full overflow-hidden"
         style={{ background: 'var(--bg)', borderLeft: '1px solid var(--border)', fontFamily: "'Inter', system-ui, sans-serif" }}>
 
         {/* ── Avatar header ─────────────────────────────────────────────── */}
@@ -708,7 +710,7 @@ export function ProfilePanel({ onClose, onPrefsChange }: ProfilePanelProps) {
       {/* ── Avatar lightbox ───────────────────────────────────────────── */}
       {previewOpen && avatarUrl && (
         <div
-          className="absolute inset-0 z-[60] flex flex-col items-center justify-center"
+          className="fixed inset-0 z-[60] flex flex-col items-center justify-center"
           style={{ background: 'rgba(0,0,0,0.82)' }}
           onClick={() => setPreviewOpen(false)}>
           {/* Image */}

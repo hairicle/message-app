@@ -17,6 +17,7 @@ import { AdminDashboard } from '@/components/AdminDashboard';
 import { AnnounceWorkspace } from '@/components/AnnounceWorkspace';
 import { ProfilePanel } from '@/components/ProfilePanel';
 import { useConfirm } from '@/components/ConfirmDialog';
+import { BrandLogo } from '@/components/BrandLogo';
 import { TeamWorkspace } from '@/components/TeamWorkspace';
 import { Avatar } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
@@ -220,15 +221,10 @@ export default function ChatPage() {
 
   return (
     <div className="relative flex h-full overflow-hidden" style={{ background: 'var(--bg)' }}>
-      {showProfile && <ProfilePanel onClose={() => setShowProfile(false)} onPrefsChange={applyNotifyPrefs} />}
-
       {/* ── Icon navigation — desktop only, replaced by bottom bar on mobile ── */}
       <nav className="hidden lg:flex w-16 flex-col items-center py-3 gap-1 flex-shrink-0" style={{ background: 'var(--bg)', borderRight: '1px solid var(--border)' }}>
-        {/* User avatar — click to open profile */}
-        <button onClick={() => setShowProfile(true)} title="My profile"
-          className="mb-3 flex-shrink-0 rounded-lg hover:ring-2 hover:ring-[var(--accent-dim)] transition-all">
-          <Avatar name={user.displayName} avatarUrl={user.avatarUrl} size={36} radius={8} fontSize={14} />
-        </button>
+        {/* Company mark */}
+        <BrandLogo height={30} maxWidth={52} className="mb-3" />
 
         <NavItem id="chat" label="Chat" badge={chatUnread} icon={<FontAwesomeIcon icon={faMessage} style={{ fontSize: 18 }} />} />
         <NavItem id="teams" label="Teams" badge={teamUnread} icon={<FontAwesomeIcon icon={faUsers} style={{ fontSize: 18 }} />} />
@@ -244,6 +240,13 @@ export default function ChatPage() {
         </button>
         <button onClick={handleSignOut} className="transition-colors p-2 rounded-xl hover-panel-alt" style={{ color: 'var(--text-dim)' }} title="Sign out">
           <FontAwesomeIcon icon={faRightFromBracket} style={{ fontSize: 18 }} />
+        </button>
+
+        {/* User avatar — anchored to the bottom, below the account actions */}
+        <div className="w-6 h-px my-2 flex-shrink-0" style={{ background: 'var(--border)' }} />
+        <button onClick={() => setShowProfile(true)} title="My profile"
+          className="flex-shrink-0 rounded-lg hover:ring-2 hover:ring-[var(--accent-dim)] transition-all">
+          <Avatar name={user.displayName} avatarUrl={user.avatarUrl} size={36} radius={8} fontSize={14} />
         </button>
       </nav>
 
@@ -330,6 +333,9 @@ export default function ChatPage() {
           <span className="text-[10px] font-medium leading-none">Me</span>
         </button>
       </nav>
+
+      {/* Rendered last so that as a flex sibling it lands at the right edge of the app row */}
+      {showProfile && <ProfilePanel onClose={() => setShowProfile(false)} onPrefsChange={applyNotifyPrefs} />}
 
       {confirmDialog}
     </div>

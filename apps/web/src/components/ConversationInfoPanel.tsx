@@ -13,7 +13,7 @@ import { useFileBlobUrl } from '../hooks/useFileBlobUrl';
 import { getConversationTitle, getOtherMember } from '../utils/conversation';
 import { formatFileSize } from '../utils/format';
 import { Avatar, Badge } from './ui';
-import { fileTypeMeta } from './MessageAttachment';
+import { fileTypeMeta, VoicePlayer } from './MessageAttachment';
 
 export type InfoTab = 'media' | 'files' | 'voice';
 
@@ -145,7 +145,9 @@ export function ConversationInfoPanel({
           media === null ? <TabLoading /> : media.length === 0 ? (
             <TabEmpty label="No media shared yet." />
           ) : (
-            <div className="grid grid-cols-3 gap-px" style={{ background: 'var(--border)' }}>
+            // Same p-3 inset as the Files and Voice tabs — the grid used to run edge to edge,
+            // which read as a misalignment against every other row in the panel.
+            <div className="p-3 grid grid-cols-3 gap-1.5">
               {media.map((item) => (
                 <MediaThumb key={item.file.id} item={item} onOpen={onOpenLightbox} />
               ))}
@@ -211,8 +213,8 @@ function MediaThumb({
     <button
       type="button"
       onClick={() => onOpen(item.file, item.type as MessageType)}
-      className="relative aspect-square overflow-hidden hover:opacity-80 transition-opacity"
-      style={{ background: 'var(--panel-alt)' }}
+      className="relative aspect-square overflow-hidden rounded-lg hover:opacity-80 transition-opacity"
+      style={{ background: 'var(--panel-alt)', border: '1px solid var(--border)' }}
     >
       {url && item.type === 'image' && (
         <img src={url} alt="" className="w-full h-full object-cover" />
@@ -283,12 +285,8 @@ function VoiceItem({ item }: { item: ConversationAttachmentItem }) {
         </svg>
       </div>
       <div className="flex-1 min-w-0">
-        {url ? (
-          <audio src={url} controls className="w-full h-8 max-w-full" />
-        ) : (
-          <div className="h-8 rounded-full animate-pulse" style={{ background: 'var(--panel-alt)' }} />
-        )}
-        <p className="text-[11.5px] font-mono mt-1" style={{ color: 'var(--text-dim)' }}>{date}</p>
+        <VoicePlayer url={url} isMine={false} fileName={item.file.fileName} durationSecs={item.file.durationSecs ?? null} />
+        <p className="text-[11.5px] font-mono" style={{ color: 'var(--text-dim)' }}>{date}</p>
       </div>
     </div>
   );

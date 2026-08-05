@@ -118,6 +118,14 @@ body {
   flex-shrink: 0;
 }
 
+/* Keyboard focus, styled once for the whole app. Without this the browser default is a hard
+   black hairline that stretches the full width of wide flex-1 buttons — the conversation header
+   is 664px — and reads as a stray box rather than a focus indicator. */
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
 .input-base {
   background: var(--panel);
   border: 1px solid var(--border);

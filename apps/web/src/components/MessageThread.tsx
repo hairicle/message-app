@@ -514,7 +514,10 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
   const messagesById = new Map(messages.map((m) => [m.id, m]));
 
   return (
-    <div className="relative flex flex-col h-full overflow-hidden">
+    // Row, so the info panel can sit beside the thread on wide screens and the conversation
+    // reflows into the remaining width instead of being covered by it.
+    <div className="relative flex h-full overflow-hidden">
+      <div className="relative flex flex-col flex-1 min-w-0 h-full overflow-hidden">
       {/* Header */}
       <header className="flex items-center gap-3 px-4 py-4 flex-shrink-0" style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
         {onBack && (
@@ -1260,21 +1263,8 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
         </button>
       </form>
 
-      {/* Info panel slide-in */}
-      {showInfoPanel && (
-        <>
-          <div className="absolute inset-0 z-20 bg-black/20" onClick={() => setShowInfoPanel(false)} />
-          <div className="absolute inset-y-0 right-0 w-full lg:w-80 z-30 shadow-2xl">
-            <ConversationInfoPanel conversation={conversation} currentUserId={user!.id} presence={presence} onClose={() => setShowInfoPanel(false)} onOpenLightbox={(file, type) => setLightboxItem({ file, type })} initialTab="media" />
-          </div>
-        </>
-      )}
-
-      {lightboxItem && <Lightbox file={lightboxItem.file} type={lightboxItem.type} onClose={() => setLightboxItem(null)} />}
-
-      {confirmDialog}
-
-      {/* ── Toast notification ── */}
+      {/* ── Toast notification — inside the thread column so it stays centred over the
+           conversation when the info panel takes its share of the width ── */}
       {toast && (
         <div className="absolute bottom-24 left-1/2 z-50 pointer-events-none"
           style={{ transform: 'translateX(-50%)', animation: 'fadeInUp 0.2s ease' }}>
@@ -1287,6 +1277,26 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
           </div>
         </div>
       )}
+      </div>
+
+      {/* Info panel. From lg it is a real column and the thread reflows beside it; below that
+          there is not enough width to split, so it stays an overlay with a dismissable scrim. */}
+      {showInfoPanel && (
+        <>
+          <div className="lg:hidden absolute inset-0 z-20 bg-black/20" onClick={() => setShowInfoPanel(false)} />
+          <aside
+            className="absolute inset-y-0 right-0 w-full z-30 shadow-2xl
+                       lg:relative lg:inset-auto lg:w-80 lg:flex-shrink-0 lg:z-auto lg:shadow-none"
+            style={{ background: 'var(--bg)' }}
+          >
+            <ConversationInfoPanel conversation={conversation} currentUserId={user!.id} presence={presence} onClose={() => setShowInfoPanel(false)} onOpenLightbox={(file, type) => setLightboxItem({ file, type })} initialTab="media" />
+          </aside>
+        </>
+      )}
+
+      {lightboxItem && <Lightbox file={lightboxItem.file} type={lightboxItem.type} onClose={() => setLightboxItem(null)} />}
+
+      {confirmDialog}
 
       <style>{`
         @keyframes fadeInUp { from { opacity: 0; transform: translateX(-50%) translateY(8px); } to { opacity: 1; transform: translateX(-50%) translateY(0); } }

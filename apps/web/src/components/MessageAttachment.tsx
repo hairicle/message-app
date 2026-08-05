@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import type { FileMeta, MessageType } from '@messenger/shared';
 import { useFileBlobUrl } from '../hooks/useFileBlobUrl';
 import { formatFileSize } from '../utils/format';
+import { useWaveform } from '../hooks/useWaveform';
 
 interface MessageAttachmentProps {
   type: MessageType;
@@ -13,12 +14,15 @@ interface MessageAttachmentProps {
   onOpen?: (file: FileMeta, type: MessageType) => void;
 }
 
-function VoicePlayer({ url, isMine, fileName, durationSecs }: { url: string | null; isMine: boolean; fileName: string; durationSecs: number | null }) {
+const WAVE_BARS = 34;
+
+export function VoicePlayer({ url, isMine, fileName, durationSecs }: { url: string | null; isMine: boolean; fileName: string; durationSecs: number | null }) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [currentSecs, setCurrentSecs] = useState(0);
   const [duration, setDuration] = useState(durationSecs ?? 0);
+  const { peaks } = useWaveform(url, WAVE_BARS);
 
   function toggle() {
     const a = audioRef.current;
@@ -26,10 +30,20 @@ function VoicePlayer({ url, isMine, fileName, durationSecs }: { url: string | nu
     if (playing) { a.pause(); } else { a.play(); }
   }
 
+  function seekTo(clientX: number, el: HTMLElement) {
+    const a = audioRef.current;
+    if (!a || !a.duration) return;
+    const rect = el.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    a.currentTime = ratio * a.duration;
+    setProgress(ratio);
+    setCurrentSecs(ratio * a.duration);
+  }
+
   function fmt(s: number) {
     const m = Math.floor(s / 60);
     const sec = Math.floor(s % 60);
-    return `${m}:${sec.toString().padStart(2, '0')}`;
+    return `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
   }
 
   // Colors relative to the bubble background (mine = var(--accent), others = var(--panel))
@@ -38,6 +52,9 @@ function VoicePlayer({ url, isMine, fileName, durationSecs }: { url: string | nu
   // Play button: white circle on accent bubble; accent circle on panel bubble
   const btnBg = isMine ? 'rgba(255,255,255,0.88)' : 'var(--accent)';
   const btnIcon = isMine ? 'var(--accent)' : '#fff';
+  // Waveform: played bars sit at full strength, the rest recede but stay visible.
+  const waveActive = isMine ? 'rgba(255,255,255,0.95)' : 'var(--accent)';
+  const waveIdle = isMine ? 'rgba(255,255,255,0.35)' : 'var(--accent-dim)';
 
   if (!url || url === 'error') {
     return (
@@ -73,8 +90,54 @@ function VoicePlayer({ url, isMine, fileName, durationSecs }: { url: string | nu
         }}
       />
 
+      {/* Waveform — click or drag anywhere on it to seek */}
+      <div
+        role="slider"
+        tabIndex={0}
+        aria-label="Seek"
+        aria-valuemin={0}
+        aria-valuemax={Math.round(duration)}
+        aria-valuenow={Math.round(currentSecs)}
+        className="flex-1 flex items-center gap-[2px] cursor-pointer min-w-0"
+        style={{ height: 28 }}
+        onClick={(e) => seekTo(e.clientX, e.currentTarget)}
+        onKeyDown={(e) => {
+          const a = audioRef.current;
+          if (!a || !a.duration) return;
+          if (e.key === 'ArrowRight') a.currentTime = Math.min(a.duration, a.currentTime + 2);
+          if (e.key === 'ArrowLeft') a.currentTime = Math.max(0, a.currentTime - 2);
+          if (e.key === ' ' || e.key === 'Enter') { e.preventDefault(); toggle(); }
+        }}
+      >
+        {peaks.map((p, i) => {
+          const played = i / peaks.length < progress;
+          return (
+            <span
+              key={i}
+              className="flex-1 rounded-full"
+              style={{
+                height: Math.max(3, Math.round(p * 26)),
+                minWidth: 2,
+                background: played ? waveActive : waveIdle,
+                transition: 'background-color 120ms linear',
+              }}
+            />
+          );
+        })}
+      </div>
+
+      {/* Elapsed while playing, total otherwise — matches how the reference reads */}
+      <span
+        className="flex-shrink-0 tabular-nums"
+        style={{ fontSize: 11.5, color: dim, fontFamily: 'monospace' }}
+        title={fileName}
+      >
+        {duration > 0 ? fmt(playing || currentSecs > 0 ? currentSecs : duration) : '--:--'}
+      </span>
+
       {/* Play/pause button */}
       <button type="button" onClick={toggle}
+        aria-label={playing ? 'Pause voice message' : 'Play voice message'}
         className="flex-shrink-0 flex items-center justify-center rounded-full transition-opacity hover:opacity-80"
         style={{ width: 34, height: 34, background: btnBg }}>
         {playing ? (
@@ -87,25 +150,6 @@ function VoicePlayer({ url, isMine, fileName, durationSecs }: { url: string | nu
           </svg>
         )}
       </button>
-
-      {/* Waveform / progress bar + time */}
-      <div className="flex-1 flex flex-col gap-1 min-w-0">
-        {/* Progress bar */}
-        <div className="relative h-1.5 rounded-full cursor-pointer" style={{ background: track }}
-          onClick={(e) => {
-            const a = audioRef.current;
-            if (!a || !a.duration) return;
-            const rect = e.currentTarget.getBoundingClientRect();
-            a.currentTime = ((e.clientX - rect.left) / rect.width) * a.duration;
-          }}>
-          <div className="absolute inset-y-0 left-0 rounded-full transition-all" style={{ width: `${progress * 100}%`, background: btnBg }} />
-        </div>
-        {/* Time */}
-        <div className="flex justify-between" style={{ fontSize: 10, color: dim, fontFamily: 'monospace' }}>
-          <span>{fmt(currentSecs)}</span>
-          <span>{duration > 0 ? fmt(duration) : fileName}</span>
-        </div>
-      </div>
     </div>
   );
 }
