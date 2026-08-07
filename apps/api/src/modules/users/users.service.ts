@@ -44,6 +44,30 @@ export class UsersService {
     };
   }
 
+  /**
+   * What one colleague may see about another. Email is left out on purpose: listDirectory has
+   * never exposed it, and this endpoint is reachable by any signed-in user, so it should not
+   * widen what the directory already publishes.
+   */
+  async getPublicProfile(userId: string) {
+    const row = await this.prisma.users.findUnique({
+      where: { id: userId },
+      select: {
+        id: true, username: true, display_name: true,
+        avatar_url: true, department: true, role: true, status: true,
+      },
+    });
+    if (!row || row.status !== 'active') return null;
+    return {
+      id: row.id,
+      username: row.username,
+      displayName: row.display_name,
+      avatarUrl: row.avatar_url,
+      department: row.department,
+      role: row.role,
+    };
+  }
+
   // Note: listDirectory and listUsers deliberately return snake_case rows — the web app reads
   // `avatar_url`, `display_name` and `created_at` directly from these payloads.
   async listDirectory(currentUserId: string) {

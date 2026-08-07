@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Patch, Body, UseGuards, NotFoundException,
+  Controller, Get, Post, Patch, Body, Param, UseGuards, NotFoundException,
   UseInterceptors, UploadedFile, ParseFilePipe, MaxFileSizeValidator,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -77,5 +77,14 @@ export class UsersController {
   @Roles('admin')
   async createUser(@Body() body: { email: string; username: string; displayName: string; password: string; role?: string; department?: string | null }) {
     return this.usersService.createUser(body);
+  }
+
+  // Declared last on purpose: Nest matches routes in order, so a ':id' parameter route placed
+  // above would swallow /users/me and /users/directory.
+  @Get(':id')
+  async getPublicProfile(@Param('id') id: string) {
+    const profile = await this.usersService.getPublicProfile(id);
+    if (!profile) throw new NotFoundException('User not found');
+    return { profile };
   }
 }

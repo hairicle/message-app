@@ -87,7 +87,7 @@ export function ConversationInfoPanel({
       <div className="flex-1 overflow-y-auto">
         {/* Profile section */}
         <div className="flex flex-col items-center px-6 py-6" style={{ borderBottom: '1px solid var(--border)' }}>
-          <Avatar name={title} avatarUrl={other?.avatar_url} size={72} radius={18} fontSize={26} className="mb-3" viewable />
+          <Avatar name={title} avatarUrl={other?.avatar_url} size={72} radius={18} fontSize={26} className="mb-3" profileUserId={other?.user_id} />
           <h3 className="font-bold text-[16px] text-center leading-snug" style={{ color: 'var(--text)' }}>{title}</h3>
 
           {other && (
@@ -108,7 +108,7 @@ export function ConversationInfoPanel({
               {members.map((m) => (
                 <div key={m.user_id} className="flex items-center gap-2.5 py-0.5">
                   <Avatar name={m.display_name} avatarUrl={m.avatar_url} size={32} radius={8} fontSize={12}
-                    showPresence={m.user_id !== currentUserId} online={presence[m.user_id] === 'online'} viewable />
+                    showPresence={m.user_id !== currentUserId} online={presence[m.user_id] === 'online'} profileUserId={m.user_id} />
                   <div className="flex-1 min-w-0">
                     <p className="text-[14px] font-medium truncate leading-tight" style={{ color: 'var(--text)' }}>{m.display_name}</p>
                     <p className="text-[11.5px] font-mono capitalize leading-tight mt-0.5" style={{ color: 'var(--text-dim)' }}>{m.role}</p>
