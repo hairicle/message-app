@@ -2,12 +2,12 @@ import { Injectable, BadRequestException, UnauthorizedException } from '@nestjs/
 import { ConfigService } from '@nestjs/config';
 import { TOTP, Secret } from 'otpauth';
 import QRCode from 'qrcode';
-import { DatabaseService } from '../../database/database.service';
+import { PrismaService } from '../../database/prisma.service';
 
 @Injectable()
 export class TotpService {
   constructor(
-    private readonly db: DatabaseService,
+    private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) {}
 
@@ -26,41 +26,39 @@ export class TotpService {
     const otpauthUrl = totp.toString();
     const qrDataUrl = await QRCode.toDataURL(otpauthUrl);
 
-    await this.db.query(
-      'UPDATE users SET totp_secret = $1, totp_enabled = false WHERE id = $2',
-      [secret.base32, userId],
-    );
+    await this.prisma.users.update({
+      where: { id: userId },
+      data: { totp_secret: secret.base32, totp_enabled: false },
+    });
 
     return { secret: secret.base32, qrDataUrl, otpauthUrl };
   }
 
   async enable(userId: string, code: string): Promise<void> {
-    const result = await this.db.query<{ totp_secret: string | null; email: string }>(
-      'SELECT totp_secret, email FROM users WHERE id = $1',
-      [userId],
-    );
-    const user = result.rows[0];
+    const user = await this.prisma.users.findUnique({
+      where: { id: userId },
+      select: { totp_secret: true, email: true },
+    });
     if (!user?.totp_secret) throw new BadRequestException('TOTP setup not started');
     if (!this.verifyCode(user.totp_secret, user.email, code)) {
       throw new UnauthorizedException('Invalid TOTP code');
     }
-    await this.db.query('UPDATE users SET totp_enabled = true WHERE id = $1', [userId]);
+    await this.prisma.users.update({ where: { id: userId }, data: { totp_enabled: true } });
   }
 
   async disable(userId: string, code: string): Promise<void> {
-    const result = await this.db.query<{ totp_secret: string | null; email: string }>(
-      'SELECT totp_secret, email FROM users WHERE id = $1',
-      [userId],
-    );
-    const user = result.rows[0];
+    const user = await this.prisma.users.findUnique({
+      where: { id: userId },
+      select: { totp_secret: true, email: true },
+    });
     if (!user?.totp_secret) throw new BadRequestException('2FA is not enabled');
     if (!this.verifyCode(user.totp_secret, user.email, code)) {
       throw new UnauthorizedException('Invalid TOTP code');
     }
-    await this.db.query(
-      'UPDATE users SET totp_secret = null, totp_enabled = false WHERE id = $1',
-      [userId],
-    );
+    await this.prisma.users.update({
+      where: { id: userId },
+      data: { totp_secret: null, totp_enabled: false },
+    });
   }
 }
 

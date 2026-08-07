@@ -11,7 +11,7 @@ import {
 import { OnModuleInit } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
-import { DatabaseService } from '../database/database.service';
+import { PrismaService } from '../database/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { MessagesService } from '../modules/messages/messages.service';
 import type { AuthPayload } from '@messenger/shared';
@@ -29,7 +29,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   constructor(
     private readonly jwt: JwtService,
-    private readonly db: DatabaseService,
+    private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly messages: MessagesService,
     private readonly accountStatus: AccountStatusService,
@@ -233,17 +233,17 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   ) {
     try {
       await this.messages.addReaction(payload.messageId, socket.data.user.id, payload.emoji);
-      const userRow = await this.db.query<{ username: string; display_name: string }>(
-        'SELECT username, display_name FROM users WHERE id = $1',
-        [socket.data.user.id],
-      );
+      const userRow = await this.prisma.users.findUnique({
+        where: { id: socket.data.user.id },
+        select: { username: true, display_name: true },
+      });
       this.io.to(`conversation:${payload.conversationId}`).emit('reaction:added', {
         messageId: payload.messageId,
         conversationId: payload.conversationId,
         userId: socket.data.user.id,
         emoji: payload.emoji,
-        username: userRow.rows[0]?.username ?? '',
-        displayName: userRow.rows[0]?.display_name ?? '',
+        username: userRow?.username ?? '',
+        displayName: userRow?.display_name ?? '',
       });
       return { ok: true };
     } catch (err: unknown) {
@@ -278,21 +278,21 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   }
 
   private async joinConversationRooms(socket: AuthedSocket) {
-    const r = await this.db.query<{ conversation_id: string }>(
-      'SELECT conversation_id FROM conversation_members WHERE user_id = $1',
-      [socket.data.user.id],
-    );
-    for (const row of r.rows) {
+    const rows = await this.prisma.conversation_members.findMany({
+      where: { user_id: socket.data.user.id },
+      select: { conversation_id: true },
+    });
+    for (const row of rows) {
       socket.join(`conversation:${row.conversation_id}`);
     }
   }
 
   private async isMember(socket: AuthedSocket, conversationId: string): Promise<boolean> {
-    const r = await this.db.query(
-      'SELECT 1 FROM conversation_members WHERE conversation_id = $1 AND user_id = $2',
-      [conversationId, socket.data.user.id],
-    );
-    return r.rows.length > 0;
+    const member = await this.prisma.conversation_members.findUnique({
+      where: { conversation_id_user_id: { conversation_id: conversationId, user_id: socket.data.user.id } },
+      select: { id: true },
+    });
+    return member !== null;
   }
 
   private async markOnline(userId: string) {

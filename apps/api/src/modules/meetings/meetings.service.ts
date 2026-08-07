@@ -1,47 +1,69 @@
-import { Injectable } from '@nestjs/common';
-import { DatabaseService } from '../../database/database.service';
+import { Injectable, ForbiddenException } from '@nestjs/common';
+import { PrismaService } from '../../database/prisma.service';
 
+/**
+ * The previous queries joined a `meeting_participants` table that does not exist (it is
+ * `meeting_attendees`) and referenced starts_at/ends_at/organizer_id/conversation_id, none of
+ * which are columns here — so every endpoint returned 500. The real shape is:
+ * meetings(id, created_by, title, description, location, start_at, end_at, created_at) and
+ * meeting_attendees(meeting_id, user_id, status).
+ */
 @Injectable()
 export class MeetingsService {
-  constructor(private readonly db: DatabaseService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async listMeetings(userId: string) {
-    const r = await this.db.query(
-      `SELECT m.*, array_agg(mp.user_id) AS participant_ids
-       FROM meetings m
-       JOIN meeting_participants mp ON mp.meeting_id = m.id
-       WHERE mp.user_id = $1
-       GROUP BY m.id
-       ORDER BY m.starts_at DESC`,
-      [userId],
-    );
-    return r.rows;
+    const meetings = await this.prisma.meetings.findMany({
+      where: {
+        OR: [
+          { meeting_attendees: { some: { user_id: userId } } },
+          { created_by: userId },
+        ],
+      },
+      orderBy: { start_at: 'desc' },
+      include: { meeting_attendees: { select: { user_id: true, status: true } } },
+    });
+
+    return meetings.map(({ meeting_attendees, ...meeting }) => ({
+      ...meeting,
+      attendees: meeting_attendees.map((a) => ({ userId: a.user_id, status: a.status })),
+    }));
   }
 
-  async createMeeting(organizerId: string, data: {
-    title: string; description?: string; startsAt: string; endsAt: string;
-    conversationId?: string; participantIds: string[];
+  async createMeeting(creatorId: string, data: {
+    title: string; description?: string; location?: string;
+    startAt: string; endAt?: string; attendeeIds?: string[];
   }) {
-    const r = await this.db.query<{ id: string }>(
-      `INSERT INTO meetings (title, description, starts_at, ends_at, conversation_id, organizer_id)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
-      [data.title, data.description ?? null, data.startsAt, data.endsAt, data.conversationId ?? null, organizerId],
-    );
-    const meetingId = r.rows[0].id;
-    const participants = [...new Set([organizerId, ...data.participantIds])];
-    for (const uid of participants) {
-      await this.db.query(
-        'INSERT INTO meeting_participants (meeting_id, user_id) VALUES ($1, $2) ON CONFLICT DO NOTHING',
-        [meetingId, uid],
-      );
-    }
-    return { id: meetingId };
+    const attendees = [...new Set([creatorId, ...(data.attendeeIds ?? [])])];
+
+    const meeting = await this.prisma.meetings.create({
+      data: {
+        created_by: creatorId,
+        title: data.title,
+        description: data.description ?? null,
+        location: data.location ?? null,
+        start_at: new Date(data.startAt),
+        end_at: data.endAt ? new Date(data.endAt) : null,
+        // One statement instead of the previous per-attendee loop, so a partial failure cannot
+        // leave a meeting with some attendees missing.
+        meeting_attendees: {
+          createMany: {
+            data: attendees.map((user_id) => ({ user_id })),
+            skipDuplicates: true,
+          },
+        },
+      },
+      select: { id: true },
+    });
+
+    return { id: meeting.id };
   }
 
   async deleteMeeting(meetingId: string, userId: string) {
-    await this.db.query(
-      'DELETE FROM meetings WHERE id = $1 AND organizer_id = $2',
-      [meetingId, userId],
-    );
+    // Scoped by created_by, as before — only the organiser can delete.
+    const result = await this.prisma.meetings.deleteMany({
+      where: { id: meetingId, created_by: userId },
+    });
+    if (result.count === 0) throw new ForbiddenException('Meeting not found or access denied');
   }
 }

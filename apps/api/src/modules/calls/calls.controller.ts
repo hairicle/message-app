@@ -15,12 +15,13 @@ export class CallsController {
   }
 
   @Post()
-  start(@CurrentUser() user: AuthPayload, @Body() body: { conversationId: string }) {
-    return this.callsService.startCall(user.id, body.conversationId);
+  start(@CurrentUser() user: AuthPayload, @Body() body: { conversationId: string; type?: 'audio' | 'video' }) {
+    // calls.type is NOT NULL with no default, so it has to come from the request.
+    return this.callsService.startCall(user.id, body.conversationId, body.type ?? 'audio');
   }
 
   @Delete(':id')
-  end(@Param('id') id: string) {
-    return this.callsService.endCall(id);
+  end(@Param('id') id: string, @CurrentUser() user: AuthPayload) {
+    return this.callsService.endCall(id, user.id);
   }
 }

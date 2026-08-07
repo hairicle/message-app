@@ -14,9 +14,11 @@ export class TasksController {
     return this.tasksService.listTasks(user.id);
   }
 
+  // Body shapes follow the tasks table: title, done, priority, due_date. The previous signatures
+  // named columns (description, assigneeId, status, conversationId) that do not exist.
   @Post()
   create(@CurrentUser() user: AuthPayload, @Body() body: {
-    title: string; description?: string; assigneeId?: string; dueAt?: string; conversationId?: string;
+    title: string; priority?: string; dueDate?: string;
   }) {
     return this.tasksService.createTask(user.id, body);
   }
@@ -24,7 +26,7 @@ export class TasksController {
   @Patch(':id')
   update(
     @Param('id') id: string,
-    @Body() body: { title?: string; description?: string; status?: string; dueAt?: string },
+    @Body() body: { title?: string; done?: boolean; priority?: string; dueDate?: string | null },
     @CurrentUser() user: AuthPayload,
   ) {
     return this.tasksService.updateTask(id, body, user.id);

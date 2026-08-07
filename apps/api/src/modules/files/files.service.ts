@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DatabaseService } from '../../database/database.service';
+import { PrismaService } from '../../database/prisma.service';
 import { randomUUID } from 'crypto';
 import * as path from 'path';
 
@@ -21,7 +21,7 @@ const SIGNED_URL_TTL_SECONDS = 300;
 @Injectable()
 export class FilesService {
   constructor(
-    private readonly db: DatabaseService,
+    private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) {}
 
@@ -40,23 +40,32 @@ export class FilesService {
   }
 
   private async fetchRow(fileId: string, requesterId: string): Promise<FileRow> {
-    const r = await this.db.query<FileRow>(
-      `SELECT f.id, f.file_name, f.mime_type, f.size_bytes, f.has_thumbnail, f.duration_secs,
-              f.created_at, f.uploader_id, f.storage_key, m.conversation_id
-       FROM files f
-       LEFT JOIN messages m ON m.id = f.message_id
-       WHERE f.id = $1`,
-      [fileId],
-    );
-    if (!r.rows[0]) throw new NotFoundException('File not found');
-    const row = r.rows[0];
+    const file = await this.prisma.files.findUnique({
+      where: { id: fileId },
+      select: {
+        id: true, file_name: true, mime_type: true, size_bytes: true, has_thumbnail: true,
+        duration_secs: true, created_at: true, uploader_id: true, storage_key: true,
+        // LEFT JOIN messages: a file not yet attached to a message has no conversation.
+        messages: { select: { conversation_id: true } },
+      },
+    });
+    if (!file) throw new NotFoundException('File not found');
+
+    const { messages, ...rest } = file;
+    const row: FileRow = {
+      ...rest,
+      // size_bytes is a bigint column; the API has always sent it as a number.
+      size_bytes: Number(rest.size_bytes),
+      created_at: rest.created_at.toISOString(),
+      conversation_id: messages?.conversation_id ?? null,
+    };
 
     if (row.conversation_id) {
-      const mem = await this.db.query(
-        'SELECT 1 FROM conversation_members WHERE conversation_id = $1 AND user_id = $2',
-        [row.conversation_id, requesterId],
-      );
-      if (!mem.rows[0]) throw new ForbiddenException('Access denied');
+      const member = await this.prisma.conversation_members.findUnique({
+        where: { conversation_id_user_id: { conversation_id: row.conversation_id, user_id: requesterId } },
+        select: { id: true },
+      });
+      if (!member) throw new ForbiddenException('Access denied');
     } else if (row.uploader_id !== requesterId) {
       throw new ForbiddenException('Access denied');
     }
@@ -109,15 +118,20 @@ export class FilesService {
       throw new BadRequestException(`Storage upload failed: ${msg}`);
     }
 
-    const r = await this.db.query<{ id: string; created_at: string }>(
-      `INSERT INTO files (uploader_id, storage_key, file_name, mime_type, size_bytes, has_thumbnail)
-       VALUES ($1, $2, $3, $4, $5, $6) RETURNING id, created_at`,
-      [uploaderId, storageKey, file.originalname, mimeType, file.size, hasThumbnail],
-    );
-    const row = r.rows[0];
+    const row = await this.prisma.files.create({
+      data: {
+        uploader_id: uploaderId,
+        storage_key: storageKey,
+        file_name: file.originalname,
+        mime_type: mimeType,
+        size_bytes: file.size,
+        has_thumbnail: hasThumbnail,
+      },
+      select: { id: true, created_at: true },
+    });
     return {
       id: row.id, fileName: file.originalname, mimeType, sizeBytes: file.size,
-      hasThumbnail, durationSecs: null, createdAt: row.created_at,
+      hasThumbnail, durationSecs: null, createdAt: row.created_at.toISOString(),
     };
   }
 

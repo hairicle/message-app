@@ -1,7 +1,7 @@
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import { EventEmitter } from 'node:events';
 import { RedisService } from '../redis/redis.service';
-import { DatabaseService } from '../database/database.service';
+import { PrismaService } from '../database/prisma.service';
 
 /**
  * Single source of truth for "is this account still allowed to act?".
@@ -22,7 +22,7 @@ export class AccountStatusService {
 
   constructor(
     private readonly redis: RedisService,
-    private readonly db: DatabaseService,
+    private readonly prisma: PrismaService,
   ) {}
 
   /** Forget a cached decision — call after changing an account's status. */
@@ -51,11 +51,11 @@ export class AccountStatusService {
         return false;
       }
     } catch {
-      const r = await this.db.query<{ status: string }>(
-        'SELECT status FROM users WHERE id = $1',
-        [userId],
-      );
-      if (r.rows[0]?.status !== 'active') {
+      const row = await this.prisma.users.findUnique({
+        where: { id: userId },
+        select: { status: true },
+      });
+      if (row?.status !== 'active') {
         this.activeCache.delete(userId);
         return false;
       }
