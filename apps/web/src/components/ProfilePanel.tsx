@@ -140,9 +140,11 @@ export function ProfilePanel({ onClose, onPrefsChange }: ProfilePanelProps) {
         setProfile(profile);
         setDisplayName(profile.displayName);
         setLoadError('');
-        if (profile.avatarUrl) {
-          setAvatarUrl(`${profile.avatarUrl}?v=${Date.now()}`);
-        }
+        // No cache-buster: avatar URLs are signed and already carry a ?token= query string, so
+        // appending ?v=… produced a second '?' that got swallowed into the token value and made
+        // the request 400. A fresh signature is minted per response anyway, so each URL is
+        // already unique and nothing needs busting.
+        setAvatarUrl(profile.avatarUrl ?? null);
       })
       .catch((err: Error) => setLoadError(err.message));
     profileApi.getNotificationPrefs().then(({ prefs }) => { setPrefs(prefs); onPrefsChange?.(prefs); }).catch(() => {});
@@ -172,10 +174,13 @@ export function ProfilePanel({ onClose, onPrefsChange }: ProfilePanelProps) {
     setAvatarUrl(localPreview);
     try {
       const { profile: updated } = await profileApi.uploadAvatar(file);
-      const serverSrc = updated.avatarUrl ? `${updated.avatarUrl}?v=${Date.now()}` : null;
+      // A new upload gets a new storage key and a freshly signed URL, so this is already distinct
+      // from the previous one — see the note above about why a ?v= suffix breaks it.
+      const serverSrc = updated.avatarUrl ?? null;
       setProfile(updated);
       setAvatarUrl(serverSrc);
       updateUser({ avatarUrl: serverSrc ?? undefined });
+      URL.revokeObjectURL(localPreview);
     } catch (err) {
       console.error('Avatar upload failed:', err);
       setAvatarUrl(null);
