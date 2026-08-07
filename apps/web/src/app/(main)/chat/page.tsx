@@ -18,12 +18,53 @@ import { AnnounceWorkspace } from '@/components/AnnounceWorkspace';
 import { ProfilePanel } from '@/components/ProfilePanel';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { BrandLogo } from '@/components/BrandLogo';
+import { ComingSoon, type ComingSoonProps } from '@/components/ComingSoon';
 import { TeamWorkspace } from '@/components/TeamWorkspace';
 import { Avatar } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { useSocket } from '@/context/SocketContext';
 
 type Section = 'chat' | 'teams' | 'dashboard' | 'announcements';
+
+/**
+ * Phase 1 ships Chat only; Teams is Phase 2 and Announce is Phase 3. Sections listed here stay in
+ * the navigation but render a placeholder — remove an entry to turn its feature on, which is the
+ * single change needed to ship a phase.
+ */
+const COMING_SOON: Partial<Record<Section, ComingSoonProps>> = {
+  teams: {
+    icon: faUsers,
+    title: 'Teams',
+    phase: 'Phase 2',
+    description: 'Department and project spaces with their own channels, members and pinned resources.',
+    highlights: [
+      'A shared channel per team, separate from direct messages',
+      'Member lists synced from departments',
+      'Pinned files and links kept with the team',
+    ],
+  },
+  announcements: {
+    icon: faBullhorn,
+    title: 'Announcements',
+    phase: 'Phase 3',
+    description: 'Company-wide posts that reach everyone without adding noise to conversations.',
+    highlights: [
+      'Broadcast to the whole company or a single department',
+      'Read-only channels, so posts are not buried by replies',
+      'Unread badges separate from chat',
+    ],
+  },
+  dashboard: {
+    icon: faGauge,
+    title: 'Admin Dashboard',
+    description: 'User, department and audit-log management for administrators.',
+    highlights: [
+      'Create, disable and remove accounts',
+      'Manage departments and bulk-import users',
+      'Review the audit log',
+    ],
+  },
+};
 
 export default function ChatPage() {
   const { user, logout } = useAuth();
@@ -187,6 +228,7 @@ export default function ChatPage() {
   // ── Nav item helper ──────────────────────────────────────────────────
   function NavItem({ id, label, icon, badge, bottom }: { id: Section; label: string; icon: React.ReactNode; badge?: number; bottom?: boolean }) {
     const active = section === id;
+    const soon = !!COMING_SOON[id];
     return (
       <button
         onClick={() => {
@@ -203,12 +245,25 @@ export default function ChatPage() {
           }
         }}
         className={`relative flex flex-col items-center gap-1 transition-colors rounded-xl ${bottom ? 'flex-1 py-2 px-1' : 'w-full py-3 px-1'}`}
-        style={{ color: active ? 'var(--accent)' : 'var(--text-dim)', background: active ? 'var(--accent-wash)' : 'transparent' }}
-        title={label}
+        style={{
+          color: active ? 'var(--accent)' : 'var(--text-dim)',
+          background: active ? 'var(--accent-wash)' : 'transparent',
+          // Dimmed so the difference reads at a glance, not only after clicking through.
+          opacity: soon && !active ? 0.55 : 1,
+        }}
+        title={soon ? `${label} — coming soon` : label}
       >
         <span className="relative inline-flex">
           {icon}
-          {(badge ?? 0) > 0 && (
+          {soon && (
+            <span
+              className="absolute -top-1 -right-2 w-1.5 h-1.5 rounded-full"
+              style={{ background: 'var(--warning)' }}
+              aria-hidden="true"
+            />
+          )}
+          {/* No unread count on a section that cannot be opened yet. */}
+          {!soon && (badge ?? 0) > 0 && (
             <span className="absolute -top-1.5 -right-1.5 min-w-[16px] h-4 px-1 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center leading-none">
               {(badge ?? 0) > 99 ? '99+' : badge}
             </span>
@@ -293,8 +348,11 @@ export default function ChatPage() {
       {/* ── Main content area ─────────────────────────────────────────── */}
       <main className={`flex-1 flex-col min-w-0 overflow-hidden ${section === 'chat' && !selectedId ? 'hidden lg:flex' : 'flex'}`}>
 
-        {/* Teams: full workspace replaces both sidebar and main content */}
-        {section === 'teams' ? (
+        {/* Sections outside the current phase show a placeholder instead of their workspace, so
+            the roadmap stays visible without presenting unfinished work as ready. */}
+        {COMING_SOON[section] ? (
+          <ComingSoon {...COMING_SOON[section]!} />
+        ) : section === 'teams' ? (
           <TeamWorkspace onMobileDetailChange={setMobileDetailOpen} />
         ) : section === 'announcements' ? (
           <AnnounceWorkspace onMobileDetailChange={setMobileDetailOpen} />
