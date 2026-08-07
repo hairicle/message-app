@@ -1,99 +1,158 @@
 # Staging deployment
 
-| Part | Platform |
-|---|---|
-| API (`apps/api`) | Render — Docker, service `srv-d90vt6ok1i2s7381e05g` |
-| Web (`apps/web`) | Vercel — project `message-app` |
-
-The API deploys from `.github/workflows/deploy-staging.yml`, which triggers Render only after the
-build and all 134 tests pass. Vercel is connected to the repository and builds every branch itself.
-
----
-
-## ⚠️ Read this before merging the monorepo into `main`
-
-Vercel's production deployment currently builds `main` at `1554a8d`, which still has the old
-`frontend/` (Vite) directory. **The moment `main` receives the monorepo, that build breaks** —
-`frontend/` no longer exists.
-
-Two settings have to change in the Vercel project **before** `main` is updated:
-
-1. **Root Directory** → the repository root (not `frontend`).
-   `vercel.json` then supplies the build, because `apps/web` depends on the `@messenger/shared`
-   workspace and that package has to be compiled to `dist/` first — `next build` alone fails.
-2. **Environment variable** `NEXT_PUBLIC_API_URL` → the Render API URL.
-
-This is worth doing on a preview branch first to confirm the build succeeds.
+| Part | Platform | Source |
+|---|---|---|
+| API (`apps/api`) | Render | `apps/api/Dockerfile` |
+| Web (`apps/web`) | Vercel | `vercel.json` |
+| Database + storage | Supabase | separate project from production |
+| Redis | Upstash | separate database from production |
 
 ---
 
-## One-time setup
+## The ordering constraint
 
-### 1. API on Render
+The two deploys depend on each other, so they cannot be set up in parallel:
 
-`render.yaml` documents the service. The existing one can be edited to match, or applied as a
-Blueprint to create a separate staging service.
+```
+   Vercel build  ──needs──▶  the API's URL      (NEXT_PUBLIC_API_URL, baked in at BUILD time)
+   Render API    ──needs──▶  the web's origin   (CORS_ORIGIN, read at RUNTIME)
+```
 
-Set these in the dashboard — they are deliberately not in the repo:
+Because Vercel's dependency is a *build* input and Render's is only a *runtime* one, the way
+through is:
 
-| Variable | Where it comes from |
+1. Deploy the API first and take note of its URL.
+2. Build the web app against that URL.
+3. Go back and tell the API which origin to allow, then restart it.
+
+Doing it in the other order produces a web bundle that calls `localhost:4000`, and no amount of
+changing environment variables afterwards fixes it — only a rebuild does.
+
+---
+
+## Step 1 — Create the staging Supabase project
+
+A separate project from production. Sharing one means test accounts, test messages and any
+destructive experiment land in real data.
+
+1. Create the project, region **Southeast Asia (Singapore)** to sit near the API.
+2. **Storage → create two buckets**: `messenger-files` and `avatars`.
+3. Set **both buckets to private.** New projects create buckets public by default, and public
+   buckets hand out permanent unauthenticated links to every attachment and avatar — the exact
+   exposure the signed-URL work removed.
+4. Collect from **Settings → Database** and **Settings → API**:
+   - pooled connection string (`:6543`, ends `?pgbouncer=true`)
+   - direct connection string (`:5432`)
+   - service role key
+   - project ref, for the storage endpoint
+
+## Step 2 — Create the staging Redis
+
+An Upstash database, also Singapore. Copy its `rediss://…` URL. This holds the session block list,
+so staging must not share production's.
+
+## Step 3 — Apply the schema
+
+The new database is empty. From your machine:
+
+```bash
+cd apps/api
+DIRECT_URL="postgresql://…:5432/postgres?sslmode=verify-full&sslrootcert=./certs/supabase-prod-ca-2021.crt" \
+  npx prisma migrate deploy
+```
+
+Keep the `sslmode=verify-full&sslrootcert=…` suffix — it is what makes the connection verify
+Supabase's certificate instead of trusting anything.
+
+Check the URL before running. Nothing here distinguishes staging from production for you.
+
+## Step 4 — Create the first admin
+
+There is no seed script; the NestJS refactor dropped the old `seed-admin`, so a fresh database has
+no way to log in. Generate a bcrypt hash (cost 12) and insert one row:
+
+```sql
+INSERT INTO users (email, username, display_name, password_hash, role, status)
+VALUES ('admin@company.local', 'admin', 'Admin', '<bcrypt hash>', 'admin', 'active');
+```
+
+## Step 5 — Deploy the API on Render
+
+**New → Web Service**, connect this repository.
+
+| Setting | Value |
 |---|---|
-| `DATABASE_URL` | Staging Supabase → pooled connection (`:6543`, `?pgbouncer=true`) |
-| `DIRECT_URL` | Staging Supabase → direct connection (`:5432`) **plus** `?sslmode=verify-full&sslrootcert=./certs/supabase-prod-ca-2021.crt` |
-| `SUPABASE_SERVICE_KEY` | Staging Supabase → service role key |
+| Branch | `staging` |
+| Runtime | Docker |
+| Dockerfile path | `apps/api/Dockerfile` |
+| Docker context | `.` (repository root) |
+| Health check path | `/health` |
+| Region | Singapore |
+| Auto-deploy | **Off** — the workflow decides when to ship |
+
+Environment variables:
+
+| Key | Value |
+|---|---|
+| `DATABASE_URL` | pooled Supabase string from step 1 |
+| `DIRECT_URL` | direct string **with** the `sslmode=verify-full&sslrootcert=…` suffix |
+| `SUPABASE_SERVICE_KEY` | service role key |
 | `STORAGE_ENDPOINT` | `https://<project-ref>.supabase.co/storage/v1/s3` |
-| `REDIS_URL` | Staging Upstash database (`rediss://…`) |
-| `CORS_ORIGIN`, `FRONTEND_URL` | The Vercel URL the browser loads from |
+| `STORAGE_BUCKET` | `messenger-files` |
+| `AVATAR_BUCKET` | `avatars` |
+| `STORAGE_REGION` | `ap-southeast-1` |
+| `REDIS_URL` | Upstash URL from step 2 |
+| `JWT_SECRET` | a fresh 64-char random hex — never production's |
+| `JWT_EXPIRES_IN` | `8h` |
+| `NODE_ENV` | `production` |
 
-`JWT_SECRET` is generated by Render. Do not paste production's in.
+Leave `CORS_ORIGIN` and `FRONTEND_URL` unset for now — the Vercel URL does not exist yet.
 
-**Use a separate Supabase project.** Pointing staging at production means test accounts, test
-messages and any destructive experiment land in real data.
+Deploy, then **note the service URL**, e.g. `https://messenger-api-staging.onrender.com`.
+Check `<url>/health` responds before continuing.
 
-Turn **off** Render's auto-deploy for the service so the workflow is the only thing that ships.
+`render.yaml` in the repository root describes this same service if you would rather apply it as a
+Blueprint.
 
-### 2. Web on Vercel
+## Step 6 — Deploy the web app on Vercel
 
-- **Root Directory**: repository root
-- **Environment variable**: `NEXT_PUBLIC_API_URL` = the Render API URL, set for every environment
-  the branch builds in
+In the `message-app` project (or a new one for staging):
 
-`vercel.json` handles install and build:
+| Setting | Value |
+|---|---|
+| Root Directory | **repository root** — not `frontend` |
+| Build | supplied by `vercel.json` |
+| `NEXT_PUBLIC_API_URL` | the Render URL from step 5 |
+
+Root Directory matters: `apps/web` depends on the `@messenger/shared` workspace, which resolves to
+`dist/` and has to be compiled first. `vercel.json` runs
 
 ```
 npm ci --legacy-peer-deps
 npm run build --workspace=packages/shared && npm run build --workspace=apps/web
 ```
 
-### 3. Deploy hook
+which `next build` on its own does not do.
+
+Push the `staging` branch and let Vercel build. **Note the resulting URL**, e.g.
+`https://message-app-git-staging-<scope>.vercel.app`.
+
+## Step 7 — Close the loop
+
+Back in Render, set both to the Vercel URL from step 6:
+
+- `CORS_ORIGIN`
+- `FRONTEND_URL`
+
+Restart the service. Until this is done the browser reaches the API and is refused by CORS, which
+usually shows up as every request failing while the API's own logs look healthy.
+
+## Step 8 — Wire the deploy hook
 
 Render service → **Settings → Deploy Hook**. Add the URL to
 **GitHub → Settings → Secrets and variables → Actions** as `RENDER_DEPLOY_HOOK_API`.
 
-### 4. Apply the schema
-
-The staging database starts empty:
-
-```bash
-cd apps/api
-DIRECT_URL="<staging direct url>" npx prisma migrate deploy
-```
-
-Check the URL before running it — this does not distinguish staging from production for you.
-
-### 5. Create the first admin
-
-There is no seed script; the NestJS refactor dropped the old `seed-admin`, so a fresh database has
-no way to log in. Until one exists, insert the first user by hand:
-
-```sql
-INSERT INTO users (email, username, display_name, password_hash, role, status)
-VALUES ('admin@company.local', 'admin', 'Admin', '<bcrypt hash, cost 12>', 'admin', 'active');
-```
-
----
-
-## Deploying
+From then on:
 
 ```bash
 git checkout staging
@@ -101,31 +160,50 @@ git merge --ff-only develop
 git push origin staging
 ```
 
-The workflow type-checks both apps, runs both suites, builds both, then triggers the Render deploy.
-Vercel builds its preview from the same push, independently.
-
-**The two are not gated the same way.** A failing test stops the API deploy but not Vercel's
-preview, because Vercel deploys straight from git. If that matters, disable automatic deployments
-for the branch in the Vercel project and add a Vercel deploy hook to the workflow alongside
-Render's.
+`.github/workflows/deploy-staging.yml` type-checks both apps, runs all 134 tests, builds both, and
+only then triggers the Render deploy. Vercel builds from the same push independently.
 
 ---
 
-## Things worth knowing
+## Verifying it works
 
-**`NEXT_PUBLIC_API_URL` is baked in at build time.** Next inlines `NEXT_PUBLIC_*` during
-`next build`, so the deployment is tied to whichever API URL it was built with — changing it
-afterwards does nothing until a rebuild. This is the usual cause of a deployed web app calling
-`localhost:4000`.
+1. Open the Vercel URL and sign in with the admin from step 4.
+2. Send a message — exercises the API, the database and the socket.
+3. Send an image — exercises Supabase storage and signed URLs.
+4. Open the same account in a second tab and send from one — if the message appears in the other
+   without a reload, the WebSocket connected.
 
-**The browser talks to the API directly, not through Next.** `SocketContext` opens the Socket.IO
-connection against `NEXT_PUBLIC_API_URL`. Next rewrites cannot proxy WebSocket upgrades in
-production, so routing the socket through Vercel would break realtime messaging. That is also why
-the API needs `CORS_ORIGIN` set to the Vercel origin.
+Step 4 is the one that catches a misconfigured `NEXT_PUBLIC_API_URL`: HTTP requests may still work
+through a proxy, but the socket connects directly to the API and fails loudly when the URL is
+wrong.
 
-**Render free instances sleep when idle.** The first request after a quiet spell waits for the
-container to start — fine for staging, not for production.
+---
 
-**Storage buckets must be private.** Attachments and avatars are served through short-lived signed
-URLs. A new Supabase project creates buckets public by default; leaving them that way means staging
-hands out permanent public links to every file.
+## Things that commonly go wrong
+
+**Everything loads but nothing sends.** `CORS_ORIGIN` does not match the Vercel origin. It must be
+the scheme and host with no trailing slash.
+
+**The app calls `localhost:4000` in production.** `NEXT_PUBLIC_API_URL` was set after the build.
+Next inlines `NEXT_PUBLIC_*` at build time — redeploy the web app to pick it up.
+
+**Messages need a refresh to appear.** The socket is not connecting. Same cause as above, or the
+API is asleep.
+
+**Images and avatars 400.** The buckets are private (correct) but the request is not signed — check
+`SUPABASE_SERVICE_KEY` and `STORAGE_ENDPOINT`.
+
+**The first request after a quiet period hangs for ~30s.** Render's free instances sleep when idle.
+Expected for staging.
+
+**`prisma migrate deploy` fails on a self-signed certificate.** The `sslrootcert` path is relative
+to `apps/api`; run the command from that directory.
+
+---
+
+## Before this pattern reaches production
+
+Vercel's production deployment currently builds `main` with Root Directory `frontend`, which the
+monorepo removes. **That build breaks the moment the monorepo lands on `main`** unless Root
+Directory is moved to the repository root and `NEXT_PUBLIC_API_URL` is set, exactly as in step 6.
+Doing staging first is the safe way to prove those settings before production depends on them.
