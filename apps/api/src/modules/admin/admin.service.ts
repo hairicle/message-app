@@ -1,40 +1,38 @@
 import { Injectable } from '@nestjs/common';
-import { DatabaseService } from '../../database/database.service';
+import { Prisma, user_status } from '@prisma/client';
+import { PrismaService } from '../../database/prisma.service';
 import { AuthService } from '../auth/auth.service';
 
 @Injectable()
 export class AdminService {
   constructor(
-    private readonly db: DatabaseService,
+    private readonly prisma: PrismaService,
     private readonly authService: AuthService,
   ) {}
 
   async getStats() {
-    const [totUsers, actUsers, totMsgs, msgs24h, totConvs] = await Promise.all([
-      this.db.query<{ count: number }>('SELECT COUNT(*)::int AS count FROM users'),
-      this.db.query<{ count: number }>(`SELECT COUNT(*)::int AS count FROM users WHERE status = 'active'`),
-      this.db.query<{ count: number }>('SELECT COUNT(*)::int AS count FROM messages WHERE deleted_at IS NULL'),
-      this.db.query<{ count: number }>(`SELECT COUNT(*)::int AS count FROM messages WHERE created_at > now() - interval '24h' AND deleted_at IS NULL`),
-      this.db.query<{ count: number }>('SELECT COUNT(*)::int AS count FROM conversations'),
-    ]);
-    return {
-      stats: {
-        totalUsers: totUsers.rows[0].count,
-        activeUsers: actUsers.rows[0].count,
-        totalMessages: totMsgs.rows[0].count,
-        messagesLast24h: msgs24h.rows[0].count,
-        totalConversations: totConvs.rows[0].count,
-      },
-    };
+    const since24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const [totalUsers, activeUsers, totalMessages, messagesLast24h, totalConversations] =
+      await Promise.all([
+        this.prisma.users.count(),
+        this.prisma.users.count({ where: { status: 'active' } }),
+        this.prisma.messages.count({ where: { deleted_at: null } }),
+        this.prisma.messages.count({ where: { deleted_at: null, created_at: { gt: since24h } } }),
+        this.prisma.conversations.count(),
+      ]);
+    return { stats: { totalUsers, activeUsers, totalMessages, messagesLast24h, totalConversations } };
   }
 
+  // updateMany rather than update throughout: the previous UPDATE … WHERE id = $1 was a no-op for
+  // an unknown id, whereas Prisma's update throws P2025. Keeping the no-op preserves the
+  // controllers' current responses.
   async disableUser(targetId: string) {
-    await this.db.query(`UPDATE users SET status = 'disabled' WHERE id = $1`, [targetId]);
+    await this.prisma.users.updateMany({ where: { id: targetId }, data: { status: 'disabled' } });
     await this.authService.blockUser(targetId);
   }
 
   async enableUser(targetId: string) {
-    await this.db.query(`UPDATE users SET status = 'active' WHERE id = $1`, [targetId]);
+    await this.prisma.users.updateMany({ where: { id: targetId }, data: { status: 'active' } });
     await this.authService.unblockUser(targetId);
   }
 
@@ -42,24 +40,18 @@ export class AdminService {
     displayName?: string; username?: string; email?: string;
     role?: string; department?: string | null; status?: string;
   }) {
-    const updates: string[] = [];
-    const values: unknown[] = [];
-    let idx = 1;
+    const data: Prisma.usersUpdateManyMutationInput = {};
+    if (fields.displayName !== undefined) data.display_name = fields.displayName;
+    if (fields.username !== undefined) data.username = fields.username;
+    if (fields.email !== undefined) data.email = fields.email;
+    if (fields.role !== undefined) data.role = fields.role;
+    // 'in' rather than !== undefined so an explicit null clears the column, as before.
+    if ('department' in fields) data.department = fields.department ?? null;
+    if (fields.status !== undefined) data.status = fields.status as user_status;
 
-    if (fields.displayName !== undefined) { updates.push(`display_name = $${idx++}`); values.push(fields.displayName); }
-    if (fields.username !== undefined) { updates.push(`username = $${idx++}`); values.push(fields.username); }
-    if (fields.email !== undefined) { updates.push(`email = $${idx++}`); values.push(fields.email); }
-    if (fields.role !== undefined) { updates.push(`role = $${idx++}`); values.push(fields.role); }
-    if ('department' in fields) { updates.push(`department = $${idx++}`); values.push(fields.department ?? null); }
-    if (fields.status !== undefined) { updates.push(`status = $${idx++}::user_status`); values.push(fields.status); }
-
-    if (updates.length > 0) {
-      updates.push('updated_at = now()');
-      values.push(targetId);
-      await this.db.query(
-        `UPDATE users SET ${updates.join(', ')} WHERE id = $${idx}`,
-        values,
-      );
+    if (Object.keys(data).length > 0) {
+      data.updated_at = new Date();
+      await this.prisma.users.updateMany({ where: { id: targetId }, data });
     }
 
     if (fields.status === 'disabled') await this.authService.blockUser(targetId);
@@ -69,52 +61,52 @@ export class AdminService {
   }
 
   async deleteUser(targetId: string) {
-    await this.db.query('DELETE FROM users WHERE id = $1', [targetId]);
+    await this.prisma.users.deleteMany({ where: { id: targetId } });
     return { ok: true };
   }
 
   async changeUserRole(targetId: string, role: string) {
-    await this.db.query('UPDATE users SET role = $1 WHERE id = $2', [role, targetId]);
+    await this.prisma.users.updateMany({ where: { id: targetId }, data: { role } });
   }
 
   async syncDepartmentTeams() {
-    const depts = await this.db.query<{ name: string }>('SELECT name FROM departments');
+    const departments = await this.prisma.departments.findMany({ select: { name: true } });
     let synced = 0;
 
-    for (const dept of depts.rows) {
-      // Find or create a team for this department
+    for (const dept of departments) {
+      const existing = await this.prisma.teams.findFirst({
+        where: { name: dept.name },
+        select: { id: true },
+      });
+
       let teamId: string;
-      const existing = await this.db.query<{ id: string }>(
-        'SELECT id FROM teams WHERE name = $1 LIMIT 1',
-        [dept.name],
-      );
-      if (existing.rows[0]) {
-        teamId = existing.rows[0].id;
+      if (existing) {
+        teamId = existing.id;
       } else {
-        const created = await this.db.query<{ id: string }>(
-          `INSERT INTO teams (name, description) VALUES ($1, $2) RETURNING id`,
-          [dept.name, `${dept.name} department team`],
-        );
-        teamId = created.rows[0].id;
-        const conv = await this.db.query<{ id: string }>(
-          `INSERT INTO conversations (team_id, type, name) VALUES ($1, 'group', 'General') RETURNING id`,
-          [teamId],
-        );
-        // Add a placeholder system user as owner to satisfy FK if needed
-        // (conv created without a created_by for the sync path)
-        void conv;
+        const team = await this.prisma.teams.create({
+          data: { name: dept.name, description: `${dept.name} department team` },
+          select: { id: true },
+        });
+        teamId = team.id;
+        // Created without a created_by, matching the previous sync path.
+        await this.prisma.conversations.create({
+          data: { team_id: teamId, type: 'group', name: 'General' },
+          select: { id: true },
+        });
       }
 
-      // Sync all active department users into the team
-      const users = await this.db.query<{ id: string }>(
-        `SELECT id FROM users WHERE department = $1 AND status = 'active'`,
-        [dept.name],
-      );
-      for (const u of users.rows) {
-        await this.db.query(
-          'INSERT INTO team_members (team_id, user_id, role) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING',
-          [teamId, u.id, 'member'],
-        );
+      const users = await this.prisma.users.findMany({
+        where: { department: dept.name, status: 'active' },
+        select: { id: true },
+      });
+
+      for (const user of users) {
+        // upsert with an empty update is the previous ON CONFLICT DO NOTHING.
+        await this.prisma.team_members.upsert({
+          where: { team_id_user_id: { team_id: teamId, user_id: user.id } },
+          update: {},
+          create: { team_id: teamId, user_id: user.id, role: 'member' },
+        });
         synced++;
       }
     }
@@ -123,27 +115,35 @@ export class AdminService {
   }
 
   async listAuditLogs(limit = 100, action?: string) {
-    const filterParams: unknown[] = [];
-    const where = action ? 'WHERE al.action = $1' : '';
-    if (action) filterParams.push(action);
+    const where: Prisma.audit_logsWhereInput = action ? { action } : {};
 
-    const [rows, countRes] = await Promise.all([
-      this.db.query(
-        `SELECT al.id, al.action, al.ip_address AS "ipAddress", al.metadata,
-                al.created_at AS "createdAt", u.email AS "userEmail"
-         FROM audit_logs al
-         LEFT JOIN users u ON u.id = al.user_id
-         ${where}
-         ORDER BY al.created_at DESC
-         LIMIT $${filterParams.length + 1}`,
-        [...filterParams, limit],
-      ),
-      this.db.query<{ count: number }>(
-        `SELECT COUNT(*)::int AS count FROM audit_logs al ${where}`,
-        filterParams,
-      ),
+    const [rows, total] = await Promise.all([
+      this.prisma.audit_logs.findMany({
+        where,
+        orderBy: { created_at: 'desc' },
+        take: limit,
+        select: {
+          id: true,
+          action: true,
+          ip_address: true,
+          metadata: true,
+          created_at: true,
+          // LEFT JOIN: a log whose user has been deleted still appears, with a null email.
+          users: { select: { email: true } },
+        },
+      }),
+      this.prisma.audit_logs.count({ where }),
     ]);
 
-    return { logs: rows.rows, total: countRes.rows[0].count };
+    const logs = rows.map((l) => ({
+      id: l.id,
+      action: l.action,
+      ipAddress: l.ip_address,
+      metadata: l.metadata,
+      createdAt: l.created_at,
+      userEmail: l.users?.email ?? null,
+    }));
+
+    return { logs, total };
   }
 }

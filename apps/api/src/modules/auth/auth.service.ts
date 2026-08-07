@@ -3,29 +3,15 @@ import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
-import { DatabaseService } from '../../database/database.service';
+import { PrismaService } from '../../database/prisma.service';
 import { RedisService } from '../../redis/redis.service';
 import { AccountStatusService } from '../../common/account-status.service';
 import type { User } from '@messenger/shared';
 
-interface UserRow {
-  id: string;
-  email: string;
-  username: string;
-  display_name: string;
-  role: string;
-  status: string;
-  password_hash: string | null;
-  ldap_dn: string | null;
-  totp_secret: string | null;
-  totp_enabled: boolean;
-  avatar_url: string | null;
-}
-
 @Injectable()
 export class AuthService {
   constructor(
-    private readonly db: DatabaseService,
+    private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
@@ -44,13 +30,13 @@ export class AuthService {
   }
 
   async login(email: string, password: string, deviceName = 'default') {
-    const result = await this.db.query<UserRow>(
-      `SELECT id, email, username, display_name, role, status, password_hash,
-              ldap_dn, totp_secret, totp_enabled, avatar_url
-       FROM users WHERE email = $1`,
-      [email],
-    );
-    const user = result.rows[0];
+    const user = await this.prisma.users.findUnique({
+      where: { email },
+      select: {
+        id: true, email: true, username: true, display_name: true, role: true, status: true,
+        password_hash: true, totp_secret: true, totp_enabled: true, avatar_url: true,
+      },
+    });
 
     if (!user || !user.password_hash) throw new UnauthorizedException('Invalid email or password');
     if (user.status !== 'active') throw new ForbiddenException('Account is disabled');
@@ -86,15 +72,13 @@ export class AuthService {
     const alreadyUsed = await this.redis.get(replayKey);
     if (alreadyUsed) throw new UnauthorizedException('TOTP session has already been used');
 
-    const result = await this.db.query<{
-      id: string; email: string; username: string; display_name: string;
-      role: string; status: string; totp_secret: string | null; totp_enabled: boolean;
-      avatar_url: string | null;
-    }>(
-      'SELECT id, email, username, display_name, role, status, totp_secret, totp_enabled, avatar_url FROM users WHERE id = $1',
-      [payload.sub],
-    );
-    const user = result.rows[0];
+    const user = await this.prisma.users.findUnique({
+      where: { id: payload.sub },
+      select: {
+        id: true, email: true, username: true, display_name: true, role: true,
+        status: true, totp_secret: true, totp_enabled: true, avatar_url: true,
+      },
+    });
     if (!user || user.status !== 'active') throw new UnauthorizedException('Account not found or disabled');
     if (!user.totp_enabled || !user.totp_secret) throw new BadRequestException('2FA is not enabled on this account');
 
@@ -117,13 +101,10 @@ export class AuthService {
   }
 
   async getUserById(id: string): Promise<User | null> {
-    const result = await this.db.query<{
-      id: string; email: string; username: string; display_name: string; role: string; avatar_url: string | null;
-    }>(
-      'SELECT id, email, username, display_name, role, avatar_url FROM users WHERE id = $1',
-      [id],
-    );
-    const row = result.rows[0];
+    const row = await this.prisma.users.findUnique({
+      where: { id },
+      select: { id: true, email: true, username: true, display_name: true, role: true, avatar_url: true },
+    });
     if (!row) return null;
     return {
       id: row.id,
@@ -162,18 +143,23 @@ export class AuthService {
   }
 
   private async getOrCreateDevice(userId: string, deviceName: string): Promise<string> {
-    const existing = await this.db.query<{ id: string }>(
-      'SELECT id FROM user_devices WHERE user_id = $1 AND device_name = $2',
-      [userId, deviceName],
-    );
-    if (existing.rows[0]) {
-      await this.db.query('UPDATE user_devices SET last_active_at = now() WHERE id = $1', [existing.rows[0].id]);
-      return existing.rows[0].id;
+    // (user_id, device_name) carries only an index, not a unique constraint, so this stays a
+    // find-then-create rather than an upsert — same shape, and same race window, as before.
+    const existing = await this.prisma.user_devices.findFirst({
+      where: { user_id: userId, device_name: deviceName },
+      select: { id: true },
+    });
+    if (existing) {
+      await this.prisma.user_devices.update({
+        where: { id: existing.id },
+        data: { last_active_at: new Date() },
+      });
+      return existing.id;
     }
-    const created = await this.db.query<{ id: string }>(
-      'INSERT INTO user_devices (user_id, device_name, last_active_at) VALUES ($1, $2, now()) RETURNING id',
-      [userId, deviceName],
-    );
-    return created.rows[0].id;
+    const created = await this.prisma.user_devices.create({
+      data: { user_id: userId, device_name: deviceName, last_active_at: new Date() },
+      select: { id: true },
+    });
+    return created.id;
   }
 }

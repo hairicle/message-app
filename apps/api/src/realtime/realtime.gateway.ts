@@ -71,8 +71,11 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 
     socket.data.user = payload;
     const { user } = socket.data;
-    await this.joinConversationRooms(socket);
+    // Join the per-user room before the conversation lookup, not after: that lookup is a database
+    // round-trip, and a disable landing during it would find the room empty and leave this socket
+    // connected until the client happened to reconnect.
     socket.join(`user:${user.id}`);
+    await this.joinConversationRooms(socket);
     await this.markOnline(user.id);
     await this.broadcastPresence(user.id, 'online');
   }
