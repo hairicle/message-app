@@ -2,6 +2,8 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { apiFetch, getAuthToken, API_URL } from '../lib/api/client';
+import * as teamsApi from '../lib/api/teams';
+import { markMessageRead } from '../lib/api/messages';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import type { Message } from '@messenger/shared';
@@ -88,7 +90,7 @@ export function TeamWorkspace({ onMobileDetailChange }: { onMobileDetailChange?:
     setMembers([]);
     setPinned([]);
 
-    apiFetch<{ members: TeamMember[] }>(`/api/teams/${activeTeamId}/members`)
+    teamsApi.listTeamMembers(activeTeamId)
       .then(({ members }) => setMembers(members))
       .catch(() => {});
 
@@ -102,7 +104,7 @@ export function TeamWorkspace({ onMobileDetailChange }: { onMobileDetailChange?:
         setMessages(messages);
         if (messages.length > 0) {
           const lastMsg = messages[messages.length - 1];
-          apiFetch(`/api/messages/${lastMsg.id}/read`, { method: 'POST' }).catch(() => {});
+          markMessageRead(lastMsg.id).catch(() => {});
         }
       })
       .catch(() => {});

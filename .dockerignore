@@ -1,6 +1,6 @@
-frontend/
-backend/node_modules/
-backend/dist/
-backend/.env
 **/.git
 **/node_modules
+**/dist
+**/.next
+**/.env
+**/.env.local

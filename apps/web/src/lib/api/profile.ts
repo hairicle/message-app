@@ -1,4 +1,4 @@
-import { API_URL, apiFetch } from './client';
+import { apiFetch } from './client';
 import type { UserProfile } from '@messenger/shared';
 
 export function getMyProfile() {
@@ -19,10 +19,6 @@ export function uploadAvatar(file: File) {
     method: 'POST',
     body: fd,
   });
-}
-
-export function getAvatarUrl(userId: string) {
-  return `${API_URL}/api/users/${userId}/avatar`;
 }
 
 export function changePassword(currentPassword: string, newPassword: string) {
