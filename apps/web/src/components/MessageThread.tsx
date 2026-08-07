@@ -1010,7 +1010,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
               ) : (() => {
                 const avatarUrl = mine ? user!.avatarUrl : sender?.avatar_url;
                 const name = mine ? user!.displayName : (sender?.display_name ?? '?');
-                return <Avatar name={name} avatarUrl={avatarUrl} size={32} radius={8} fontSize={13} className="self-end mb-0.5" title={name} />;
+                return <Avatar name={name} avatarUrl={avatarUrl} size={32} radius={8} fontSize={13} className="self-end mb-0.5" title={name} viewable />;
               })()}
 
               {/* Column: name+time header + bubble + reactions */}
