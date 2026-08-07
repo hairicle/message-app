@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaClient } from '@prisma/client';
 import { PrismaPg } from '@prisma/adapter-pg';
 import { Pool } from 'pg';
+import { supabaseRootCa } from './supabase-ca';
 
 /**
  * Prisma Client wired to the same pooled Supabase connection the raw pg layer used.
@@ -19,15 +20,24 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   constructor(config: ConfigService) {
     const url = new URL(config.get<string>('DATABASE_URL')!);
+    const ca = supabaseRootCa();
+    if (!ca) {
+      // Failing closed: this connection carries password hashes, TOTP secrets and message bodies
+      // across the public internet, so it must not silently fall back to an unverified channel.
+      throw new Error(
+        `Supabase CA certificate not found (expected apps/api/certs/supabase-prod-ca-2021.crt). ` +
+          `Refusing to open an unverified TLS connection to ${url.hostname}.`,
+      );
+    }
+
     const pool = new Pool({
       host: url.hostname,
       port: Number(url.port) || 5432,
       database: url.pathname.slice(1),
       user: url.username,
       password: url.password,
-      // TODO: pin the Supabase CA and turn verification back on — the pooler presents a
-      // self-signed chain, so this currently accepts any certificate.
-      ssl: { rejectUnauthorized: false },
+      // Verified against Supabase's pinned root; see supabase-ca.ts for how it was obtained.
+      ssl: { ca, rejectUnauthorized: true },
       max: 20,
       idleTimeoutMillis: 30_000,
       connectionTimeoutMillis: 5_000,

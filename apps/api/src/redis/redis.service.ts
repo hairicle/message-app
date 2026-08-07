@@ -10,7 +10,10 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit() {
     this.client = new Redis(this.config.get<string>('REDIS_URL')!, {
-      tls: { rejectUnauthorized: false },
+      // Upstash serves a publicly-trusted certificate, so the system trust store is enough — no
+      // pinned CA needed here, unlike Postgres. This previously accepted any certificate, which
+      // left the session block list open to tampering by anyone on the network path.
+      tls: { rejectUnauthorized: true },
       lazyConnect: true,
     });
     this.client.ping().catch((err: Error) => {
