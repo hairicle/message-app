@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DatabaseService } from '../../database/database.service';
+import { AvatarUrlService } from '../../common/avatar-url.service';
 import { randomUUID } from 'crypto';
 import * as path from 'path';
 
@@ -9,6 +10,7 @@ export class UsersService {
   constructor(
     private readonly db: DatabaseService,
     private readonly config: ConfigService,
+    private readonly avatars: AvatarUrlService,
   ) {}
 
   private get storageBase(): string {
@@ -99,8 +101,15 @@ export class UsersService {
       const msg = await res.text().catch(() => 'storage error');
       throw new BadRequestException(`Avatar upload failed: ${msg}`);
     }
-    const avatarUrl = `${this.storageBase}/storage/v1/object/public/${this.avatarBucket}/${storageKey}`;
-    await this.db.query('UPDATE users SET avatar_url = $1, updated_at = now() WHERE id = $2', [avatarUrl, userId]);
+    // Store the object key, not a public URL — the bucket is private and the response layer signs
+    // it per request. Rows written before this change still hold a full URL; AvatarUrlService
+    // accepts both shapes, so no backfill is needed.
+    const previous = await this.db.query<{ avatar_url: string | null }>(
+      'SELECT avatar_url FROM users WHERE id = $1',
+      [userId],
+    );
+    await this.db.query('UPDATE users SET avatar_url = $1, updated_at = now() WHERE id = $2', [storageKey, userId]);
+    this.avatars.invalidate(previous.rows[0]?.avatar_url ?? null);
     return this.getProfile(userId);
   }
 
