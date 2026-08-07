@@ -1,14 +1,16 @@
-# Render Blueprint — staging environment.
+# Render Blueprint — the API only.
 #
-# Both apps deploy from the Dockerfiles already in the repo. Create the environment once with
-# "New > Blueprint" pointing at the `staging` branch; after that, deploys are triggered by the
-# GitHub Actions workflow so that nothing ships unless the build and 134 tests pass first.
+# The web app is deployed on Vercel (project `message-app`), not here. See vercel.json and
+# docs/staging-deploy.md.
 #
-# Secrets are deliberately not in this file. Every value marked `sync: false` must be set in the
-# Render dashboard (or an env group) before the first deploy.
+# An API service already exists at srv-d90vt6ok1i2s7381e05g; this file documents its shape so it
+# can be recreated or duplicated for staging. Applying it as a Blueprint creates a *new* service —
+# to change the existing one, edit it in the dashboard to match.
+#
+# Secrets are deliberately absent. Every value marked `sync: false` must be set in the Render
+# dashboard before the first deploy.
 
 services:
-  # ── API ────────────────────────────────────────────────────────────────────
   - type: web
     name: messenger-api-staging
     runtime: docker
@@ -21,7 +23,7 @@ services:
     # CI decides when to deploy, so Render must not also deploy on push.
     autoDeploy: false
     envVars:
-      # main.ts reads PORT and falls back to 4000; Render assigns this.
+      # main.ts reads PORT and falls back to 4000; Render assigns it.
       - key: NODE_ENV
         value: production
       - key: JWT_EXPIRES_IN
@@ -29,7 +31,7 @@ services:
 
       # Supabase — use a SEPARATE project from production. DIRECT_URL must keep the
       # sslmode=verify-full&sslrootcert=./certs/supabase-prod-ca-2021.crt suffix so migrations
-      # verify the certificate, matching the runtime connection.
+      # verify the certificate, matching how the runtime connection is pinned.
       - key: DATABASE_URL
         sync: false
       - key: DIRECT_URL
@@ -45,46 +47,17 @@ services:
       - key: STORAGE_REGION
         value: ap-southeast-1
 
-      # Generate a fresh 64-char secret for staging; never reuse the production one.
+      # A fresh secret for staging; never reuse production's.
       - key: JWT_SECRET
         generateValue: true
 
       - key: REDIS_URL
         sync: false
 
-      # The browser calls the API cross-origin, so it has to be allowed explicitly.
+      # The Vercel origin the browser loads from. Cross-origin, so the API has to allow it
+      # explicitly — set this to the staging web URL, e.g.
+      # https://message-app-git-staging-<scope>.vercel.app
       - key: CORS_ORIGIN
-        fromService:
-          type: web
-          name: messenger-web-staging
-          property: host
+        sync: false
       - key: FRONTEND_URL
-        fromService:
-          type: web
-          name: messenger-web-staging
-          property: host
-
-  # ── Web ────────────────────────────────────────────────────────────────────
-  - type: web
-    name: messenger-web-staging
-    runtime: docker
-    dockerfilePath: ./apps/web/Dockerfile
-    dockerContext: .
-    branch: staging
-    plan: free
-    region: singapore
-    autoDeploy: false
-    envVars:
-      - key: NODE_ENV
-        value: production
-
-      # Next inlines NEXT_PUBLIC_* at BUILD time, so this must also be passed as a Docker build
-      # arg — the Dockerfile already declares ARG NEXT_PUBLIC_API_URL. Setting it only at runtime
-      # leaves the bundle pointing at localhost:4000, which breaks both fetches and the Socket.IO
-      # connection, since SocketContext connects to API_URL directly rather than through the
-      # Next rewrite (rewrites do not proxy WebSocket upgrades in production).
-      - key: NEXT_PUBLIC_API_URL
-        fromService:
-          type: web
-          name: messenger-api-staging
-          property: host
+        sync: false

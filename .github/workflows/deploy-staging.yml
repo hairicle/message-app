@@ -53,13 +53,13 @@ jobs:
         env:
           NEXT_PUBLIC_API_URL: http://localhost:4000
 
-  deploy:
-    name: Trigger Render deploy
+  deploy-api:
+    name: Trigger Render deploy (API)
     needs: verify
     runs-on: ubuntu-latest
     steps:
-      # Deploy hooks rather than an API key: each hook is scoped to one service, so a leaked hook
-      # can only redeploy that service — it cannot read or change anything in the account.
+      # A deploy hook rather than an account API key: the hook is scoped to one service, so a leak
+      # can only redeploy that service — it cannot read or change anything else in the account.
       - name: Deploy API
         run: |
           if [ -z "${{ secrets.RENDER_DEPLOY_HOOK_API }}" ]; then
@@ -68,15 +68,10 @@ jobs:
           fi
           curl --fail --silent --show-error "${{ secrets.RENDER_DEPLOY_HOOK_API }}"
 
-      - name: Deploy web
-        run: |
-          if [ -z "${{ secrets.RENDER_DEPLOY_HOOK_WEB }}" ]; then
-            echo "RENDER_DEPLOY_HOOK_WEB is not set — add it in Settings > Secrets."
-            exit 1
-          fi
-          curl --fail --silent --show-error "${{ secrets.RENDER_DEPLOY_HOOK_WEB }}"
-
+      # The web app is on Vercel, which is connected to this repository and builds a preview for
+      # every branch on its own. It is not triggered here — but note that means Vercel's preview
+      # is not gated on the tests above, unlike the API.
       - name: Summary
         run: |
-          echo "Both services were asked to deploy. Render builds them independently —" >> $GITHUB_STEP_SUMMARY
-          echo "watch progress in the Render dashboard." >> $GITHUB_STEP_SUMMARY
+          echo "API deploy requested on Render." >> $GITHUB_STEP_SUMMARY
+          echo "The web app deploys separately on Vercel from the same push." >> $GITHUB_STEP_SUMMARY
