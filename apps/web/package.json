@@ -6,7 +6,10 @@
     "dev": "next dev -p 3100",
     "build": "next build",
     "start": "next start -p 3100",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
     "@fortawesome/fontawesome-svg-core": "^7.3.0",
@@ -25,9 +28,11 @@
     "@types/node": "^22.0.0",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
+    "@vitest/coverage-v8": "^3.2.7",
     "eslint": "^9.0.0",
     "eslint-config-next": "^15.4.1",
     "tailwindcss": "^4.3.1",
-    "typescript": "~5.5.0"
+    "typescript": "~5.5.0",
+    "vitest": "^3.2.7"
   }
 }

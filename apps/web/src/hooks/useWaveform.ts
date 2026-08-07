@@ -25,6 +25,20 @@ export function placeholderWaveform(key: string, bars: number): Waveform {
   });
 }
 
+/**
+ * Scale raw RMS values into the 0..1 range used for bar heights.
+ *
+ * Normalising against a high percentile rather than the outright maximum keeps a single clipped
+ * spike from crushing every other bar to nothing, and the curve lifts quiet detail into view —
+ * speech is mostly low-amplitude, so a linear scale leaves the strip looking flat.
+ */
+export function normalisePeaks(peaks: number[]): Waveform {
+  if (peaks.length === 0) return [];
+  const sorted = [...peaks].sort((a, b) => a - b);
+  const reference = Math.max(sorted[Math.floor(sorted.length * 0.95)] ?? 0, 1e-4);
+  return peaks.map((p) => Math.min(1, (p / reference) ** 0.55));
+}
+
 async function decode(url: string, bars: number): Promise<Waveform> {
   const res = await fetch(url);
   const bytes = await res.arrayBuffer();
@@ -48,14 +62,7 @@ async function decode(url: string, bars: number): Promise<Waveform> {
     peaks.push(Math.sqrt(sum / Math.max(1, end - start))); // RMS reads better than raw peak
   }
 
-  // Normalise against a high percentile rather than the outright maximum: a single clipped spike
-  // would otherwise crush every other bar to nothing.
-  const sorted = [...peaks].sort((a, b) => a - b);
-  const reference = Math.max(sorted[Math.floor(sorted.length * 0.95)] ?? 0, 1e-4);
-
-  // Speech is mostly low-amplitude, so a linear scale leaves the strip looking flat. The curve
-  // lifts quiet detail into view the way an audio editor's display does.
-  return peaks.map((p) => Math.min(1, (p / reference) ** 0.55));
+  return normalisePeaks(peaks);
 }
 
 /**

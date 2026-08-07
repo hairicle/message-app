@@ -39,7 +39,7 @@ interface MessageThreadProps {
   onBack?: () => void;
 }
 
-function addMessage(messages: Message[], message: Message): Message[] {
+export function addMessage(messages: Message[], message: Message): Message[] {
   if (messages.some((m) => m.id === message.id)) return messages;
   const newTime = new Date(message.createdAt).getTime();
   const insertAt = messages.findIndex((m) => new Date(m.createdAt).getTime() > newTime);
