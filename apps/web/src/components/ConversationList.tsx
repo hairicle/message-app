@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import type { Conversation } from '@messenger/shared';
 import { getConversationTitle, getOtherMember } from '../utils/conversation';
-import { decodeMessageText } from '../utils/text';
+import { messagePreview } from '../utils/messagePreview';
 import { Avatar, SearchInput } from './ui';
 
 interface ConversationListProps {
@@ -50,19 +50,17 @@ export function ConversationList({
           const isActive = conversation.id === selectedId;
           const unread = conversation.unread_count ?? 0;
 
-          // Last message preview
-          let preview = '';
-          if (conversation.last_message) {
-            const lm = conversation.last_message;
-            if (lm.deleted_at) {
-              preview = 'Message deleted';
-            } else if (lm.type !== 'text') {
-              const icons: Record<string, string> = { image: '📷', video: '🎥', audio: '🎤', file: '📎' };
-              preview = `${lm.sender_display_name}: ${icons[lm.type] ?? '📎'}`;
-            } else {
-              preview = `${lm.sender_display_name}: ${decodeMessageText(lm.ciphertext)}`;
-            }
-          }
+          // Last message preview — attachments read as "Name sent a photo" rather than an
+          // emoji the reader has to decode.
+          const lm = conversation.last_message;
+          const preview = lm
+            ? messagePreview({
+                type: lm.type,
+                ciphertext: lm.ciphertext,
+                senderName: lm.sender_display_name,
+                deleted: !!lm.deleted_at,
+              })
+            : '';
 
           const subtitleText = other
             ? isOnline ? '● Online' : '○ Offline'

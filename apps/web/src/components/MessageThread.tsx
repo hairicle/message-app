@@ -25,7 +25,8 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { getConversationTitle, getOtherMember } from '../utils/conversation';
 import { decodeMessageText, encodeMessageText } from '../utils/text';
-import { FaBookmark, FaCheck, FaChevronDown, FaChevronLeft, FaMagnifyingGlass, FaMicrophone, FaPaperPlane, FaPaperclip, FaPen, FaPhone, FaRegBookmark, FaRegCopy, FaReply, FaShare, FaThumbtack, FaTrash, FaXmark } from 'react-icons/fa6';
+import { FaBookmark, FaCheck, FaChevronDown, FaChevronLeft, FaImage, FaMagnifyingGlass, FaMicrophone, FaPaperPlane, FaPaperclip, FaPen, FaPhone, FaRegBookmark, FaRegCopy, FaReply, FaShare, FaThumbtack, FaTrash, FaVideo, FaXmark } from 'react-icons/fa6';
+import { attachmentNoun } from '../utils/messagePreview';
 
 function attachmentTypeForMime(mimeType: string): MessageType {
   if (mimeType.startsWith('image/')) return 'image';
@@ -623,13 +624,13 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
             return (
               <span className="flex items-center gap-1">
                 <FaMicrophone size={14} className="flex-shrink-0" style={{ color: 'var(--accent)' }} />
-                <span>{durationSecs != null ? fmtSecs(durationSecs) : 'Voice message'}</span>
+                <span>{durationSecs != null ? fmtSecs(durationSecs) : attachmentNoun('audio')}</span>
               </span>
             );
           }
-          if (type === 'image') return <span className="flex items-center gap-1"><svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--accent)' }}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg><span>Photo</span></span>;
-          if (type === 'video') return <span className="flex items-center gap-1"><svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--accent)' }}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg><span>Video</span></span>;
-          if (type === 'file') return <span className="flex items-center gap-1"><FaPaperclip size={14} className="flex-shrink-0" style={{ color: 'var(--accent)' }} /><span>File</span></span>;
+          if (type === 'image') return <span className="flex items-center gap-1"><FaImage size={13} className="flex-shrink-0" style={{ color: 'var(--accent)' }} /><span>{attachmentNoun(type)}</span></span>;
+          if (type === 'video') return <span className="flex items-center gap-1"><FaVideo size={13} className="flex-shrink-0" style={{ color: 'var(--accent)' }} /><span>{attachmentNoun(type)}</span></span>;
+          if (type === 'file') return <span className="flex items-center gap-1"><FaPaperclip size={14} className="flex-shrink-0" style={{ color: 'var(--accent)' }} /><span>{attachmentNoun(type)}</span></span>;
           return <span className="truncate">{decodeMessageText(ciphertext)}</span>;
         }
 

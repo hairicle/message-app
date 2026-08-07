@@ -7,6 +7,7 @@ import * as teamsApi from '@/lib/api/teams';
 import * as profileApi from '@/lib/api/profile';
 import { playNotificationSound } from '@/utils/notificationSound';
 import { decodeMessageText } from '@/utils/text';
+import { messagePreview } from '@/utils/messagePreview';
 import type { Conversation, Message, Team } from '@messenger/shared';
 import { ConversationList } from '@/components/ConversationList';
 import { MessageThread } from '@/components/MessageThread';
@@ -162,7 +163,9 @@ export default function ChatPage() {
           // whole tab being backgrounded, since you're usually still "in" the app on another section.
           if (prefs.desktopEnabled && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
             const senderName = m.senderId ? (c.members?.find((mb) => mb.user_id === m.senderId)?.display_name ?? 'New message') : 'New message';
-            const body = m.type === 'text' ? decodeMessageText(m.ciphertext) : `Sent a ${m.type === 'file' ? 'file' : m.type}`;
+            // The sender is already the notification title, so the body omits the name — and this
+            // no longer produces "Sent a image".
+            const body = messagePreview({ type: m.type, ciphertext: m.ciphertext });
             try {
               new Notification(senderName, { body, tag: c.id });
             } catch (err) {
