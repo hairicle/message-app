@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  // Test files and their helpers must not reach dist: src/testing/prisma-mock.ts imports vitest,
+  // a devDependency that is absent from a production install.
+  "exclude": ["node_modules", "dist", "src/**/*.spec.ts", "src/testing/**"]
+}

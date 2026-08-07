@@ -6,7 +6,9 @@
     "dev": "nest start --watch",
     "build": "nest build",
     "start": "node dist/main",
-    "lint": "eslint src"
+    "lint": "eslint src",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@messenger/shared": "^0.0.1",
@@ -52,6 +54,7 @@
     "@types/pg": "^8.11.14",
     "@types/qrcode": "^1.5.5",
     "prisma": "^7.9.1",
-    "typescript": "~5.5.0"
+    "typescript": "~5.5.0",
+    "vitest": "^3.2.7"
   }
 }
