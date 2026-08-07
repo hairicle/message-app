@@ -1,0 +1,90 @@
+# Render Blueprint — staging environment.
+#
+# Both apps deploy from the Dockerfiles already in the repo. Create the environment once with
+# "New > Blueprint" pointing at the `staging` branch; after that, deploys are triggered by the
+# GitHub Actions workflow so that nothing ships unless the build and 134 tests pass first.
+#
+# Secrets are deliberately not in this file. Every value marked `sync: false` must be set in the
+# Render dashboard (or an env group) before the first deploy.
+
+services:
+  # ── API ────────────────────────────────────────────────────────────────────
+  - type: web
+    name: messenger-api-staging
+    runtime: docker
+    dockerfilePath: ./apps/api/Dockerfile
+    dockerContext: .
+    branch: staging
+    plan: free
+    region: singapore
+    healthCheckPath: /health
+    # CI decides when to deploy, so Render must not also deploy on push.
+    autoDeploy: false
+    envVars:
+      # main.ts reads PORT and falls back to 4000; Render assigns this.
+      - key: NODE_ENV
+        value: production
+      - key: JWT_EXPIRES_IN
+        value: 8h
+
+      # Supabase — use a SEPARATE project from production. DIRECT_URL must keep the
+      # sslmode=verify-full&sslrootcert=./certs/supabase-prod-ca-2021.crt suffix so migrations
+      # verify the certificate, matching the runtime connection.
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_URL
+        sync: false
+      - key: SUPABASE_SERVICE_KEY
+        sync: false
+      - key: STORAGE_ENDPOINT
+        sync: false
+      - key: STORAGE_BUCKET
+        value: messenger-files
+      - key: AVATAR_BUCKET
+        value: avatars
+      - key: STORAGE_REGION
+        value: ap-southeast-1
+
+      # Generate a fresh 64-char secret for staging; never reuse the production one.
+      - key: JWT_SECRET
+        generateValue: true
+
+      - key: REDIS_URL
+        sync: false
+
+      # The browser calls the API cross-origin, so it has to be allowed explicitly.
+      - key: CORS_ORIGIN
+        fromService:
+          type: web
+          name: messenger-web-staging
+          property: host
+      - key: FRONTEND_URL
+        fromService:
+          type: web
+          name: messenger-web-staging
+          property: host
+
+  # ── Web ────────────────────────────────────────────────────────────────────
+  - type: web
+    name: messenger-web-staging
+    runtime: docker
+    dockerfilePath: ./apps/web/Dockerfile
+    dockerContext: .
+    branch: staging
+    plan: free
+    region: singapore
+    autoDeploy: false
+    envVars:
+      - key: NODE_ENV
+        value: production
+
+      # Next inlines NEXT_PUBLIC_* at BUILD time, so this must also be passed as a Docker build
+      # arg — the Dockerfile already declares ARG NEXT_PUBLIC_API_URL. Setting it only at runtime
+      # leaves the bundle pointing at localhost:4000, which breaks both fetches and the Socket.IO
+      # connection, since SocketContext connects to API_URL directly rather than through the
+      # Next rewrite (rewrites do not proxy WebSocket upgrades in production).
+      - key: NEXT_PUBLIC_API_URL
+        fromService:
+          type: web
+          name: messenger-api-staging
+          property: host

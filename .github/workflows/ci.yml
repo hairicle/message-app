@@ -2,9 +2,11 @@ name: CI
 
 on:
   push:
+    # staging is covered by deploy-staging.yml, which runs this same sequence before deploying —
+    # listing it here too would build every commit twice.
     branches: [main, develop, dev2]
   pull_request:
-    branches: [main, develop]
+    branches: [main, develop, staging]
 
 # The repo is a single npm workspace root — one lockfile, one install, then per-workspace steps.
 # (The previous version still pointed at the pre-monorepo frontend/ and backend/ directories and

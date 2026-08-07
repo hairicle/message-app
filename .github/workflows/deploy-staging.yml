@@ -1,0 +1,82 @@
+name: Deploy staging
+
+# Render's own auto-deploy is turned off in render.yaml so that this workflow is the only thing
+# that ships: the build and the full test suite run first, and a failure stops the deploy instead
+# of shipping a broken staging environment and finding out from the app.
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: Build & test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci --legacy-peer-deps
+
+      - name: Build shared types
+        run: npm run build --workspace=packages/shared
+
+      # The API's types come from the generated client; this needs no database.
+      - name: Generate Prisma client
+        run: npx prisma generate
+        working-directory: apps/api
+
+      - name: Type-check API
+        run: npx tsc --noEmit
+        working-directory: apps/api
+
+      - name: Type-check web
+        run: npx tsc --noEmit
+        working-directory: apps/web
+
+      - name: Unit tests (API)
+        run: npm test --workspace=apps/api
+
+      - name: Unit tests (web)
+        run: npm test --workspace=apps/web
+
+      - name: Build API
+        run: npm run build --workspace=apps/api
+
+      - name: Build web
+        run: npm run build --workspace=apps/web
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:4000
+
+  deploy:
+    name: Trigger Render deploy
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      # Deploy hooks rather than an API key: each hook is scoped to one service, so a leaked hook
+      # can only redeploy that service — it cannot read or change anything in the account.
+      - name: Deploy API
+        run: |
+          if [ -z "${{ secrets.RENDER_DEPLOY_HOOK_API }}" ]; then
+            echo "RENDER_DEPLOY_HOOK_API is not set — add it in Settings > Secrets."
+            exit 1
+          fi
+          curl --fail --silent --show-error "${{ secrets.RENDER_DEPLOY_HOOK_API }}"
+
+      - name: Deploy web
+        run: |
+          if [ -z "${{ secrets.RENDER_DEPLOY_HOOK_WEB }}" ]; then
+            echo "RENDER_DEPLOY_HOOK_WEB is not set — add it in Settings > Secrets."
+            exit 1
+          fi
+          curl --fail --silent --show-error "${{ secrets.RENDER_DEPLOY_HOOK_WEB }}"
+
+      - name: Summary
+        run: |
+          echo "Both services were asked to deploy. Render builds them independently —" >> $GITHUB_STEP_SUMMARY
+          echo "watch progress in the Render dashboard." >> $GITHUB_STEP_SUMMARY

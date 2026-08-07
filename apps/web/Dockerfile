@@ -34,4 +34,8 @@ COPY --from=builder /app/apps/web/public ./apps/web/public
 
 WORKDIR /app/apps/web
 EXPOSE 3000
-CMD ["npm", "run", "start"]
+
+# Not `npm run start`: that script pins -p 3100 for local development, while a platform host
+# assigns the port through $PORT and health-checks that. Falling back to 3000 keeps the plain
+# `docker run` case working and matches EXPOSE above.
+CMD ["sh", "-c", "npx next start -p ${PORT:-3000}"]
