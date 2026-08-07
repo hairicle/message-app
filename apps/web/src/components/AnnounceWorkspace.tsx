@@ -7,10 +7,9 @@ import type { Conversation, Message } from '@messenger/shared';
 import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { decodeMessageText, encodeMessageText } from '../utils/text';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faPaperPlane, faBullhorn, faLock, faUsers, faGlobe, faBuilding, faChevronLeft } from '@fortawesome/free-solid-svg-icons';
 import { Avatar, Badge, SearchInput } from './ui';
 import { Linkify } from './Linkify';
+import { FaBuilding, FaBullhorn, FaChevronLeft, FaGlobe, FaLock, FaPaperPlane, FaUsers } from 'react-icons/fa6';
 
 interface ChannelGroup {
   label: string;
@@ -114,13 +113,13 @@ export function AnnounceWorkspace({ onMobileDetailChange }: { onMobileDetailChan
   const groups: ChannelGroup[] = [
     {
       label: 'General',
-      icon: <FontAwesomeIcon icon={faGlobe} style={{ fontSize: 11 }} />,
+      icon: <FaGlobe size={11} />,
       channels: channels.filter((c) => !c.team_id),
     },
     ...teams
       .map((t) => ({
         label: t.name,
-        icon: <FontAwesomeIcon icon={faBuilding} style={{ fontSize: 11 }} />,
+        icon: <FaBuilding size={11} />,
         channels: channels.filter((c) => c.team_id === t.id),
       }))
       .filter((g) => g.channels.length > 0),
@@ -136,7 +135,7 @@ export function AnnounceWorkspace({ onMobileDetailChange }: { onMobileDetailChan
       <div className={`flex-col flex-shrink-0 lg:w-[260px] ${selectedId ? 'hidden lg:flex' : 'flex w-full'}`} style={{ borderRight: '1px solid var(--border)', background: 'var(--bg)' }}>
         <div className="px-5 pt-6 pb-4">
           <div className="flex items-center gap-2 mb-4">
-            <FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 16, color: 'var(--accent)' }} />
+            <FaBullhorn size={16} style={{ color: 'var(--accent)' }} />
             <h1 className="text-[22px] font-bold tracking-tight" style={{ color: 'var(--text)' }}>Announcements</h1>
           </div>
           <SearchInput value={search} onChange={setSearch} placeholder="Find a channel…" />
@@ -157,7 +156,7 @@ export function AnnounceWorkspace({ onMobileDetailChange }: { onMobileDetailChan
                   <button key={c.id} onClick={() => setSelectedId(c.id)}
                     className="w-full flex items-center gap-2.5 px-4 py-2 text-left transition-colors"
                     style={{ background: active ? 'var(--accent-wash)' : 'transparent' }}>
-                    <FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 14, flexShrink: 0 }} />
+                    <FaBullhorn size={14} style={{ flexShrink: 0 }} />
                     <div className="flex-1 min-w-0">
                       <p className="text-[15px] font-medium truncate" style={{ color: active ? 'var(--accent)' : 'var(--text-muted)' }}>
                         {c.name ?? 'Unnamed'}
@@ -177,7 +176,7 @@ export function AnnounceWorkspace({ onMobileDetailChange }: { onMobileDetailChan
 
           {groups.every((g) => g.channels.length === 0) && (
             <div className="flex flex-col items-center justify-center py-12 gap-3 px-6 text-center">
-              <FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 32, color: 'var(--text-dim)', opacity: 0.4 }} />
+              <FaBullhorn size={32} style={{ color: 'var(--text-dim)', opacity: 0.4 }} />
               <p className="text-[12px]" style={{ color: 'var(--text-dim)' }}>
                 No announcement channels yet
               </p>
@@ -192,9 +191,9 @@ export function AnnounceWorkspace({ onMobileDetailChange }: { onMobileDetailChan
           {/* Header */}
           <div className="flex items-center gap-3 px-4 py-4 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}>
             <button onClick={() => setSelectedId(null)} className="lg:hidden p-2 -ml-1 rounded-xl transition-colors flex-shrink-0" style={{ color: 'var(--text-dim)', border: '1px solid var(--border)' }} aria-label="Back">
-              <FontAwesomeIcon icon={faChevronLeft} style={{ fontSize: 16 }} />
+              <FaChevronLeft size={16} />
             </button>
-            <FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 20 }} />
+            <FaBullhorn size={20} />
             <div className="flex-1 min-w-0">
               <p className="text-[18px] font-semibold truncate" style={{ color: 'var(--text)' }}>{selected.name}</p>
               <p className="text-[14px]" style={{ color: 'var(--text-dim)' }}>
@@ -202,14 +201,14 @@ export function AnnounceWorkspace({ onMobileDetailChange }: { onMobileDetailChan
               </p>
             </div>
             <button onClick={() => setShowInfo((v) => !v)} className="btn-ghost">
-              <FontAwesomeIcon icon={faUsers} style={{ fontSize: 13 }} /> {members.length}
+              <FaUsers size={13} /> {members.length}
             </button>
           </div>
 
           {/* Channel-only notice for non-admins */}
           {!isAdmin && (
             <div className="flex items-center gap-2 px-6 py-2 flex-shrink-0" style={{ background: 'var(--panel-alt)', borderBottom: '1px solid var(--border)' }}>
-              <FontAwesomeIcon icon={faLock} style={{ fontSize: 12, color: 'var(--text-dim)' }} />
+              <FaLock size={12} style={{ color: 'var(--text-dim)' }} />
               <p className="text-[13px] font-mono" style={{ color: 'var(--text-dim)' }}>
                 This is a broadcast channel — only admins and owners can post
               </p>
@@ -220,7 +219,7 @@ export function AnnounceWorkspace({ onMobileDetailChange }: { onMobileDetailChan
           <div ref={scrollRef} className="flex-1 overflow-y-auto px-6 py-6 flex flex-col gap-5" style={{ background: 'var(--bg)' }}>
             {messages.length === 0 && (
               <div className="flex flex-col items-center justify-center h-full gap-3">
-                <FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 36, opacity: 0.3 }} />
+                <FaBullhorn size={36} style={{ opacity: 0.3 }} />
                 <p className="text-[13px]" style={{ color: 'var(--text-dim)' }}>No announcements yet</p>
               </div>
             )}
@@ -260,14 +259,14 @@ export function AnnounceWorkspace({ onMobileDetailChange }: { onMobileDetailChan
                 placeholder={`Post to ${selected.name}…`}
                 className="input-base flex-1" />
               <button type="submit" disabled={!draft.trim() || sending} className="btn-primary disabled:opacity-40">
-                <FontAwesomeIcon icon={faPaperPlane} style={{ fontSize: 13 }} /> Post
+                <FaPaperPlane size={13} /> Post
               </button>
             </form>
           )}
         </div>
       ) : (
         <div className="flex-1 flex flex-col items-center justify-center gap-4" style={{ background: 'var(--bg)' }}>
-          <FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 48, color: 'var(--text-dim)', opacity: 0.3 }} />
+          <FaBullhorn size={48} style={{ color: 'var(--text-dim)', opacity: 0.3 }} />
           <p className="text-[13px]" style={{ color: 'var(--text-dim)' }}>Select a channel to read announcements</p>
         </div>
       )}

@@ -1,10 +1,10 @@
 'use client';
 
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
+import type { IconType } from 'react-icons';
+
 
 export interface ComingSoonProps {
-  icon: IconDefinition;
+  icon: IconType;
   title: string;
   /** What the feature will do, in the user's terms. */
   description: string;
@@ -19,7 +19,7 @@ export interface ComingSoonProps {
  * Shown instead of the real workspace so the roadmap is discoverable without exposing work in
  * progress as if it were finished.
  */
-export function ComingSoon({ icon, title, description, phase, highlights }: ComingSoonProps) {
+export function ComingSoon({ icon: Icon, title, description, phase, highlights }: ComingSoonProps) {
   return (
     <div className="flex-1 flex items-center justify-center p-6 overflow-y-auto">
       <div className="w-full max-w-md text-center">
@@ -33,7 +33,7 @@ export function ComingSoon({ icon, title, description, phase, highlights }: Comi
             color: 'var(--accent)',
           }}
         >
-          <FontAwesomeIcon icon={icon} style={{ fontSize: 26 }} />
+          <Icon size={26} />
         </span>
 
         <div className="flex items-center justify-center gap-2 mb-2">

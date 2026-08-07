@@ -8,10 +8,9 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import type { Message } from '@messenger/shared';
 import { decodeMessageText, encodeMessageText } from '../utils/text';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faUsers, faThumbTack, faFile, faLink, faPaperclip, faPaperPlane, faXmark, faChevronLeft } from '@fortawesome/free-solid-svg-icons';
 import { Avatar, Badge, SearchInput } from './ui';
 import { Linkify } from './Linkify';
+import { FaChevronLeft, FaFile, FaLink, FaPaperPlane, FaPaperclip, FaThumbtack, FaUsers, FaXmark } from 'react-icons/fa6';
 
 // ── Types (aligned to actual API responses) ───────────────────────────────────
 interface TeamSummary {
@@ -248,7 +247,7 @@ export function TeamWorkspace({ onMobileDetailChange }: { onMobileDetailChange?:
           {/* Header */}
           <div className="flex items-center gap-3 px-4 py-4 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)', background: 'var(--bg)' }}>
             <button onClick={() => setActiveTeamId(null)} className="lg:hidden p-2 -ml-1 rounded-xl transition-colors btn-icon flex-shrink-0" aria-label="Back">
-              <FontAwesomeIcon icon={faChevronLeft} style={{ fontSize: 16 }} />
+              <FaChevronLeft size={16} />
             </button>
             <Avatar name={activeTeam.name} size={36} radius={8} fontSize={14} />
             <div className="flex-1 min-w-0">
@@ -258,7 +257,7 @@ export function TeamWorkspace({ onMobileDetailChange }: { onMobileDetailChange?:
               </p>
             </div>
             <button onClick={() => setShowMembers((v) => !v)} className="btn-ghost">
-              <FontAwesomeIcon icon={faUsers} style={{ fontSize: 13 }} /> {members.length}
+              <FaUsers size={13} /> {members.length}
             </button>
           </div>
 
@@ -333,7 +332,7 @@ export function TeamWorkspace({ onMobileDetailChange }: { onMobileDetailChange?:
                       {m.attachment && (
                         <div className="inline-flex items-center gap-2 px-2 py-1.5 rounded-lg"
                           style={{ background: isMe ? 'rgba(255,255,255,0.15)' : 'var(--panel-alt)', border: `1px solid ${isMe ? 'rgba(255,255,255,0.2)' : 'var(--border)'}` }}>
-                          <FontAwesomeIcon icon={faFile} style={{ fontSize: 13, color: isMe ? '#fff' : 'var(--text-muted)', flexShrink: 0 }} />
+                          <FaFile size={13} style={{ color: isMe ? '#fff' : 'var(--text-muted)', flexShrink: 0 }} />
                           <span className="text-[13px]" style={{ color: isMe ? '#fff' : 'var(--text)' }}>{m.attachment.name}</span>
                           <span className="font-mono text-[11px]" style={{ color: isMe ? 'rgba(255,255,255,0.6)' : 'var(--text-dim)' }}>{m.attachment.sizeKb} KB</span>
                         </div>
@@ -357,7 +356,7 @@ export function TeamWorkspace({ onMobileDetailChange }: { onMobileDetailChange?:
           {/* Composer */}
           <form onSubmit={handleSend} className="flex items-center gap-2 px-6 py-4 flex-shrink-0" style={{ borderTop: '1px solid var(--border)', background: 'var(--panel)' }}>
             <button type="button" onClick={() => fileInputRef.current?.click()} className="btn-icon" title="Attach file">
-              <FontAwesomeIcon icon={faPaperclip} style={{ fontSize: 15 }} />
+              <FaPaperclip size={15} />
             </button>
             <input ref={fileInputRef} type="file" className="hidden" onChange={handleAttach} />
             <input value={draft} onChange={(e) => setDraft(e.target.value)}
@@ -365,7 +364,7 @@ export function TeamWorkspace({ onMobileDetailChange }: { onMobileDetailChange?:
               placeholder={`Message ${activeTeam.name}…`}
               className="input-base flex-1" />
             <button type="submit" disabled={!draft.trim() || sending} className="btn-primary disabled:opacity-40">
-              <FontAwesomeIcon icon={faPaperPlane} style={{ fontSize: 13 }} />
+              <FaPaperPlane size={13} />
             </button>
           </form>
         </div>
@@ -384,7 +383,7 @@ export function TeamWorkspace({ onMobileDetailChange }: { onMobileDetailChange?:
           <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
             <span className="font-mono text-[13px] uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>Workspace</span>
             <button onClick={() => setShowMembers(false)} className="btn-icon" style={{ width: 22, height: 22 }}>
-              <FontAwesomeIcon icon={faXmark} style={{ fontSize: 11 }} />
+              <FaXmark size={11} />
             </button>
           </div>
 
@@ -392,7 +391,7 @@ export function TeamWorkspace({ onMobileDetailChange }: { onMobileDetailChange?:
             {/* Pinned shelf */}
             <div className="px-5 py-4" style={{ borderBottom: '1px solid var(--border)' }}>
               <div className="flex items-center gap-1.5 mb-3">
-                <FontAwesomeIcon icon={faThumbTack} style={{ fontSize: 13, color: 'var(--text-dim)' }} />
+                <FaThumbtack size={13} style={{ color: 'var(--text-dim)' }} />
                 <span className="font-mono text-[12.5px] uppercase tracking-wide" style={{ color: 'var(--text-dim)' }}>Pinned</span>
               </div>
               {pinned.length > 0 ? (
@@ -402,8 +401,8 @@ export function TeamWorkspace({ onMobileDetailChange }: { onMobileDetailChange?:
                       className="flex items-center gap-2 px-2.5 py-2 rounded-lg border transition-colors"
                       style={{ borderColor: 'var(--border)', background: 'var(--panel)' }}>
                       {p.type === 'file'
-                        ? <FontAwesomeIcon icon={faFile} style={{ fontSize: 13, color: 'var(--text-muted)', flexShrink: 0 }} />
-                        : <FontAwesomeIcon icon={faLink} style={{ fontSize: 13, color: 'var(--text-muted)', flexShrink: 0 }} />}
+                        ? <FaFile size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                        : <FaLink size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />}
                       <div className="min-w-0">
                         <p className="text-[13.5px] truncate" style={{ color: 'var(--text)' }}>{p.title}</p>
                         <p className="font-mono text-[12px]" style={{ color: 'var(--text-dim)' }}>

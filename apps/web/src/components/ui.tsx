@@ -1,8 +1,7 @@
 'use client';
 
 import React from 'react';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faMagnifyingGlass } from '@fortawesome/free-solid-svg-icons';
+import { FaMagnifyingGlass } from 'react-icons/fa6';
 import { UserProfileCard } from './UserProfileCard';
 
 /**
@@ -121,7 +120,7 @@ interface SearchInputProps {
 export function SearchInput({ value, onChange, placeholder, className = '' }: SearchInputProps) {
   return (
     <div className={`relative ${className}`}>
-      <FontAwesomeIcon icon={faMagnifyingGlass} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ fontSize: 13, color: 'var(--text-dim)' }} />
+      <FaMagnifyingGlass size={13} className="absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" style={{ color: 'var(--text-dim)' }} />
       <input
         value={value}
         onChange={(e) => onChange(e.target.value)}

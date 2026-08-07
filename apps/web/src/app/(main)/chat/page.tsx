@@ -2,8 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTheme } from '@/context/ThemeContext';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import { faBullhorn, faMessage, faUsers, faGauge, faRightFromBracket, faSun, faMoon, faComments } from '@fortawesome/free-solid-svg-icons';
 import * as conversationsApi from '@/lib/api/conversations';
 import * as teamsApi from '@/lib/api/teams';
 import * as profileApi from '@/lib/api/profile';
@@ -23,6 +21,7 @@ import { TeamWorkspace } from '@/components/TeamWorkspace';
 import { Avatar } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { useSocket } from '@/context/SocketContext';
+import { FaBullhorn, FaComments, FaGauge, FaMessage, FaMoon, FaRightFromBracket, FaSun, FaUsers } from 'react-icons/fa6';
 
 type Section = 'chat' | 'teams' | 'dashboard' | 'announcements';
 
@@ -33,7 +32,7 @@ type Section = 'chat' | 'teams' | 'dashboard' | 'announcements';
  */
 const COMING_SOON: Partial<Record<Section, ComingSoonProps>> = {
   teams: {
-    icon: faUsers,
+    icon: FaUsers,
     title: 'Teams',
     phase: 'Phase 2',
     description: 'Department and project spaces with their own channels, members and pinned resources.',
@@ -44,7 +43,7 @@ const COMING_SOON: Partial<Record<Section, ComingSoonProps>> = {
     ],
   },
   announcements: {
-    icon: faBullhorn,
+    icon: FaBullhorn,
     title: 'Announcements',
     phase: 'Phase 3',
     description: 'Company-wide posts that reach everyone without adding noise to conversations.',
@@ -55,7 +54,7 @@ const COMING_SOON: Partial<Record<Section, ComingSoonProps>> = {
     ],
   },
   dashboard: {
-    icon: faGauge,
+    icon: FaGauge,
     title: 'Admin Dashboard',
     description: 'User, department and audit-log management for administrators.',
     highlights: [
@@ -281,20 +280,20 @@ export default function ChatPage() {
         {/* Company mark */}
         <BrandLogo height={30} maxWidth={52} className="mb-3" />
 
-        <NavItem id="chat" label="Chat" badge={chatUnread} icon={<FontAwesomeIcon icon={faMessage} style={{ fontSize: 18 }} />} />
-        <NavItem id="teams" label="Teams" badge={teamUnread} icon={<FontAwesomeIcon icon={faUsers} style={{ fontSize: 18 }} />} />
-        <NavItem id="announcements" label="Announce" badge={announceUnread} icon={<FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 18 }} />} />
+        <NavItem id="chat" label="Chat" badge={chatUnread} icon={<FaMessage size={18} />} />
+        <NavItem id="teams" label="Teams" badge={teamUnread} icon={<FaUsers size={18} />} />
+        <NavItem id="announcements" label="Announce" badge={announceUnread} icon={<FaBullhorn size={18} />} />
         {user.role === 'admin' && (
-          <NavItem id="dashboard" label="Dashboard" icon={<FontAwesomeIcon icon={faGauge} style={{ fontSize: 18 }} />} />
+          <NavItem id="dashboard" label="Dashboard" icon={<FaGauge size={18} />} />
         )}
 
         <div className="flex-1" />
         <button onClick={toggleTheme} title={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
           className="transition-colors p-2 rounded-xl mb-1 hover-panel-alt" style={{ color: 'var(--text-dim)' }}>
-          <FontAwesomeIcon icon={theme === 'dark' ? faSun : faMoon} style={{ fontSize: 18 }} />
+          {theme === 'dark' ? <FaSun size={18} /> : <FaMoon size={18} />}
         </button>
         <button onClick={handleSignOut} className="transition-colors p-2 rounded-xl hover-panel-alt" style={{ color: 'var(--text-dim)' }} title="Sign out">
-          <FontAwesomeIcon icon={faRightFromBracket} style={{ fontSize: 18 }} />
+          <FaRightFromBracket size={18} />
         </button>
 
         {/* User avatar — anchored to the bottom, below the account actions */}
@@ -367,7 +366,7 @@ export default function ChatPage() {
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-3" style={{ color: 'var(--text-dim)' }}>
-            <FontAwesomeIcon icon={faComments} style={{ fontSize: 64, opacity: 0.2 }} />
+            <FaComments size={64} style={{ opacity: 0.2 }} />
             <p className="text-sm">Select a conversation to start chatting</p>
           </div>
         )}
@@ -375,11 +374,11 @@ export default function ChatPage() {
 
       {/* ── Mobile bottom tab bar ───────────────────────────────────────── */}
       <nav className={`lg:hidden fixed bottom-0 inset-x-0 z-50 ${(section === 'chat' && selectedId) || mobileDetailOpen ? 'hidden' : 'flex'}`} style={{ background: 'var(--bg)', borderTop: '1px solid var(--border)', paddingBottom: 'env(safe-area-inset-bottom)', minHeight: 56 }}>
-        <NavItem bottom id="chat" label="Chat" badge={chatUnread} icon={<FontAwesomeIcon icon={faMessage} style={{ fontSize: 18 }} />} />
-        <NavItem bottom id="teams" label="Teams" badge={teamUnread} icon={<FontAwesomeIcon icon={faUsers} style={{ fontSize: 18 }} />} />
-        <NavItem bottom id="announcements" label="Announce" badge={announceUnread} icon={<FontAwesomeIcon icon={faBullhorn} style={{ fontSize: 18 }} />} />
+        <NavItem bottom id="chat" label="Chat" badge={chatUnread} icon={<FaMessage size={18} />} />
+        <NavItem bottom id="teams" label="Teams" badge={teamUnread} icon={<FaUsers size={18} />} />
+        <NavItem bottom id="announcements" label="Announce" badge={announceUnread} icon={<FaBullhorn size={18} />} />
         {user.role === 'admin' && (
-          <NavItem bottom id="dashboard" label="Dashboard" icon={<FontAwesomeIcon icon={faGauge} style={{ fontSize: 18 }} />} />
+          <NavItem bottom id="dashboard" label="Dashboard" icon={<FaGauge size={18} />} />
         )}
         <button
           onClick={() => setShowProfile(true)}

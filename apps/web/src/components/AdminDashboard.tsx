@@ -5,11 +5,10 @@ import * as XLSX from 'xlsx';
 import { API_URL, apiFetch, getAuthToken } from '../lib/api/client';
 import * as departmentsApi from '../lib/api/departments';
 import type { Department } from '../lib/api/departments';
-import { FontAwesomeIcon } from '@fortawesome/react-fontawesome';
-import type { IconDefinition } from '@fortawesome/fontawesome-svg-core';
-import { faChartLine, faUsers, faSitemap, faFileLines, faPlus, faUpload, faDownload, faRotate, faPen, faTrash, faChevronRight, faPause, faPlay, faXmark, faArrowsRotate } from '@fortawesome/free-solid-svg-icons';
 import { Avatar, Badge, StatusDot, SearchInput } from './ui';
 import { useConfirm } from './ConfirmDialog';
+import { FaArrowsRotate, FaChartLine, FaChevronRight, FaDownload, FaFileLines, FaPause, FaPen, FaPlay, FaPlus, FaRotate, FaSitemap, FaTrash, FaUpload, FaUsers, FaXmark } from 'react-icons/fa6';
+import type { IconType } from 'react-icons';
 
 type AdminTab = 'overview' | 'users' | 'departments' | 'logs';
 
@@ -250,11 +249,11 @@ export function AdminDashboard() {
     u.username.toLowerCase().includes(userSearch.toLowerCase()),
   );
 
-  const tabs: { id: AdminTab; label: string; icon: IconDefinition; count?: number }[] = [
-    { id: 'overview',    label: 'Overview',    icon: faChartLine },
-    { id: 'users',       label: 'Users',       icon: faUsers, count: users.length || undefined },
-    { id: 'departments', label: 'Departments', icon: faSitemap, count: departments.length || undefined },
-    { id: 'logs',        label: 'Audit Logs',  icon: faFileLines },
+  const tabs: { id: AdminTab; label: string; icon: IconType; count?: number }[] = [
+    { id: 'overview',    label: 'Overview',    icon: FaChartLine },
+    { id: 'users',       label: 'Users',       icon: FaUsers, count: users.length || undefined },
+    { id: 'departments', label: 'Departments', icon: FaSitemap, count: departments.length || undefined },
+    { id: 'logs',        label: 'Audit Logs',  icon: FaFileLines },
   ];
 
   return (
@@ -277,7 +276,7 @@ export function AdminDashboard() {
               <button key={t.id} onClick={() => setTab(t.id)}
                 className="flex items-center gap-1.5 px-4 py-2.5 font-mono text-[14px] font-medium border-b-2 transition-colors"
                 style={{ borderColor: active ? 'var(--accent)' : 'transparent', color: active ? 'var(--text)' : 'var(--text-muted)', marginBottom: '-1px' }}>
-                <FontAwesomeIcon icon={t.icon} style={{ fontSize: 14 }} />
+                <t.icon size={14} />
                 {t.label}
                 {t.count !== undefined && (
                   <span className="text-[10.5px] px-1.5 rounded-full" style={{ color: active ? 'var(--accent)' : 'var(--text-dim)', background: active ? 'var(--accent-wash)' : 'var(--panel-alt)' }}>
@@ -320,10 +319,10 @@ export function AdminDashboard() {
                     .then(({ synced }) => { window.alert(`Synced ${synced} users to department teams.`); apiFetch<{ stats: Stats }>('/api/admin/stats').then(({ stats }) => setStats(stats)).catch(() => {}); })
                     .catch((e) => window.alert((e as Error).message));
                 }} className="btn-primary">
-                  <FontAwesomeIcon icon={faRotate} style={{ fontSize: 13 }} /> Sync department teams
+                  <FaRotate size={13} /> Sync department teams
                 </button>
-                <button onClick={() => setTab('users')} className="btn-ghost"><FontAwesomeIcon icon={faUsers} style={{ fontSize: 13 }} /> Manage users</button>
-                <button onClick={() => setTab('departments')} className="btn-ghost"><FontAwesomeIcon icon={faSitemap} style={{ fontSize: 13 }} /> Manage departments</button>
+                <button onClick={() => setTab('users')} className="btn-ghost"><FaUsers size={13} /> Manage users</button>
+                <button onClick={() => setTab('departments')} className="btn-ghost"><FaSitemap size={13} /> Manage departments</button>
               </div>
             </div>
           </div>
@@ -336,12 +335,12 @@ export function AdminDashboard() {
               <div className="flex-1 min-w-48">
                 <SearchInput value={userSearch} onChange={setUserSearch} placeholder="Search by name, email or username…" />
               </div>
-              <button onClick={() => setShowCreateUser((v) => !v)} className="btn-primary"><FontAwesomeIcon icon={faPlus} style={{ fontSize: 13 }} /> New user</button>
+              <button onClick={() => setShowCreateUser((v) => !v)} className="btn-primary"><FaPlus size={13} /> New user</button>
               <button onClick={() => importInputRef.current?.click()} disabled={importing} className="btn-ghost disabled:opacity-50">
-                <FontAwesomeIcon icon={faUpload} style={{ fontSize: 13 }} /> {importing ? 'Importing…' : 'Import Excel'}
+                <FaUpload size={13} /> {importing ? 'Importing…' : 'Import Excel'}
               </button>
-              <button onClick={downloadTemplate} className="btn-ghost"><FontAwesomeIcon icon={faDownload} style={{ fontSize: 13 }} /> Template</button>
-              <button onClick={loadUsers} className="btn-icon" title="Refresh"><FontAwesomeIcon icon={faArrowsRotate} style={{ fontSize: 14 }} /></button>
+              <button onClick={downloadTemplate} className="btn-ghost"><FaDownload size={13} /> Template</button>
+              <button onClick={loadUsers} className="btn-icon" title="Refresh"><FaArrowsRotate size={14} /></button>
               <input ref={importInputRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={handleImportFile} />
             </div>
 
@@ -355,7 +354,7 @@ export function AdminDashboard() {
                     Import complete — <span style={{ color: 'var(--accent)' }}>{importResult.created} created</span>
                     {importResult.failed.length > 0 && <span style={{ color: 'var(--warning)', marginLeft: 8 }}>{importResult.failed.length} failed</span>}
                   </p>
-                  <button onClick={() => setImportResult(null)} className="btn-icon" style={{ width: 22, height: 22 }}><FontAwesomeIcon icon={faXmark} style={{ fontSize: 12 }} /></button>
+                  <button onClick={() => setImportResult(null)} className="btn-icon" style={{ width: 22, height: 22 }}><FaXmark size={12} /></button>
                 </div>
                 {importResult.failed.length > 0 && (
                   <ul className="space-y-1">
@@ -441,13 +440,13 @@ export function AdminDashboard() {
                         <td className="td-cell">
                           <div className="flex gap-1.5 justify-end items-center">
                             <button onClick={() => editingUser?.id === u.id ? setEditingUser(null) : startEditUser(u)} className="btn-icon" title="Edit">
-                              {editingUser?.id === u.id ? <FontAwesomeIcon icon={faXmark} style={{ fontSize: 13 }} /> : <FontAwesomeIcon icon={faPen} style={{ fontSize: 13 }} />}
+                              {editingUser?.id === u.id ? <FaXmark size={13} /> : <FaPen size={13} />}
                             </button>
                             <button onClick={() => handleToggleStatus(u.id, u.status)} className="btn-icon" title={u.status === 'active' ? 'Disable' : 'Enable'}>
-                              {u.status === 'active' ? <FontAwesomeIcon icon={faPause} style={{ fontSize: 13 }} /> : <FontAwesomeIcon icon={faPlay} style={{ fontSize: 13 }} />}
+                              {u.status === 'active' ? <FaPause size={13} /> : <FaPlay size={13} />}
                             </button>
                             <button onClick={() => handleDeleteUser(u.id, u.display_name)} className="btn-icon" style={{ color: 'var(--danger)' }} title="Delete">
-                              <FontAwesomeIcon icon={faTrash} style={{ fontSize: 13 }} />
+                              <FaTrash size={13} />
                             </button>
                           </div>
                         </td>
@@ -516,7 +515,7 @@ export function AdminDashboard() {
               <form onSubmit={handleCreateDept} className="flex gap-3">
                 <input value={newDeptName} onChange={(e) => setNewDeptName(e.target.value)} placeholder="Department name" required className="input-base flex-1" />
                 <input value={newDeptDesc} onChange={(e) => setNewDeptDesc(e.target.value)} placeholder="Description (optional)" className="input-base flex-1" />
-                <button type="submit" className="btn-primary"><FontAwesomeIcon icon={faPlus} style={{ fontSize: 13 }} /> Add</button>
+                <button type="submit" className="btn-primary"><FaPlus size={13} /> Add</button>
               </form>
             </div>
 
@@ -529,7 +528,7 @@ export function AdminDashboard() {
                   <div key={d.id} className="rounded-lg overflow-hidden border" style={{ background: 'var(--panel)', borderColor: 'var(--border)' }}>
                     <div className="flex items-center gap-3 px-5 py-4">
                       <button onClick={() => setExpandedDept(isExpanded ? null : d.id)} className="flex items-center gap-3 flex-1 min-w-0 text-left">
-                        <FontAwesomeIcon icon={faChevronRight} style={{ fontSize: 14, color: 'var(--text-dim)', transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
+                        <FaChevronRight size={14} style={{ color: 'var(--text-dim)', transform: isExpanded ? 'rotate(90deg)' : 'none', transition: 'transform 0.15s' }} />
                         <div className="dept-icon">{d.name.slice(0, 1).toUpperCase()}</div>
                         <div className="min-w-0">
                           {editingDept?.id !== d.id && (
@@ -541,8 +540,8 @@ export function AdminDashboard() {
                         </div>
                         <span className="ml-auto flex-shrink-0"><Badge tone="accent">{members.length} member{members.length !== 1 ? 's' : ''}</Badge></span>
                       </button>
-                      <button onClick={() => setEditingDept(editingDept?.id === d.id ? null : d)} className="btn-icon" title="Edit"><FontAwesomeIcon icon={faPen} style={{ fontSize: 13 }} /></button>
-                      <button onClick={() => handleDeleteDept(d.id, d.name)} className="btn-icon" style={{ color: 'var(--danger)' }} title="Delete"><FontAwesomeIcon icon={faTrash} style={{ fontSize: 13 }} /></button>
+                      <button onClick={() => setEditingDept(editingDept?.id === d.id ? null : d)} className="btn-icon" title="Edit"><FaPen size={13} /></button>
+                      <button onClick={() => handleDeleteDept(d.id, d.name)} className="btn-icon" style={{ color: 'var(--danger)' }} title="Delete"><FaTrash size={13} /></button>
                     </div>
                     {editingDept?.id === d.id && (
                       <div className="px-5 pb-4 pt-3" style={{ borderTop: '1px solid var(--border)' }}>
@@ -567,7 +566,7 @@ export function AdminDashboard() {
                                 </div>
                                 <Badge tone={u.role === 'admin' ? 'warning' : 'neutral'}>{u.role}</Badge>
                                 <Badge tone={u.status === 'active' ? 'accent' : 'danger'}>{u.status}</Badge>
-                                <button onClick={() => handleRemoveFromDept(u.id)} title="Remove" className="btn-icon ml-1"><FontAwesomeIcon icon={faXmark} style={{ fontSize: 12 }} /></button>
+                                <button onClick={() => handleRemoveFromDept(u.id)} title="Remove" className="btn-icon ml-1"><FaXmark size={12} /></button>
                               </li>
                             ))}
                           </ul>
