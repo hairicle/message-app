@@ -1,6 +1,7 @@
 import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { DatabaseService } from '../../database/database.service';
+import { Prisma } from '@prisma/client';
+import { PrismaService } from '../../database/prisma.service';
 import { AvatarUrlService } from '../../common/avatar-url.service';
 import { randomUUID } from 'crypto';
 import * as path from 'path';
@@ -8,7 +9,7 @@ import * as path from 'path';
 @Injectable()
 export class UsersService {
   constructor(
-    private readonly db: DatabaseService,
+    private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     private readonly avatars: AvatarUrlService,
   ) {}
@@ -28,15 +29,13 @@ export class UsersService {
   }
 
   async getProfile(userId: string) {
-    const r = await this.db.query<{
-      id: string; email: string; username: string; display_name: string;
-      avatar_url: string | null; department: string | null; role: string;
-    }>(
-      `SELECT id, email, username, display_name, avatar_url, department, role
-       FROM users WHERE id = $1`,
-      [userId],
-    );
-    const row = r.rows[0];
+    const row = await this.prisma.users.findUnique({
+      where: { id: userId },
+      select: {
+        id: true, email: true, username: true, display_name: true,
+        avatar_url: true, department: true, role: true,
+      },
+    });
     if (!row) return null;
     return {
       id: row.id, email: row.email, username: row.username,
@@ -45,46 +44,53 @@ export class UsersService {
     };
   }
 
+  // Note: listDirectory and listUsers deliberately return snake_case rows — the web app reads
+  // `avatar_url`, `display_name` and `created_at` directly from these payloads.
   async listDirectory(currentUserId: string) {
-    const r = await this.db.query<{
-      id: string; username: string; display_name: string; avatar_url: string | null; department: string | null;
-    }>(
-      `SELECT id, username, display_name, avatar_url, department
-       FROM users WHERE id != $1 AND status = 'active'
-       ORDER BY display_name`,
-      [currentUserId],
-    );
-    return r.rows;
+    return this.prisma.users.findMany({
+      where: { id: { not: currentUserId }, status: 'active' },
+      select: { id: true, username: true, display_name: true, avatar_url: true, department: true },
+      orderBy: { display_name: 'asc' },
+    });
   }
 
   async listUsers() {
-    const r = await this.db.query(
-      `SELECT id, email, username, display_name, role, department, status, created_at
-       FROM users ORDER BY created_at DESC`,
-    );
-    return { users: r.rows };
+    const users = await this.prisma.users.findMany({
+      select: {
+        id: true, email: true, username: true, display_name: true,
+        role: true, department: true, status: true, created_at: true,
+      },
+      orderBy: { created_at: 'desc' },
+    });
+    return { users };
   }
 
   async createUser(data: { email: string; username: string; displayName: string; password: string; role?: string; department?: string | null }) {
     const bcrypt = await import('bcryptjs');
     const hash = await bcrypt.hash(data.password, 12);
-    const r = await this.db.query<{ id: string }>(
-      `INSERT INTO users (email, username, display_name, password_hash, role, department, status)
-       VALUES ($1, $2, $3, $4, $5, $6, 'active') RETURNING id`,
-      [data.email, data.username, data.displayName, hash, data.role ?? 'staff', data.department ?? null],
-    );
-    return { id: r.rows[0].id };
+    const user = await this.prisma.users.create({
+      data: {
+        email: data.email,
+        username: data.username,
+        display_name: data.displayName,
+        password_hash: hash,
+        role: data.role ?? 'staff',
+        department: data.department ?? null,
+        status: 'active',
+      },
+      select: { id: true },
+    });
+    return { id: user.id };
   }
 
   async updateProfile(userId: string, data: { displayName?: string; username?: string }) {
-    await this.db.query(
-      `UPDATE users SET
-         display_name = COALESCE($1, display_name),
-         username = COALESCE($2, username),
-         updated_at = now()
-       WHERE id = $3`,
-      [data.displayName ?? null, data.username ?? null, userId],
-    );
+    // The previous SQL used COALESCE so a missing field left the column untouched; omitting the
+    // key from `data` has the same effect. Only these two fields are ever written, which is what
+    // keeps a forged `role` in the request body from taking effect.
+    const patch: Prisma.usersUpdateInput = { updated_at: new Date() };
+    if (data.displayName !== undefined) patch.display_name = data.displayName;
+    if (data.username !== undefined) patch.username = data.username;
+    await this.prisma.users.update({ where: { id: userId }, data: patch });
   }
 
   async uploadAvatar(userId: string, file: Express.Multer.File) {
@@ -104,23 +110,20 @@ export class UsersService {
     // Store the object key, not a public URL — the bucket is private and the response layer signs
     // it per request. Rows written before this change still hold a full URL; AvatarUrlService
     // accepts both shapes, so no backfill is needed.
-    const previous = await this.db.query<{ avatar_url: string | null }>(
-      'SELECT avatar_url FROM users WHERE id = $1',
-      [userId],
-    );
-    await this.db.query('UPDATE users SET avatar_url = $1, updated_at = now() WHERE id = $2', [storageKey, userId]);
-    this.avatars.invalidate(previous.rows[0]?.avatar_url ?? null);
+    const previous = await this.prisma.users.findUnique({
+      where: { id: userId },
+      select: { avatar_url: true },
+    });
+    await this.prisma.users.update({
+      where: { id: userId },
+      data: { avatar_url: storageKey, updated_at: new Date() },
+    });
+    this.avatars.invalidate(previous?.avatar_url ?? null);
     return this.getProfile(userId);
   }
 
   async getNotificationPrefs(userId: string) {
-    const r = await this.db.query<{
-      sound_enabled: boolean; desktop_enabled: boolean; email_enabled: boolean;
-    }>(
-      'SELECT sound_enabled, desktop_enabled, email_enabled FROM notification_preferences WHERE user_id = $1',
-      [userId],
-    );
-    const row = r.rows[0];
+    const row = await this.prisma.notification_preferences.findUnique({ where: { user_id: userId } });
     return {
       soundEnabled: row?.sound_enabled ?? true,
       desktopEnabled: row?.desktop_enabled ?? true,
@@ -132,30 +135,40 @@ export class UsersService {
     userId: string,
     data: { soundEnabled?: boolean; desktopEnabled?: boolean; emailEnabled?: boolean },
   ) {
-    await this.db.query(
-      `INSERT INTO notification_preferences (user_id, sound_enabled, desktop_enabled, email_enabled, updated_at)
-       VALUES ($1, $2, $3, $4, now())
-       ON CONFLICT (user_id) DO UPDATE SET
-         sound_enabled   = COALESCE($2, notification_preferences.sound_enabled),
-         desktop_enabled = COALESCE($3, notification_preferences.desktop_enabled),
-         email_enabled   = COALESCE($4, notification_preferences.email_enabled),
-         updated_at      = now()`,
-      [userId, data.soundEnabled ?? null, data.desktopEnabled ?? null, data.emailEnabled ?? null],
-    );
+    // Was an INSERT … ON CONFLICT DO UPDATE with COALESCE per column: absent fields keep their
+    // stored value, and on first write fall back to the column defaults.
+    const patch: Prisma.notification_preferencesUpdateInput = { updated_at: new Date() };
+    if (data.soundEnabled !== undefined) patch.sound_enabled = data.soundEnabled;
+    if (data.desktopEnabled !== undefined) patch.desktop_enabled = data.desktopEnabled;
+    if (data.emailEnabled !== undefined) patch.email_enabled = data.emailEnabled;
+
+    await this.prisma.notification_preferences.upsert({
+      where: { user_id: userId },
+      update: patch,
+      create: {
+        user_id: userId,
+        sound_enabled: data.soundEnabled ?? true,
+        desktop_enabled: data.desktopEnabled ?? true,
+        email_enabled: data.emailEnabled ?? false,
+      },
+    });
     return this.getNotificationPrefs(userId);
   }
 
   async changePassword(userId: string, current: string, next: string) {
     const bcrypt = await import('bcryptjs');
-    const r = await this.db.query<{ password_hash: string | null }>(
-      'SELECT password_hash FROM users WHERE id = $1',
-      [userId],
-    );
-    const hash = r.rows[0]?.password_hash;
+    const row = await this.prisma.users.findUnique({
+      where: { id: userId },
+      select: { password_hash: true },
+    });
+    const hash = row?.password_hash;
     if (!hash || !(await bcrypt.compare(current, hash))) {
       throw new Error('Current password is incorrect');
     }
     const newHash = await bcrypt.hash(next, 12);
-    await this.db.query('UPDATE users SET password_hash = $1 WHERE id = $2', [newHash, userId]);
+    await this.prisma.users.update({
+      where: { id: userId },
+      data: { password_hash: newHash },
+    });
   }
 }
