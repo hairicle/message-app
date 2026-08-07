@@ -5,7 +5,7 @@ import bcrypt from 'bcryptjs';
 import { randomUUID } from 'crypto';
 import { DatabaseService } from '../../database/database.service';
 import { RedisService } from '../../redis/redis.service';
-import { evictActiveUser } from '../../common/guards/jwt-auth.guard';
+import { AccountStatusService } from '../../common/account-status.service';
 import type { User } from '@messenger/shared';
 
 interface UserRow {
@@ -29,6 +29,7 @@ export class AuthService {
     private readonly redis: RedisService,
     private readonly jwt: JwtService,
     private readonly config: ConfigService,
+    private readonly accountStatus: AccountStatusService,
   ) {}
 
   private issueFullToken(user: { id: string; email: string; role: string }, deviceId: string) {
@@ -138,12 +139,13 @@ export class AuthService {
     const expiresIn = this.config.get<string>('JWT_EXPIRES_IN') ?? '1h';
     const ttl = this.jwtExpiryToSeconds(expiresIn) + 60;
     await this.redis.set(`disabled:user:${userId}`, '1', 'EX', ttl);
-    evictActiveUser(userId);
+    // Drops any sockets the user still has open, on top of clearing the cached decision.
+    this.accountStatus.announceDisabled(userId);
   }
 
   async unblockUser(userId: string): Promise<void> {
     await this.redis.del(`disabled:user:${userId}`);
-    evictActiveUser(userId);
+    this.accountStatus.evict(userId);
   }
 
   private jwtExpiryToSeconds(expiry: string): number {

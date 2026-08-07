@@ -4,6 +4,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import envConfig from './config/env.config';
 import { DatabaseModule } from './database/database.module';
 import { RedisModule } from './redis/redis.module';
+import { AccountStatusModule } from './common/account-status.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { ConversationsModule } from './modules/conversations/conversations.module';
@@ -22,6 +23,7 @@ import { HealthController } from './health/health.controller';
   imports: [
     ConfigModule.forRoot({ isGlobal: true, load: [envConfig] }),
     ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    AccountStatusModule,
     DatabaseModule,
     RedisModule,
     AuthModule,

@@ -8,12 +8,14 @@ import {
   OnGatewayDisconnect,
   WsException,
 } from '@nestjs/websockets';
+import { OnModuleInit } from '@nestjs/common';
 import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { DatabaseService } from '../database/database.service';
 import { RedisService } from '../redis/redis.service';
 import { MessagesService } from '../modules/messages/messages.service';
 import type { AuthPayload } from '@messenger/shared';
+import { AccountStatusService } from '../common/account-status.service';
 
 interface AuthedSocket extends Socket {
   data: { user: AuthPayload };
@@ -22,7 +24,7 @@ interface AuthedSocket extends Socket {
 const PRESENCE_PREFIX = 'presence:user:';
 
 @WebSocketGateway({ cors: { origin: true, credentials: true } })
-export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect {
+export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit {
   @WebSocketServer() io!: Server;
 
   constructor(
@@ -30,7 +32,16 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     private readonly db: DatabaseService,
     private readonly redis: RedisService,
     private readonly messages: MessagesService,
+    private readonly accountStatus: AccountStatusService,
   ) {}
+
+  onModuleInit() {
+    // Checking at handshake alone would leave an already-open socket connected until the user
+    // reconnected — long enough to keep receiving a conversation's traffic after being disabled.
+    this.accountStatus.events.on('disabled', (userId: string) => {
+      this.io?.in(`user:${userId}`).disconnectSockets(true);
+    });
+  }
 
   async handleConnection(socket: AuthedSocket) {
     const token = socket.handshake.auth?.token as string | undefined;
@@ -38,14 +49,27 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       socket.disconnect(true);
       return;
     }
+    let payload: AuthPayload & { scope?: string };
     try {
-      const payload = this.jwt.verify<AuthPayload>(token);
-      socket.data.user = payload;
+      payload = this.jwt.verify<AuthPayload & { scope?: string }>(token);
     } catch {
       socket.disconnect(true);
       return;
     }
 
+    // A valid signature is not sufficient — apply the same checks JwtAuthGuard makes on HTTP.
+    // Without these, disabling an account only cut off HTTP while realtime kept working until
+    // the token expired, and a half-authenticated (TOTP-pending) token was accepted outright.
+    if (payload.scope === 'totp_pending' || !payload.id) {
+      socket.disconnect(true);
+      return;
+    }
+    if (!(await this.accountStatus.isActive(payload.id))) {
+      socket.disconnect(true);
+      return;
+    }
+
+    socket.data.user = payload;
     const { user } = socket.data;
     await this.joinConversationRooms(socket);
     socket.join(`user:${user.id}`);
