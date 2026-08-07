@@ -25,6 +25,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { getConversationTitle, getOtherMember } from '../utils/conversation';
 import { decodeMessageText, encodeMessageText } from '../utils/text';
+import { FaBookmark, FaCheck, FaChevronDown, FaChevronLeft, FaMagnifyingGlass, FaMicrophone, FaPaperPlane, FaPaperclip, FaPen, FaPhone, FaRegBookmark, FaRegCopy, FaReply, FaShare, FaThumbtack, FaTrash, FaXmark } from 'react-icons/fa6';
 
 function attachmentTypeForMime(mimeType: string): MessageType {
   if (mimeType.startsWith('image/')) return 'image';
@@ -522,7 +523,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
       <header className="flex items-center gap-3 px-4 py-4 flex-shrink-0" style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
         {onBack && (
           <button onClick={onBack} className="lg:hidden p-2 -ml-1 rounded-xl transition-colors flex-shrink-0 btn-icon" aria-label="Back">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" /></svg>
+            <FaChevronLeft size={14} />
           </button>
         )}
         <button type="button" onClick={() => setShowInfoPanel(true)} className="flex items-center gap-3 flex-1 min-w-0 rounded-xl -mx-2 px-2 py-1 transition-colors text-left hover-panel-alt">
@@ -543,7 +544,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
           </div>
         </button>
         <button type="button" onClick={() => setSearchOpen((v) => !v)} className="p-2 rounded-xl transition-colors flex-shrink-0 btn-icon" title="Search messages">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+          <FaMagnifyingGlass size={14} />
         </button>
         {/* Call buttons — hidden, re-enable by changing false → true when calling is ready */}
         {false && (activeCall ? (
@@ -553,7 +554,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
         ) : (
           <>
             <button type="button" onClick={() => startCall('audio')} className="p-2 rounded-xl transition-colors flex-shrink-0 btn-icon" title="Audio call">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" /></svg>
+              <FaPhone size={16} />
             </button>
             <button type="button" onClick={() => startCall('video')} className="p-2 rounded-xl transition-colors flex-shrink-0 btn-icon" title="Video call">
               <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
@@ -621,16 +622,14 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
           if (type === 'audio') {
             return (
               <span className="flex items-center gap-1">
-                <svg className="w-3 h-3 flex-shrink-0" style={{ color: 'var(--accent)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
-                </svg>
+                <FaMicrophone size={14} className="flex-shrink-0" style={{ color: 'var(--accent)' }} />
                 <span>{durationSecs != null ? fmtSecs(durationSecs) : 'Voice message'}</span>
               </span>
             );
           }
           if (type === 'image') return <span className="flex items-center gap-1"><svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--accent)' }}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z" /></svg><span>Photo</span></span>;
           if (type === 'video') return <span className="flex items-center gap-1"><svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--accent)' }}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg><span>Video</span></span>;
-          if (type === 'file') return <span className="flex items-center gap-1"><svg className="w-3 h-3 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" style={{ color: 'var(--accent)' }}><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg><span>File</span></span>;
+          if (type === 'file') return <span className="flex items-center gap-1"><FaPaperclip size={14} className="flex-shrink-0" style={{ color: 'var(--accent)' }} /><span>File</span></span>;
           return <span className="truncate">{decodeMessageText(ciphertext)}</span>;
         }
 
@@ -669,7 +668,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                   <button type="button"
                     onClick={(e) => { e.stopPropagation(); setPinnedBarIndex((i) => (i + 1) % allPinned.length); }}
                     className="h-5 px-1.5 flex items-center hover-panel-alt" title="Next pin">
-                    <svg className="w-3 h-3" style={{ color: 'var(--text-dim)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" /></svg>
+                    <FaChevronDown size={14} style={{ color: 'var(--text-dim)' }} />
                   </button>
                 </div>
               )}
@@ -678,9 +677,11 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
               <button type="button"
                 onClick={() => setShowPinnedBar((v) => !v)}
                 className="flex-shrink-0 h-full px-3 flex items-center hover-panel-alt" title={showPinnedBar ? 'Collapse' : 'Expand'}>
-                <svg className={`w-3.5 h-3.5 transition-transform ${showPinnedBar ? 'rotate-180' : ''}`} style={{ color: 'var(--text-dim)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
+                <FaChevronDown
+                  size={14}
+                  className={`transition-transform ${showPinnedBar ? 'rotate-180' : ''}`}
+                  style={{ color: 'var(--text-dim)' }}
+                />
               </button>
             </div>
 
@@ -704,7 +705,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                     </button>
                   )}
                   <button type="button" onClick={() => setShowPinnedBar(false)} className="ml-auto py-2 flex items-center">
-                    <svg className="w-3.5 h-3.5" style={{ color: 'var(--text-dim)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                    <FaXmark size={14} style={{ color: 'var(--text-dim)' }} />
                   </button>
                 </div>
 
@@ -731,7 +732,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                           onClick={(e) => { e.stopPropagation(); messagesApi.unpinMessage(p.messageId).then(() => { setPinnedIds((prev) => { const s = new Set(prev); s.delete(p.messageId); return s; }); setPinnedMessages((prev) => prev.filter((x) => x.messageId !== p.messageId)); if (pinnedBarIndex >= pinnedMessages.length - 1) setPinnedBarIndex(0); }).catch(() => {}); }}
                           className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover-panel-alt"
                           style={{ color: 'var(--text-dim)' }}>
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                          <FaXmark size={14} />
                         </button>
                       </div>
                     ))}
@@ -756,7 +757,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                           onClick={(e) => { e.stopPropagation(); messagesApi.unbookmarkMessage(b.messageId).then(() => { setBookmarkIds((prev) => { const s = new Set(prev); s.delete(b.messageId); return s; }); setBookmarks((prev) => prev.filter((x) => x.messageId !== b.messageId)); }).catch(() => {}); }}
                           className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity hover-panel-alt"
                           style={{ color: 'var(--text-dim)' }}>
-                          <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                          <FaXmark size={14} />
                         </button>
                       </div>
                     ))}
@@ -792,7 +793,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                   </p>
                 </div>
                 <button type="button" onClick={() => setForwardingMessage(null)} className="btn-icon" style={{ width: 30, height: 30 }}>
-                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                  <FaXmark size={14} />
                 </button>
               </div>
 
@@ -840,7 +841,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                       <div className="flex-shrink-0 flex items-center justify-center font-mono font-bold text-[13px]"
                         style={{ width: 36, height: 36, borderRadius: 9, background: selected ? 'var(--accent)' : 'var(--panel-alt)', border: `1px solid ${selected ? 'var(--accent)' : 'var(--border)'}`, color: selected ? '#fff' : 'var(--accent)', transition: 'all 0.15s' }}>
                         {selected
-                          ? <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" /></svg>
+                          ? <FaCheck size={14} />
                           : title.slice(0, 1).toUpperCase()}
                       </div>
                       {/* Name */}
@@ -853,7 +854,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                       {/* Checkmark circle */}
                       <div className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center transition-all"
                         style={{ background: selected ? 'var(--accent)' : 'transparent', border: `1.5px solid ${selected ? 'var(--accent)' : 'var(--border)'}` }}>
-                        {selected && <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" /></svg>}
+                        {selected && <FaCheck size={14} className="text-white" />}
                       </div>
                     </button>
                   );
@@ -1038,7 +1039,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                       {mine && read && ' · ✓✓'}
                     </span>
                     {bookmarkIds.has(message.id) && (
-                      <svg className="w-3 h-3 flex-shrink-0" style={{ color: 'var(--warning)' }} fill="currentColor" viewBox="0 0 24 24"><path d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
+                      <FaBookmark size={12} className="flex-shrink-0" style={{ color: 'var(--warning)' }} />
                     )}
                   </div>
                 )}
@@ -1135,7 +1136,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                     <div className="relative">
                       <button onClick={(e) => { e.stopPropagation(); calcToolbarDir(e.currentTarget, message.id); setOpenMenuId(openMenuId === message.id ? null : message.id); }}
                         className="w-8 h-8 flex items-center justify-center transition-colors rounded-r-2xl hover-panel-alt" style={{ color: 'var(--text-dim)' }}>
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M19 9l-7 7-7-7" /></svg>
+                        <FaChevronDown size={14} />
                       </button>
                       {openMenuId === message.id && (
                         <div className={`absolute z-30 w-52 rounded-xl overflow-hidden py-1 ${mine ? 'right-0' : 'left-0'} ${(msgDirs[message.id] ?? 'up') === 'up' ? 'bottom-full mb-1' : 'top-full mt-1'}`}
@@ -1144,7 +1145,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                           {/* 1. Reply */}
                           <button type="button" onClick={() => { setReplyingTo(message); setOpenMenuId(null); }}
                             className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover-panel-alt" style={{ color: 'var(--text-muted)' }}>
-                            <svg className="w-4 h-4" style={{ color: 'var(--text-dim)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6" /></svg>
+                            <FaReply size={14} style={{ color: 'var(--text-dim)' }} />
                             Reply
                           </button>
 
@@ -1152,7 +1153,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                           {message.type === 'text' && !message.deletedAt && decodeMessageText(message.ciphertext) && (
                             <button type="button" onClick={() => { navigator.clipboard.writeText(decodeMessageText(message.ciphertext)); setOpenMenuId(null); }}
                               className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover-panel-alt" style={{ color: 'var(--text-muted)' }}>
-                              <svg className="w-4 h-4" style={{ color: 'var(--text-dim)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
+                              <FaRegCopy size={14} style={{ color: 'var(--text-dim)' }} />
                               Copy text
                             </button>
                           )}
@@ -1161,7 +1162,9 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                           {!message.deletedAt && (
                             <button type="button" onClick={() => { handleBookmark(message); setOpenMenuId(null); }}
                               className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover-panel-alt" style={{ color: 'var(--text-muted)' }}>
-                              <svg className="w-4 h-4" style={{ color: bookmarkIds.has(message.id) ? 'var(--warning)' : 'var(--text-dim)' }} fill={bookmarkIds.has(message.id) ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 5a2 2 0 012-2h10a2 2 0 012 2v16l-7-3.5L5 21V5z" /></svg>
+                              {bookmarkIds.has(message.id)
+                                ? <FaBookmark size={14} style={{ color: 'var(--warning)' }} />
+                                : <FaRegBookmark size={14} style={{ color: 'var(--text-dim)' }} />}
                               {bookmarkIds.has(message.id) ? 'Remove bookmark' : 'Save for me'}
                             </button>
                           )}
@@ -1170,9 +1173,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                           {!message.deletedAt && (
                             <button type="button" onClick={() => { handlePin(message); setOpenMenuId(null); }}
                               className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover-panel-alt" style={{ color: 'var(--text-muted)' }}>
-                              <svg className="w-4 h-4" style={{ color: pinnedIds.has(message.id) ? 'var(--accent)' : 'var(--text-dim)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l-4 4m0 0l-4-4m4 4V3m0 14a9 9 0 110-18 9 9 0 010 18z" />
-                              </svg>
+                              <FaThumbtack size={14} style={{ color: pinnedIds.has(message.id) ? 'var(--accent)' : 'var(--text-dim)' }} />
                               {pinnedIds.has(message.id) ? 'Unpin for all' : 'Pin for all'}
                             </button>
                           )}
@@ -1181,7 +1182,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                           {!message.deletedAt && (
                             <button type="button" onClick={() => { openForwardPicker(message); setOpenMenuId(null); }}
                               className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover-panel-alt" style={{ color: 'var(--text-muted)' }}>
-                              <svg className="w-4 h-4" style={{ color: 'var(--text-dim)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 9l3 3m0 0l-3 3m3-3H8m13 0a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                              <FaShare size={14} style={{ color: 'var(--text-dim)' }} />
                               Forward
                             </button>
                           )}
@@ -1192,7 +1193,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                               <div className="h-px mx-3 my-1" style={{ background: 'var(--border)' }} />
                               <button type="button" onClick={() => { startEdit(message); setOpenMenuId(null); }}
                                 className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover-panel-alt" style={{ color: 'var(--text-muted)' }}>
-                                <svg className="w-4 h-4" style={{ color: 'var(--text-dim)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                                <FaPen size={13} style={{ color: 'var(--text-dim)' }} />
                                 Edit message
                               </button>
                             </>
@@ -1206,7 +1207,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                                 className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors" style={{ color: 'var(--danger)' }}
                                 onMouseEnter={(ev) => (ev.currentTarget.style.background = 'var(--danger-wash)')}
                                 onMouseLeave={(ev) => (ev.currentTarget.style.background = 'transparent')}>
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                <FaTrash size={13} />
                                 Delete
                               </button>
                             </>
@@ -1238,7 +1239,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
             </p>
           </div>
           <button type="button" onClick={() => setReplyingTo(null)} className="p-1.5 rounded-lg transition-colors flex-shrink-0 hover-panel-alt" style={{ color: 'var(--text-dim)' }} aria-label="Cancel reply">
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+            <FaXmark size={14} />
           </button>
         </div>
       )}
@@ -1247,19 +1248,19 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
       <form className="flex items-center gap-2 px-4 pt-3 flex-shrink-0" style={{ background: 'var(--panel)', borderTop: '1px solid var(--border)', paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }} onSubmit={handleSend}>
         <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} />
         <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading || isRecording} title="Attach file" className="disabled:opacity-40 disabled:cursor-not-allowed btn-icon">
-          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+          <FaPaperclip size={14} />
         </button>
         <button type="button" onClick={isRecording ? stopRecording : startRecording} disabled={uploading} title={isRecording ? 'Stop recording' : 'Record voice note'}
           className={`disabled:opacity-40 disabled:cursor-not-allowed transition-colors flex-shrink-0 ${isRecording ? 'rounded-lg' : 'btn-icon'}`}
           style={isRecording ? { width: 34, height: 34, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--danger)', background: 'var(--danger-wash)', border: '1px solid var(--danger-border)' } : undefined}>
-          <svg className="w-4 h-4" fill={isRecording ? 'currentColor' : 'none'} stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+          <FaMicrophone size={14} />
         </button>
         <input value={input} onChange={(e) => handleInputChange(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') setReplyingTo(null); }}
           placeholder={isRecording ? 'Recording...' : uploading ? 'Uploading...' : replyingTo ? 'Reply...' : 'Message...'}
           autoComplete="off" disabled={isRecording || uploading}
           className="input-base flex-1 disabled:opacity-60 transition-all" />
         <button type="submit" disabled={!input.trim() || uploading || isRecording} title="Send" className="btn-primary disabled:opacity-40">
-          <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" /></svg>
+          <FaPaperPlane size={14} />
         </button>
       </form>
 
@@ -1270,9 +1271,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
           style={{ transform: 'translateX(-50%)', animation: 'fadeInUp 0.2s ease' }}>
           <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl shadow-2xl font-mono text-[13px]"
             style={{ background: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text)', whiteSpace: 'nowrap' }}>
-            <svg className="w-4 h-4 flex-shrink-0" style={{ color: 'var(--accent)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M5 13l4 4L19 7" />
-            </svg>
+            <FaCheck size={14} className="flex-shrink-0" style={{ color: 'var(--accent)' }} />
             {toast}
           </div>
         </div>
