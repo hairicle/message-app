@@ -282,6 +282,17 @@ describe('MessagesService', () => {
   describe('forwardMessage', () => {
     const original = {
       type: 'text', ciphertext: bytes('forward me'), sender_id: OTHER, conversation_id: 'source-conv',
+      files: [] as Record<string, unknown>[],
+    };
+
+    /** The same message but carrying an attachment. */
+    const originalWithFile = {
+      ...original,
+      type: 'image',
+      files: [{
+        uploader_id: OTHER, storage_key: 'abc.png', file_name: 'photo.png',
+        mime_type: 'image/png', size_bytes: 1024n, has_thumbnail: true, duration_secs: null,
+      }],
     };
 
     it('requires membership of both the source and the target conversation', async () => {
@@ -365,6 +376,32 @@ describe('MessagesService', () => {
 
       await expect(service.forwardMessage(MSG, USER, 'target-conv')).rejects.toBeInstanceOf(ForbiddenException);
       expect(seen).toHaveLength(0);
+    });
+
+    it('brings a copy of the attachment, so the forward is not an empty bubble', async () => {
+      prisma.messages.findUnique.mockResolvedValue(originalWithFile);
+      prisma.conversation_members.findUnique.mockResolvedValue(MEMBER);
+      prisma.messages.create.mockResolvedValue({ id: 'new-msg' });
+      prisma.conversations.update.mockResolvedValue({});
+      prisma.messages.findUniqueOrThrow.mockResolvedValue(messageRow({ id: 'new-msg' }));
+
+      await service.forwardMessage(MSG, USER, 'target-conv');
+
+      // files.message_id references exactly one message, so the row is copied rather than moved —
+      // pointing at the same storage_key means no re-upload and the original keeps its own file.
+      const data = prisma.messages.create.mock.calls[0][0].data;
+      expect(data.files.createMany.data).toHaveLength(1);
+      expect(data.files.createMany.data[0]).toMatchObject({
+        storage_key: 'abc.png',
+        file_name: 'photo.png',
+        uploader_id: OTHER,
+      });
+    });
+
+    it('does not attach an empty files block when the message has none', async () => {
+      allowForward();
+      await service.forwardMessage(MSG, USER, 'target-conv');
+      expect(prisma.messages.create.mock.calls[0][0].data.files).toBeUndefined();
     });
 
     it('reports a missing source message as not found', async () => {

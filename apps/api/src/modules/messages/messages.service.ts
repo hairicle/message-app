@@ -375,7 +375,17 @@ export class MessagesService {
   async forwardMessage(messageId: string, userId: string, targetConversationId: string) {
     const original = await this.prisma.messages.findUnique({
       where: { id: messageId },
-      select: { type: true, ciphertext: true, sender_id: true, conversation_id: true },
+      select: {
+        type: true, ciphertext: true, sender_id: true, conversation_id: true,
+        // An attachment lives in a files row keyed to one message, so forwarding has to bring a
+        // copy along — otherwise the forward arrives as an image or file with nothing in it.
+        files: {
+          select: {
+            uploader_id: true, storage_key: true, file_name: true,
+            mime_type: true, size_bytes: true, has_thumbnail: true, duration_secs: true,
+          },
+        },
+      },
     });
     if (!original) throw new NotFoundException('Message not found');
 
@@ -390,6 +400,12 @@ export class MessagesService {
         ciphertext: Buffer.from(original.ciphertext),
         forwarded_from_message_id: messageId,
         original_sender_id: original.sender_id,
+        // New rows pointing at the same storage_key: the object is shared, only the metadata is
+        // duplicated, and files.message_id can only reference one message so the original's row
+        // must stay where it is.
+        files: original.files.length
+          ? { createMany: { data: original.files.map((f) => ({ ...f })) } }
+          : undefined,
       },
       select: { id: true },
     });
