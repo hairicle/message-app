@@ -13,6 +13,11 @@ interface FileRow {
 
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 
+// Long enough to cover the redirect plus a slow transfer of a 50 MB attachment; short enough that
+// a leaked URL is not a lasting grant. Supabase validates the token when the request starts, so an
+// in-flight download is not cut off at expiry.
+const SIGNED_URL_TTL_SECONDS = 300;
+
 @Injectable()
 export class FilesService {
   constructor(
@@ -127,14 +132,42 @@ export class FilesService {
 
   async getFileDownloadUrl(fileId: string, requesterId: string): Promise<{ url: string }> {
     const row = await this.fetchRow(fileId, requesterId);
-    const url = `${this.storageBase}/storage/v1/object/public/${this.bucket}/${row.storage_key}`;
-    return { url };
+    return { url: await this.signObject(row.storage_key) };
   }
 
   async getThumbnailUrl(fileId: string, requesterId: string): Promise<{ url: string }> {
     const row = await this.fetchRow(fileId, requesterId);
     if (!row.has_thumbnail) throw new NotFoundException('No thumbnail');
-    const url = `${this.storageBase}/storage/v1/object/public/${this.bucket}/thumbnails/${row.storage_key}`;
-    return { url };
+    return { url: await this.signObject(`thumbnails/${row.storage_key}`) };
+  }
+
+  /**
+   * Mint a short-lived signed URL for a stored object.
+   *
+   * These used to be `/object/public/...` links against a public bucket, which made the
+   * membership check in fetchRow a one-time gate rather than an access control: the URL kept
+   * working, unauthenticated, forever — including for someone later removed from the
+   * conversation, or for anyone the link leaked to. The client follows this redirect
+   * immediately, so the lifetime only has to cover the redirect and the transfer.
+   */
+  private async signObject(objectPath: string): Promise<string> {
+    const res = await fetch(
+      `${this.storageBase}/storage/v1/object/sign/${this.bucket}/${objectPath}`,
+      {
+        method: 'POST',
+        headers: { ...this.supabaseHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ expiresIn: SIGNED_URL_TTL_SECONDS }),
+      },
+    );
+
+    if (!res.ok) {
+      if (res.status === 404) throw new NotFoundException('File not found in storage');
+      const detail = await res.text().catch(() => '');
+      throw new BadRequestException(`Could not sign file URL: ${detail.slice(0, 200)}`);
+    }
+
+    // Supabase returns the path portion only, e.g. "/object/sign/<bucket>/<key>?token=…"
+    const { signedURL } = (await res.json()) as { signedURL: string };
+    return `${this.storageBase}/storage/v1${signedURL}`;
   }
 }
