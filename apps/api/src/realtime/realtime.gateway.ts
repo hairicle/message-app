@@ -41,6 +41,13 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.accountStatus.events.on('disabled', (userId: string) => {
       this.io?.in(`user:${userId}`).disconnectSockets(true);
     });
+
+    // Messages created over HTTP rather than through message:send — forwarding is the one that
+    // matters today. Without this they land in the database but nobody in the conversation sees
+    // them until a reload.
+    this.messages.events.on('message:new', (message: { conversationId: string }) => {
+      this.io?.to(`conversation:${message.conversationId}`).emit('message:new', message);
+    });
   }
 
   async handleConnection(socket: AuthedSocket) {

@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { EventEmitter } from 'node:events';
 import { message_type } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 
@@ -27,6 +28,15 @@ const fileDto = (files: FileRow[]) => {
 
 @Injectable()
 export class MessagesService {
+  /**
+   * Emits 'message:new' with a fully-shaped message so the gateway can broadcast it.
+   *
+   * RealtimeModule imports MessagesModule, so this service cannot hold the gateway without a
+   * circular dependency — the gateway subscribes instead. Messages sent over the socket are
+   * already broadcast by the gateway itself; this exists for the ones created over HTTP.
+   */
+  readonly events = new EventEmitter();
+
   constructor(private readonly prisma: PrismaService) {}
 
   private async assertMember(conversationId: string, userId: string, message = 'Not a member of this conversation') {
@@ -71,6 +81,8 @@ export class MessagesService {
         reply_to_message_id: true, forwarded_from_message_id: true,
         created_at: true, edited_at: true, deleted_at: true,
         files: true,
+        // Drives the "Forwarded from …" label; without it the UI condition never passes.
+        users_messages_original_sender_idTousers: { select: { display_name: true } },
         message_reactions: {
           select: {
             emoji: true,
@@ -90,6 +102,7 @@ export class MessagesService {
         ciphertext: decode(m.ciphertext),
         replyToMessageId: m.reply_to_message_id,
         forwardedFromMessageId: m.forwarded_from_message_id,
+        forwardedFromDisplayName: m.users_messages_original_sender_idTousers?.display_name ?? null,
         createdAt: m.created_at,
         editedAt: m.edited_at,
         deletedAt: m.deleted_at,
@@ -386,7 +399,41 @@ export class MessagesService {
       data: { updated_at: new Date() },
     });
 
-    return { id: created.id, conversationId: targetConversationId };
+    // Previously this returned only { id, conversationId }, which is not enough for the sender to
+    // render the message, and nothing was broadcast — so the forward was invisible in the target
+    // conversation until someone reloaded.
+    const message = await this.shapeMessage(created.id);
+    this.events.emit('message:new', message);
+    return message;
+  }
+
+  /** Loads a message in the shape the client and the socket both expect. */
+  private async shapeMessage(messageId: string) {
+    const m = await this.prisma.messages.findUniqueOrThrow({
+      where: { id: messageId },
+      select: {
+        id: true, conversation_id: true, sender_id: true, type: true, ciphertext: true,
+        reply_to_message_id: true, forwarded_from_message_id: true,
+        created_at: true, edited_at: true, deleted_at: true,
+        files: true,
+        users_messages_original_sender_idTousers: { select: { display_name: true } },
+      },
+    });
+    return {
+      id: m.id,
+      conversationId: m.conversation_id,
+      senderId: m.sender_id,
+      type: m.type,
+      ciphertext: decode(m.ciphertext),
+      replyToMessageId: m.reply_to_message_id,
+      forwardedFromMessageId: m.forwarded_from_message_id,
+      forwardedFromDisplayName: m.users_messages_original_sender_idTousers?.display_name ?? null,
+      createdAt: m.created_at,
+      editedAt: m.edited_at,
+      deletedAt: m.deleted_at,
+      file: fileDto(m.files),
+      reactions: [] as { emoji: string; userId: string; username: string; displayName: string }[],
+    };
   }
 
   /**

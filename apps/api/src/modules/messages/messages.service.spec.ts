@@ -302,19 +302,69 @@ describe('MessagesService', () => {
       expect(prisma.messages.create).not.toHaveBeenCalled();
     });
 
-    it('preserves the original sender so attribution survives the forward', async () => {
+    /** Shared setup for a forward that is allowed to go through. */
+    const allowForward = () => {
       prisma.messages.findUnique.mockResolvedValue(original);
       prisma.conversation_members.findUnique.mockResolvedValue(MEMBER);
       prisma.messages.create.mockResolvedValue({ id: 'new-msg' });
       prisma.conversations.update.mockResolvedValue({});
+      prisma.messages.findUniqueOrThrow.mockResolvedValue(
+        messageRow({
+          id: 'new-msg',
+          conversation_id: 'target-conv',
+          sender_id: USER,
+          forwarded_from_message_id: MSG,
+          users_messages_original_sender_idTousers: { display_name: 'Bob' },
+        }),
+      );
+    };
 
-      const out = await service.forwardMessage(MSG, USER, 'target-conv');
+    it('preserves the original sender so attribution survives the forward', async () => {
+      allowForward();
+      await service.forwardMessage(MSG, USER, 'target-conv');
 
       const data = prisma.messages.create.mock.calls[0][0].data;
       expect(data.original_sender_id).toBe(OTHER);
       expect(data.forwarded_from_message_id).toBe(MSG);
       expect(data.sender_id).toBe(USER);
-      expect(out).toEqual({ id: 'new-msg', conversationId: 'target-conv' });
+    });
+
+    it('returns a full message, not just an id', async () => {
+      allowForward();
+      const out = await service.forwardMessage(MSG, USER, 'target-conv');
+      // Returning only { id, conversationId } left the sender unable to render what they sent.
+      for (const key of ['id', 'conversationId', 'senderId', 'type', 'ciphertext', 'createdAt']) {
+        expect(out).toHaveProperty(key);
+      }
+      expect(out.conversationId).toBe('target-conv');
+    });
+
+    it('carries the original sender\'s name so the "Forwarded from" label can render', async () => {
+      allowForward();
+      const out = await service.forwardMessage(MSG, USER, 'target-conv');
+      expect(out.forwardedFromDisplayName).toBe('Bob');
+    });
+
+    it('announces the message so the gateway can broadcast it', async () => {
+      allowForward();
+      const seen: unknown[] = [];
+      service.events.on('message:new', (m) => seen.push(m));
+
+      const out = await service.forwardMessage(MSG, USER, 'target-conv');
+
+      // Without this the forward reached the database but nobody saw it until a reload.
+      expect(seen).toHaveLength(1);
+      expect(seen[0]).toBe(out);
+    });
+
+    it('does not announce anything when the forward is refused', async () => {
+      prisma.messages.findUnique.mockResolvedValue(original);
+      prisma.conversation_members.findUnique.mockResolvedValueOnce(null);
+      const seen: unknown[] = [];
+      service.events.on('message:new', (m) => seen.push(m));
+
+      await expect(service.forwardMessage(MSG, USER, 'target-conv')).rejects.toBeInstanceOf(ForbiddenException);
+      expect(seen).toHaveLength(0);
     });
 
     it('reports a missing source message as not found', async () => {
