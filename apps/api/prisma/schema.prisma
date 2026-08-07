@@ -1,0 +1,428 @@
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model audit_logs {
+  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id     String?  @db.Uuid
+  action      String
+  target_type String?
+  target_id   String?  @db.Uuid
+  ip_address  String?
+  metadata    Json?
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+  users       users?   @relation(fields: [user_id], references: [id], onUpdate: NoAction)
+
+  @@index([user_id, created_at], map: "idx_audit_logs_user_id_created_at")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model call_participants {
+  id        String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  call_id   String    @db.Uuid
+  user_id   String    @db.Uuid
+  joined_at DateTime  @default(now()) @db.Timestamptz(6)
+  left_at   DateTime? @db.Timestamptz(6)
+  calls     calls     @relation(fields: [call_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users     users     @relation(fields: [user_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([call_id, user_id])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model calls {
+  id                String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  conversation_id   String              @db.Uuid
+  initiator_id      String?             @db.Uuid
+  type              call_type
+  started_at        DateTime            @default(now()) @db.Timestamptz(6)
+  ended_at          DateTime?           @db.Timestamptz(6)
+  call_participants call_participants[]
+  conversations     conversations       @relation(fields: [conversation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users             users?              @relation(fields: [initiator_id], references: [id], onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model conversation_members {
+  id                   String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  conversation_id      String        @db.Uuid
+  user_id              String        @db.Uuid
+  role                 member_role   @default(member)
+  last_read_message_id String?       @db.Uuid
+  muted_until          DateTime?     @db.Timestamptz(6)
+  joined_at            DateTime      @default(now()) @db.Timestamptz(6)
+  conversations        conversations @relation(fields: [conversation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users                users         @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([conversation_id, user_id])
+  @@index([conversation_id, user_id], map: "idx_conversation_members_conv_user")
+  @@index([user_id], map: "idx_conversation_members_user_id")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model conversations {
+  id                   String                 @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  team_id              String?                @db.Uuid
+  type                 conversation_type
+  name                 String?
+  description          String?
+  avatar_url           String?
+  created_by           String?                @db.Uuid
+  created_at           DateTime               @default(now()) @db.Timestamptz(6)
+  updated_at           DateTime               @default(now()) @db.Timestamptz(6)
+  calls                calls[]
+  conversation_members conversation_members[]
+  users                users?                 @relation(fields: [created_by], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  teams                teams?                 @relation(fields: [team_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  messages             messages[]
+  pinned_messages      pinned_messages[]
+  user_bookmarks       user_bookmarks[]
+
+  @@index([updated_at(sort: Desc)], map: "idx_conversations_updated_at")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model departments {
+  id          String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name        String   @unique
+  description String?
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model files {
+  id            String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  message_id    String?   @db.Uuid
+  uploader_id   String?   @db.Uuid
+  storage_key   String
+  file_name     String
+  mime_type     String
+  size_bytes    BigInt
+  has_thumbnail Boolean   @default(false)
+  duration_secs Float?
+  created_at    DateTime  @default(now()) @db.Timestamptz(6)
+  messages      messages? @relation(fields: [message_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users         users?    @relation(fields: [uploader_id], references: [id], onUpdate: NoAction)
+
+  @@index([message_id], map: "idx_files_message_id")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model link_previews {
+  message_id  String   @id @db.Uuid
+  url         String
+  title       String?
+  description String?
+  image_url   String?
+  site_name   String?
+  fetched_at  DateTime @default(now()) @db.Timestamptz(6)
+  messages    messages @relation(fields: [message_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model meeting_attendees {
+  meeting_id String   @db.Uuid
+  user_id    String   @db.Uuid
+  status     String   @default("pending")
+  meetings   meetings @relation(fields: [meeting_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([meeting_id, user_id])
+  @@index([user_id], map: "idx_meeting_attendees_user")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model meetings {
+  id                String              @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  created_by        String              @db.Uuid
+  title             String
+  description       String?
+  location          String?
+  start_at          DateTime            @db.Timestamptz(6)
+  end_at            DateTime?           @db.Timestamptz(6)
+  created_at        DateTime            @default(now()) @db.Timestamptz(6)
+  meeting_attendees meeting_attendees[]
+  users             users               @relation(fields: [created_by], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([created_by, start_at], map: "idx_meetings_created_by")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model message_deliveries {
+  id                  String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  message_id          String          @db.Uuid
+  recipient_device_id String          @db.Uuid
+  ciphertext          Bytes
+  status              delivery_status @default(sent)
+  delivered_at        DateTime?       @db.Timestamptz(6)
+  read_at             DateTime?       @db.Timestamptz(6)
+  messages            messages        @relation(fields: [message_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  user_devices        user_devices    @relation(fields: [recipient_device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([message_id, recipient_device_id])
+  @@index([recipient_device_id, status], map: "idx_message_deliveries_recipient")
+}
+
+/// This table contains check constraints and requires additional setup for migrations. Visit https://pris.ly/d/check-constraints for more info.
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model message_reactions {
+  message_id String   @db.Uuid
+  user_id    String   @db.Uuid
+  emoji      String
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  messages   messages @relation(fields: [message_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users      users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@id([message_id, user_id, emoji])
+  @@index([message_id], map: "idx_message_reactions_message_id")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model messages {
+  id                                                          String               @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  conversation_id                                             String               @db.Uuid
+  sender_id                                                   String?              @db.Uuid
+  type                                                        message_type         @default(text)
+  ciphertext                                                  Bytes
+  reply_to_message_id                                         String?              @db.Uuid
+  forwarded_from_message_id                                   String?              @db.Uuid
+  original_sender_id                                          String?              @db.Uuid
+  created_at                                                  DateTime             @default(now()) @db.Timestamptz(6)
+  edited_at                                                   DateTime?            @db.Timestamptz(6)
+  deleted_at                                                  DateTime?            @db.Timestamptz(6)
+  files                                                       files[]
+  link_previews                                               link_previews?
+  message_deliveries                                          message_deliveries[]
+  message_reactions                                           message_reactions[]
+  conversations                                               conversations        @relation(fields: [conversation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  messages_messages_forwarded_from_message_idTomessages       messages?            @relation("messages_forwarded_from_message_idTomessages", fields: [forwarded_from_message_id], references: [id], onUpdate: NoAction)
+  other_messages_messages_forwarded_from_message_idTomessages messages[]           @relation("messages_forwarded_from_message_idTomessages")
+  users_messages_original_sender_idTousers                    users?               @relation("messages_original_sender_idTousers", fields: [original_sender_id], references: [id], onUpdate: NoAction)
+  messages_messages_reply_to_message_idTomessages             messages?            @relation("messages_reply_to_message_idTomessages", fields: [reply_to_message_id], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  other_messages_messages_reply_to_message_idTomessages       messages[]           @relation("messages_reply_to_message_idTomessages")
+  users_messages_sender_idTousers                             users?               @relation("messages_sender_idTousers", fields: [sender_id], references: [id], onUpdate: NoAction)
+  pinned_messages                                             pinned_messages[]
+  user_bookmarks                                              user_bookmarks[]
+
+  @@index([conversation_id, created_at(sort: Desc)], map: "idx_messages_conv_created_desc")
+  @@index([conversation_id, created_at], map: "idx_messages_conversation_id_created_at")
+  @@index([deleted_at], map: "idx_messages_deleted_at", where: raw("(deleted_at IS NULL)"))
+  @@index([sender_id], map: "idx_messages_sender_id")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model notification_preferences {
+  user_id         String   @id @db.Uuid
+  sound_enabled   Boolean  @default(true)
+  desktop_enabled Boolean  @default(true)
+  email_enabled   Boolean  @default(false)
+  updated_at      DateTime @default(now()) @db.Timestamptz(6)
+  users           users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model pinned_messages {
+  id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  conversation_id String        @db.Uuid
+  message_id      String        @db.Uuid
+  pinned_by       String?       @db.Uuid
+  pinned_at       DateTime      @default(now()) @db.Timestamptz(6)
+  conversations   conversations @relation(fields: [conversation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  messages        messages      @relation(fields: [message_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users           users?        @relation(fields: [pinned_by], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([conversation_id, message_id])
+  @@index([conversation_id, pinned_at(sort: Desc)], map: "idx_pinned_messages_conversation_id")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model signal_identity_keys {
+  id              String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  device_id       String       @unique @db.Uuid
+  identity_key    String
+  registration_id Int
+  created_at      DateTime     @default(now()) @db.Timestamptz(6)
+  user_devices    user_devices @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model signal_prekeys {
+  id           String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  device_id    String       @db.Uuid
+  key_id       Int
+  public_key   String
+  used         Boolean      @default(false)
+  created_at   DateTime     @default(now()) @db.Timestamptz(6)
+  user_devices user_devices @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([device_id, key_id])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model signal_signed_prekeys {
+  id           String       @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  device_id    String       @db.Uuid
+  key_id       Int
+  public_key   String
+  signature    String
+  created_at   DateTime     @default(now()) @db.Timestamptz(6)
+  user_devices user_devices @relation(fields: [device_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([device_id, key_id])
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model tasks {
+  id         String    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id    String    @db.Uuid
+  title      String
+  done       Boolean   @default(false)
+  priority   String    @default("normal")
+  due_date   DateTime? @db.Date
+  created_at DateTime  @default(now()) @db.Timestamptz(6)
+  users      users     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id, done, due_date], map: "idx_tasks_user_id")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model team_members {
+  id        String   @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  team_id   String   @db.Uuid
+  user_id   String   @db.Uuid
+  role      String   @default("member")
+  joined_at DateTime @default(now()) @db.Timestamptz(6)
+  teams     teams    @relation(fields: [team_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users     users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([team_id, user_id])
+  @@index([team_id], map: "idx_team_members_team_id")
+  @@index([user_id], map: "idx_team_members_user_id")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model teams {
+  id            String          @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  name          String
+  description   String?
+  avatar_url    String?
+  created_by    String?         @db.Uuid
+  created_at    DateTime        @default(now()) @db.Timestamptz(6)
+  updated_at    DateTime        @default(now()) @db.Timestamptz(6)
+  conversations conversations[]
+  team_members  team_members[]
+  users         users?          @relation(fields: [created_by], references: [id], onUpdate: NoAction)
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model user_bookmarks {
+  id              String        @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id         String        @db.Uuid
+  message_id      String        @db.Uuid
+  conversation_id String        @db.Uuid
+  created_at      DateTime      @default(now()) @db.Timestamptz(6)
+  conversations   conversations @relation(fields: [conversation_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  messages        messages      @relation(fields: [message_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  users           users         @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([user_id, message_id])
+  @@index([user_id, created_at(sort: Desc)], map: "idx_user_bookmarks_user_id")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model user_devices {
+  id                    String                  @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  user_id               String                  @db.Uuid
+  device_name           String
+  push_token            String?
+  last_active_at        DateTime?               @db.Timestamptz(6)
+  created_at            DateTime                @default(now()) @db.Timestamptz(6)
+  message_deliveries    message_deliveries[]
+  signal_identity_keys  signal_identity_keys?
+  signal_prekeys        signal_prekeys[]
+  signal_signed_prekeys signal_signed_prekeys[]
+  users                 users                   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@index([user_id], map: "idx_user_devices_user_id")
+}
+
+/// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
+model users {
+  id                                          String                    @id @default(dbgenerated("uuid_generate_v4()")) @db.Uuid
+  email                                       String                    @unique
+  username                                    String                    @unique
+  display_name                                String
+  avatar_url                                  String?
+  department                                  String?
+  role                                        String                    @default("staff")
+  ldap_dn                                     String?                   @unique
+  password_hash                               String?
+  status                                      user_status               @default(active)
+  last_seen_at                                DateTime?                 @db.Timestamptz(6)
+  totp_secret                                 String?
+  totp_enabled                                Boolean                   @default(false)
+  created_at                                  DateTime                  @default(now()) @db.Timestamptz(6)
+  updated_at                                  DateTime                  @default(now()) @db.Timestamptz(6)
+  audit_logs                                  audit_logs[]
+  call_participants                           call_participants[]
+  calls                                       calls[]
+  conversation_members                        conversation_members[]
+  conversations                               conversations[]
+  files                                       files[]
+  meeting_attendees                           meeting_attendees[]
+  meetings                                    meetings[]
+  message_reactions                           message_reactions[]
+  messages_messages_original_sender_idTousers messages[]                @relation("messages_original_sender_idTousers")
+  messages_messages_sender_idTousers          messages[]                @relation("messages_sender_idTousers")
+  notification_preferences                    notification_preferences?
+  pinned_messages                             pinned_messages[]
+  tasks                                       tasks[]
+  team_members                                team_members[]
+  teams                                       teams[]
+  user_bookmarks                              user_bookmarks[]
+  user_devices                                user_devices[]
+}
+
+enum call_type {
+  audio
+  video
+}
+
+enum conversation_type {
+  direct
+  group
+  channel
+}
+
+enum delivery_status {
+  sent
+  delivered
+  read
+}
+
+enum member_role {
+  owner
+  admin
+  member
+  subscriber
+}
+
+enum message_type {
+  text
+  image
+  video
+  audio
+  file
+  system
+}
+
+enum user_status {
+  active
+  disabled
+}
