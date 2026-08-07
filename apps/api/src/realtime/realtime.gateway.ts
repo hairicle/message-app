@@ -97,6 +97,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     @ConnectedSocket() socket: AuthedSocket,
     @MessageBody() payload: { conversationId: string },
   ) {
+    if (!(await this.isMember(socket, payload.conversationId))) return;
     socket.to(`conversation:${payload.conversationId}`).emit('typing:stop', {
       conversationId: payload.conversationId,
       userId: socket.data.user.id,
@@ -117,10 +118,13 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   }
 
   @SubscribeMessage('call:answer')
-  handleCallAnswer(
+  async handleCallAnswer(
     @ConnectedSocket() socket: AuthedSocket,
-    @MessageBody() payload: { targetUserId: string; sdp: string; callId: string },
+    @MessageBody() payload: { targetUserId: string; sdp: string; callId: string; conversationId: string },
   ) {
+    // Was the only call:* handler without this check, so any authenticated socket could inject an
+    // SDP answer into a call between two other users.
+    if (!(await this.isMember(socket, payload.conversationId))) return;
     socket.to(`user:${payload.targetUserId}`).emit('call:answer', {
       fromUserId: socket.data.user.id,
       sdp: payload.sdp,
