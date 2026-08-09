@@ -16,6 +16,42 @@ interface MessageAttachmentProps {
 
 const WAVE_BARS = 34;
 
+/**
+ * One visual treatment for every attachment variant.
+ *
+ * These used to be set per branch and had drifted apart: images capped at 220px, video and file
+ * cards at 260, radii split between `rounded-xl` and nothing, and no variant agreed on a shadow.
+ * A thread mixing a photo, a clip and a PDF showed three different card shapes.
+ *
+ * `compact` is the exception and deliberately so — there the bubble itself clips the media, so the
+ * corners follow the grouped bubble's shape instead of this radius.
+ */
+export const ATTACHMENT = {
+  radius: 14,
+  maxWidth: 280,
+  /** Media is capped in height too, so a tall portrait photo cannot run the bubble off-screen. */
+  maxHeight: 320,
+  padding: 10,
+  shadow: '0 1px 2px rgba(0, 0, 0, 0.18)',
+} as const;
+
+/**
+ * Play affordance over a video thumbnail. The two video branches had drifted to different marks —
+ * an SVG triangle in one and a "▶" text glyph in the other, which rendered in whatever font the
+ * bubble inherited and sat off-centre.
+ */
+function PlayBadge() {
+  return (
+    <span className="absolute inset-0 flex items-center justify-center pointer-events-none">
+      <span className="w-10 h-10 rounded-full bg-black/50 flex items-center justify-center">
+        <svg className="w-5 h-5 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M8 5v14l11-7z" />
+        </svg>
+      </span>
+    </span>
+  );
+}
+
 export function VoicePlayer({ url, isMine, fileName, durationSecs }: { url: string | null; isMine: boolean; fileName: string; durationSecs: number | null }) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const [playing, setPlaying] = useState(false);
@@ -77,7 +113,7 @@ export function VoicePlayer({ url, isMine, fileName, durationSecs }: { url: stri
   }
 
   return (
-    <div className="flex items-center gap-2.5 py-1" style={{ minWidth: 200, maxWidth: 260 }}>
+    <div className="flex items-center gap-2.5 py-1" style={{ minWidth: 200, maxWidth: ATTACHMENT.maxWidth }}>
       <audio ref={audioRef} src={url} preload="metadata"
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
@@ -170,20 +206,22 @@ export function MessageAttachment({ type, file, isMine, compact, onOpen }: Messa
     if (compact) {
       return (
         <button type="button" className="block w-full hover:opacity-90 transition-opacity" onClick={() => onOpen?.(file, type)}>
-          <img src={previewUrl} alt={file.fileName} className="block w-full max-h-[320px] object-cover" />
+          <img src={previewUrl} alt={file.fileName} className="block w-full object-cover" style={{ maxHeight: ATTACHMENT.maxHeight }} />
         </button>
       );
     }
     return (
       <button
         type="button"
-        className="block mb-1 rounded-xl overflow-hidden hover:opacity-90 transition-opacity"
+        className="block mb-1 overflow-hidden hover:opacity-90 transition-opacity"
+        style={{ borderRadius: ATTACHMENT.radius, boxShadow: ATTACHMENT.shadow }}
         onClick={() => onOpen?.(file, type)}
       >
         <img
           src={previewUrl}
           alt={file.fileName}
-          className="block max-w-[220px] max-h-[220px] object-cover"
+          className="block object-cover"
+          style={{ maxWidth: ATTACHMENT.maxWidth, maxHeight: ATTACHMENT.maxHeight }}
         />
       </button>
     );
@@ -199,27 +237,20 @@ export function MessageAttachment({ type, file, isMine, compact, onOpen }: Messa
     if (compact) {
       return (
         <button type="button" className="relative block w-full hover:opacity-90 transition-opacity" onClick={() => onOpen?.(file, type)}>
-          <video src={previewUrl} preload="metadata" muted className="block w-full max-h-[320px] object-cover pointer-events-none" />
-          <span className="absolute inset-0 flex items-center justify-center">
-            <span className="w-10 h-10 rounded-full bg-black/50 flex items-center justify-center">
-              <svg className="w-5 h-5 text-white ml-0.5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>
-            </span>
-          </span>
+          <video src={previewUrl} preload="metadata" muted className="block w-full object-cover pointer-events-none" style={{ maxHeight: ATTACHMENT.maxHeight }} />
+          <PlayBadge />
         </button>
       );
     }
     return (
       <button
         type="button"
-        className="relative block mb-1 rounded-xl overflow-hidden hover:opacity-90 transition-opacity max-w-[260px]"
+        className="relative block mb-1 overflow-hidden hover:opacity-90 transition-opacity"
+        style={{ borderRadius: ATTACHMENT.radius, boxShadow: ATTACHMENT.shadow, maxWidth: ATTACHMENT.maxWidth }}
         onClick={() => onOpen?.(file, type)}
       >
-        <video src={previewUrl} preload="metadata" muted className="block w-full rounded-xl pointer-events-none" />
-        <span className="absolute inset-0 flex items-center justify-center">
-          <span className="w-10 h-10 rounded-full bg-black/50 flex items-center justify-center text-white text-sm">
-            ▶
-          </span>
-        </span>
+        <video src={previewUrl} preload="metadata" muted className="block w-full pointer-events-none" style={{ maxHeight: ATTACHMENT.maxHeight }} />
+        <PlayBadge />
       </button>
     );
   }
@@ -230,8 +261,8 @@ export function MessageAttachment({ type, file, isMine, compact, onOpen }: Messa
 
   if (!previewUrl) {
     return (
-      <div className="flex items-center gap-2.5 mb-1 py-1" style={{ minWidth: 200 }}>
-        <div className="flex-shrink-0 rounded-xl flex items-center justify-center" style={{ width: 40, height: 40, background: isMine ? 'rgba(255,255,255,0.15)' : 'var(--panel-alt)' }}>
+      <div className="flex items-center gap-2.5 mb-1" style={{ minWidth: 220, maxWidth: ATTACHMENT.maxWidth, padding: ATTACHMENT.padding, borderRadius: ATTACHMENT.radius, background: isMine ? 'rgba(255,255,255,0.14)' : 'var(--panel-alt)' }}>
+        <div className="flex-shrink-0 flex items-center justify-center" style={{ width: 40, height: 40, borderRadius: ATTACHMENT.radius - 4, background: isMine ? 'rgba(255,255,255,0.15)' : 'var(--panel)' }}>
           <svg className="w-4 h-4 animate-spin" style={loadingStyle} fill="none" viewBox="0 0 24 24">
             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8z" />
@@ -248,11 +279,18 @@ export function MessageAttachment({ type, file, isMine, compact, onOpen }: Messa
     <a
       href={previewUrl}
       download={file.fileName}
-      className="group flex items-center gap-3 mb-1 px-2.5 py-2.5 rounded-xl transition-colors no-underline"
-      style={{ background: isMine ? 'rgba(255,255,255,0.14)' : 'var(--panel-alt)', minWidth: 220, maxWidth: 260 }}
+      className="group flex items-center gap-3 mb-1 transition-colors no-underline"
+      style={{
+        background: isMine ? 'rgba(255,255,255,0.14)' : 'var(--panel-alt)',
+        borderRadius: ATTACHMENT.radius,
+        boxShadow: ATTACHMENT.shadow,
+        padding: ATTACHMENT.padding,
+        minWidth: 220,
+        maxWidth: ATTACHMENT.maxWidth,
+      }}
     >
       {/* File-type icon badge */}
-      <span className="flex-shrink-0 rounded-lg flex items-center justify-center relative" style={{ width: 40, height: 40, background: isMine ? 'rgba(255,255,255,0.2)' : `${extColor}22` }}>
+      <span className="flex-shrink-0 flex items-center justify-center relative" style={{ width: 40, height: 40, borderRadius: ATTACHMENT.radius - 4, background: isMine ? 'rgba(255,255,255,0.2)' : `${extColor}22` }}>
         <svg className="w-[18px] h-[18px]" fill="none" stroke={isMine ? '#fff' : extColor} viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M9 2.25H15a.75.75 0 01.53.22l4.5 4.5a.75.75 0 01.22.53V19.5A2.25 2.25 0 0118 21.75H6A2.25 2.25 0 013.75 19.5V4.5A2.25 2.25 0 016 2.25h3z" />
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.75} d="M14.25 2.25v4.5a.75.75 0 00.75.75h4.5" />
