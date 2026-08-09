@@ -951,8 +951,11 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
           const bubbleStyle: React.CSSProperties = deleted
             ? { background: 'var(--panel-alt)', border: 'none', color: 'var(--text-dim)', opacity: 0.6 }
             : {
-                background: mine ? 'var(--accent)' : 'var(--panel)',
-                border: mine ? 'none' : '1px solid var(--border)',
+                // Received bubbles carry no border and no shadow: --bubble-in already separates
+                // them from the thread background, and outlining every one of them was most of
+                // the visual weight. Sent bubbles were already flat, so the two now match.
+                background: mine ? 'var(--accent)' : 'var(--bubble-in)',
+                border: 'none',
                 color: mine ? 'var(--bg-deep)' : 'var(--text-muted)',
               };
 
@@ -1091,9 +1094,9 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                 <div className="relative flex flex-col max-w-full" style={{ alignItems: mine ? 'flex-end' : 'flex-start' }}>
                 {/* Bubble */}
                 {isMediaBubble ? (
-                  <div className={`relative overflow-hidden max-w-full ${!mine ? 'shadow-sm' : ''}`} style={{ borderRadius: bubbleBorderRadius }}>
+                  <div className="relative overflow-hidden max-w-full" style={{ borderRadius: bubbleBorderRadius }}>
                     {message.replyToMessageId && (
-                      <div className="px-3 pt-2.5 pb-2" style={{ background: mine ? 'var(--accent)' : 'var(--panel)', borderBottom: '1px solid var(--border)' }}>
+                      <div className="px-3 pt-2.5 pb-2" style={{ background: mine ? 'var(--accent)' : 'var(--bubble-in)', borderBottom: '1px solid var(--border)' }}>
                         <ReplyQuote replyId={message.replyToMessageId} />
                       </div>
                     )}

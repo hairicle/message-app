@@ -15,6 +15,7 @@
   --bg: #ffffff;
   --bg-deep: #f4f4f5;
   --panel: #ffffff;
+  --bubble-in: #f1f2f4;
   --panel-alt: #f4f4f5;
   --border: #e4e4e7;
   --text: #09090b;
@@ -40,6 +41,7 @@
     --bg: #09090b;
     --bg-deep: #18181b;
     --panel: #18181b;
+    --bubble-in: #151922;
     --panel-alt: #202024;
     --border: #27272a;
     --text: #fafafa;
@@ -65,6 +67,7 @@
   --bg: #ffffff;
   --bg-deep: #f4f4f5;
   --panel: #ffffff;
+  --bubble-in: #f1f2f4;
   --panel-alt: #f4f4f5;
   --border: #e4e4e7;
   --text: #09090b;
@@ -84,6 +87,7 @@
   --bg: #09090b;
   --bg-deep: #18181b;
   --panel: #18181b;
+  --bubble-in: #151922;
   --panel-alt: #202024;
   --border: #27272a;
   --text: #fafafa;
