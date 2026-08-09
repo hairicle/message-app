@@ -1035,7 +1035,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
               {!startsGroup ? (
                 <div className="flex-shrink-0 relative" style={{ width: 32 }}>
                   <span
-                    className="absolute top-0 whitespace-nowrap text-[9.5px] font-mono leading-none opacity-0 group-hover:opacity-100 transition-opacity select-none"
+                    className="absolute top-0 whitespace-nowrap text-[10px] font-mono leading-none opacity-0 group-hover:opacity-100 transition-opacity select-none"
                     style={{
                       [mine ? 'left' : 'right']: 0,
                       width: 56,
@@ -1075,8 +1075,8 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                     <span className="text-[13px] font-semibold" style={{ color: mine ? 'var(--accent)' : 'var(--text)' }}>
                       {mine ? 'You' : sender?.display_name ?? 'Unknown'}
                     </span>
-                    <span className="font-mono text-[10.5px]" style={{ color: 'var(--text-dim)' }}>
-                      {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    <span className="font-mono text-[10px]" style={{ color: 'var(--text-dim)' }}>
+                      {msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       {mine && read && ' · ✓✓'}
                     </span>
                     {bookmarkIds.has(message.id) && (
@@ -1098,8 +1098,13 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                       </div>
                     )}
                     <MessageAttachment type={message.type} file={message.file!} isMine={mine} compact onOpen={(file, type) => setLightboxItem({ file, type })} />
-                    <span className="absolute bottom-2 right-2 text-[10px] text-white bg-black/40 rounded-full px-1.5 py-0.5 select-none">
-                      {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    {/* Same rule as a text bubble: the time recedes to hover, because the block
+                        header above already states it. It stays put only when the pill also
+                        carries state — edited, or read — which nothing else on a media bubble
+                        reports. White on a scrim rather than --text-dim, since it sits over
+                        arbitrary imagery. */}
+                    <span className={`absolute bottom-2 right-2 text-[10px] font-mono text-white bg-black/45 rounded-full px-1.5 py-0.5 select-none transition-opacity ${message.editedAt || (mine && read) ? '' : 'opacity-0 group-hover:opacity-100'}`}>
+                      {msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       {message.editedAt && ' (edited)'}{mine && read && ' ✓✓'}
                     </span>
                   </div>
@@ -1141,7 +1146,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                       </a>
                     )}
                     {message.editedAt && !message.deletedAt && (
-                      <span className="block text-right text-[10.5px] mt-1 select-none italic font-mono" style={{ color: mine ? 'rgba(8,10,15,0.5)' : 'var(--text-dim)' }}>(edited)</span>
+                      <span className="block text-right text-[10px] mt-1 select-none italic font-mono" style={{ color: mine ? 'rgba(8,10,15,0.5)' : 'var(--text-dim)' }}>(edited)</span>
                     )}
                     {/* Read receipt closing the block. The time itself is deliberately absent:
                         the block's header already carries one, and repeating it per bubble was
