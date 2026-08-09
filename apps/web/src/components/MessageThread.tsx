@@ -994,14 +994,31 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
               )}
             <div
               ref={(el) => { if (el) msgRefs.current.set(message.id, el); else msgRefs.current.delete(message.id); }}
-              className={`flex items-start gap-2 group ${startsGroup ? 'mt-3' : 'mt-0.5'} ${mine ? 'flex-row-reverse' : 'flex-row'} transition-colors duration-300`}
+              className={`flex items-start gap-2 group ${startsGroup ? 'mt-3' : 'mt-1'} ${mine ? 'flex-row-reverse' : 'flex-row'} transition-colors duration-300`}
               style={highlightedMsgId === message.id ? { background: 'var(--accent-wash)', borderRadius: 12, margin: '12px -4px', padding: '0 4px' } : undefined}
               onMouseEnter={(e) => calcToolbarDir(e.currentTarget, message.id)}
             >
               {/* Avatar — on the message that opens the block, so it sits level with the name
-                  header. Later messages in the block keep the indent with a spacer. */}
+                  header. Later messages keep the indent with a spacer, and that spacer doubles
+                  as the slot for this message's time: the gutter is already reserved, so
+                  revealing the time on hover shifts nothing. It is absolutely positioned and
+                  wider than the 32px gutter so a 12-hour "10:32 PM" still fits, growing away
+                  from the bubble rather than into it. */}
               {!startsGroup ? (
-                <div className="flex-shrink-0" style={{ width: 32 }} />
+                <div className="flex-shrink-0 relative" style={{ width: 32 }}>
+                  <span
+                    className="absolute top-0 whitespace-nowrap text-[9.5px] font-mono leading-none opacity-0 group-hover:opacity-100 transition-opacity select-none"
+                    style={{
+                      [mine ? 'left' : 'right']: 0,
+                      width: 56,
+                      paddingTop: 15,
+                      textAlign: mine ? 'left' : 'right',
+                      color: 'var(--text-dim)',
+                    }}
+                  >
+                    {msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                  </span>
+                </div>
               ) : (() => {
                 const avatarUrl = mine ? user!.avatarUrl : sender?.avatar_url;
                 const name = mine ? user!.displayName : (sender?.display_name ?? '?');
