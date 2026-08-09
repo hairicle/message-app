@@ -67,6 +67,11 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
   const [editingText, setEditingText] = useState('');
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  // Which message currently owns the reaction popover. Exactly one at a time — the toolbar used
+  // to be rendered for every message and merely hidden with opacity, so a long thread carried
+  // hundreds of invisible toolbars and their emoji buttons in the DOM.
+  const [activeMsgId, setActiveMsgId] = useState<string | null>(null);
+  const longPressRef = useRef<number | null>(null);
   const [pinnedMessages, setPinnedMessages] = useState<PinnedMessage[]>([]);
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
   const [bookmarks, setBookmarks] = useState<BookmarkedMessage[]>([]);
@@ -772,7 +777,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
       })()}
 
       {/* Backdrop to close dropdown */}
-      {openMenuId && <div className="fixed inset-0 z-10" onClick={() => setOpenMenuId(null)} />}
+      {openMenuId && <div className="fixed inset-0 z-10" onClick={() => { setOpenMenuId(null); setActiveMsgId(null); }} />}
 
       {/* Forward picker modal */}
       {/* ── Forward picker (Telegram-style) ── */}
@@ -1009,7 +1014,17 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
               ref={(el) => { if (el) msgRefs.current.set(message.id, el); else msgRefs.current.delete(message.id); }}
               className={`flex items-start gap-2 group ${startsGroup ? 'mt-3' : 'mt-1'} ${mine ? 'flex-row-reverse' : 'flex-row'} transition-colors duration-300`}
               style={highlightedMsgId === message.id ? { background: 'var(--accent-wash)', borderRadius: 12, margin: '12px -4px', padding: '0 4px' } : undefined}
-              onMouseEnter={(e) => calcToolbarDir(e.currentTarget, message.id)}
+              onMouseEnter={(e) => { calcToolbarDir(e.currentTarget, message.id); setActiveMsgId(message.id); }}
+              // Leaving only dismisses the popover when its menu is closed, so the menu does not
+              // vanish the moment the pointer travels toward it.
+              onMouseLeave={() => { if (openMenuId !== message.id) setActiveMsgId((id) => (id === message.id ? null : id)); }}
+              // Touch has no hover, so a long press stands in for it.
+              onTouchStart={(e) => {
+                const el = e.currentTarget;
+                longPressRef.current = window.setTimeout(() => { calcToolbarDir(el, message.id); setActiveMsgId(message.id); }, 450);
+              }}
+              onTouchEnd={() => { if (longPressRef.current) window.clearTimeout(longPressRef.current); }}
+              onTouchMove={() => { if (longPressRef.current) window.clearTimeout(longPressRef.current); }}
             >
               {/* Avatar — on the message that opens the block, so it sits level with the name
                   header. Later messages keep the indent with a spacer, and that spacer doubles
@@ -1070,6 +1085,10 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                   </div>
                 )}
 
+                {/* Bubble, reactions and the popover share a wrapper whose top edge is the
+                    bubble's top edge — so the popover anchors directly above the bubble rather
+                    than above the name header, which sits higher up in the column. */}
+                <div className="relative flex flex-col max-w-full" style={{ alignItems: mine ? 'flex-end' : 'flex-start' }}>
                 {/* Bubble */}
                 {isMediaBubble ? (
                   <div className={`relative overflow-hidden max-w-full ${!mine ? 'shadow-sm' : ''}`} style={{ borderRadius: bubbleBorderRadius }}>
@@ -1152,16 +1171,15 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                     ))}
                   </div>
                 )}
-              </div>{/* end column */}
-
-              {/* Hover toolbar — sibling to the column */}
-              {!isEditing && !message.deletedAt && (
-                <div className={`flex-shrink-0 transition-all duration-150 ${(msgDirs[message.id] ?? 'up') === 'up' ? 'self-end mb-0.5' : 'self-start mt-0.5'} ${openMenuId === message.id ? 'opacity-100 pointer-events-auto' : openMenuId !== null ? 'opacity-0 pointer-events-none' : 'opacity-100 sm:opacity-0 sm:group-hover:opacity-100 pointer-events-auto sm:pointer-events-none sm:group-hover:pointer-events-auto'}`}>
+              {/* Reaction popover — mounted only for the message that owns it, so exactly one
+                  exists in the DOM, and anchored to the top of that message's bubble. */}
+              {activeMsgId === message.id && !isEditing && !message.deletedAt && (
+                <div className="absolute z-30 bottom-full mb-1" style={{ [mine ? 'right' : 'left']: 0 }}>
                   <div className="flex items-center rounded-2xl overflow-visible" style={{ background: 'var(--panel)', border: '1px solid var(--border)', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
                     {QUICK_EMOJIS.map((e) => (
-                      <button key={e} onClick={() => toggleReaction(message.id, e)} className="hidden sm:flex w-8 h-8 text-[16px] items-center justify-center transition-colors first:rounded-l-2xl hover-panel-alt">{e}</button>
+                      <button key={e} onClick={() => toggleReaction(message.id, e)} className="flex w-8 h-8 text-[16px] items-center justify-center transition-colors first:rounded-l-2xl hover-panel-alt">{e}</button>
                     ))}
-                    <div className="hidden sm:block w-px h-5 mx-0.5 flex-shrink-0" style={{ background: 'var(--border)' }} />
+                    <div className="w-px h-5 mx-0.5 flex-shrink-0" style={{ background: 'var(--border)' }} />
                     <div className="relative">
                       <button onClick={(e) => { e.stopPropagation(); calcToolbarDir(e.currentTarget, message.id); setOpenMenuId(openMenuId === message.id ? null : message.id); }}
                         className="w-8 h-8 flex items-center justify-center transition-colors rounded-r-2xl hover-panel-alt" style={{ color: 'var(--text-dim)' }}>
@@ -1247,6 +1265,8 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                   </div>
                 </div>
               )}
+                </div>{/* end bubble + reactions wrap */}
+              </div>{/* end column */}
             </div>
             </div>
           );
