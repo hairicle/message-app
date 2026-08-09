@@ -1041,7 +1041,10 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                     className="absolute top-0 whitespace-nowrap text-[10px] font-mono leading-none opacity-0 group-hover:opacity-100 transition-opacity select-none"
                     style={{
                       [mine ? 'left' : 'right']: 0,
-                      width: 56,
+                      // 48 is the widest this can be without pushing past the scroll
+                      // container's 16px padding and giving the whole thread a horizontal
+                      // scrollbar: 16 + 32 (gutter) - 48 lands exactly on the edge.
+                      width: 48,
                       paddingTop: 15,
                       textAlign: mine ? 'left' : 'right',
                       color: 'var(--text-dim)',
