@@ -216,7 +216,11 @@ describe('MessagesService', () => {
   });
 
   describe('deleteMessage', () => {
+    const asAdmin = () => prisma.users.findUnique.mockResolvedValue({ role: 'admin' });
+    const asStaff = () => prisma.users.findUnique.mockResolvedValue({ role: 'staff' });
+
     it('blanks the body rather than only flagging the row', async () => {
+      asAdmin();
       prisma.messages.updateMany.mockResolvedValue({ count: 1 });
       prisma.messages.findUniqueOrThrow.mockResolvedValue({
         id: MSG, conversation_id: CONV, deleted_at: new Date(),
@@ -227,9 +231,41 @@ describe('MessagesService', () => {
       expect(data.deleted_at).toBeInstanceOf(Date);
     });
 
-    it('rejects deleting someone else\'s message', async () => {
-      prisma.messages.updateMany.mockResolvedValue({ count: 0 });
+    // The whole point of an admin delete: the message is not theirs.
+    it('lets an admin delete a message they did not send', async () => {
+      asAdmin();
+      prisma.messages.updateMany.mockResolvedValue({ count: 1 });
+      prisma.messages.findUniqueOrThrow.mockResolvedValue({
+        id: MSG, conversation_id: CONV, deleted_at: new Date(),
+      });
+      await service.deleteMessage(MSG, USER);
+      expect(prisma.messages.updateMany.mock.calls[0][0].where).not.toHaveProperty('sender_id');
+    });
+
+    // Hiding the button does not close the HTTP route or the socket event.
+    it('refuses a non-admin, and never touches the row', async () => {
+      asStaff();
       await expect(service.deleteMessage(MSG, OTHER)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.messages.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('refuses a non-admin deleting their own message', async () => {
+      asStaff();
+      await expect(service.deleteMessage(MSG, USER)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.messages.updateMany).not.toHaveBeenCalled();
+    });
+
+    // A deleted account's token can outlive the row it was issued for.
+    it('refuses when the actor no longer exists', async () => {
+      prisma.users.findUnique.mockResolvedValue(null);
+      await expect(service.deleteMessage(MSG, USER)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.messages.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('404s on a message that is already deleted', async () => {
+      asAdmin();
+      prisma.messages.updateMany.mockResolvedValue({ count: 0 });
+      await expect(service.deleteMessage(MSG, USER)).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 

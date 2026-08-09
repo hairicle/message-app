@@ -196,14 +196,33 @@ export class MessagesService {
     };
   }
 
+  /**
+   * Deleting is an admin action, and the rule lives here.
+   *
+   * The clause used to be `sender_id: userId`, which disagreed with the interface in both
+   * directions: an admin pressing Delete on someone else's message was refused, while any
+   * signed-in user could still delete their own through the HTTP route or the socket event —
+   * the button being hidden stops neither.
+   *
+   * The role is read from the row rather than the JWT: a token issued before someone was
+   * demoted still carries `role: 'admin'` until it expires.
+   */
   async deleteMessage(messageId: string, userId: string) {
+    const actor = await this.prisma.users.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    if (actor?.role !== 'admin') {
+      throw new ForbiddenException('Only an admin can delete a message');
+    }
+
     const deletedAt = new Date();
     const result = await this.prisma.messages.updateMany({
-      where: { id: messageId, sender_id: userId, deleted_at: null },
+      where: { id: messageId, deleted_at: null },
       // Body is blanked, not just flagged, so the text cannot be recovered from the row.
       data: { deleted_at: deletedAt, ciphertext: Buffer.alloc(0) },
     });
-    if (result.count === 0) throw new ForbiddenException('Cannot delete this message');
+    if (result.count === 0) throw new NotFoundException('Message not found, or already deleted');
 
     const m = await this.prisma.messages.findUniqueOrThrow({
       where: { id: messageId },
