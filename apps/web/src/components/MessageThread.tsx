@@ -84,7 +84,9 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   const [pinnedBarIndex, setPinnedBarIndex] = useState(0);
   const [highlightedMsgId, setHighlightedMsgId] = useState<string | null>(null);
   const msgRefs = useRef<Map<string, HTMLDivElement>>(new Map());
-  const [forwardingMessage, setForwardingMessage] = useState<Message | null>(null);
+  // A list rather than one message: the shared-media tabs can forward a selection, and the
+  // single-message menu is just the one-element case of the same picker.
+  const [forwardingIds, setForwardingIds] = useState<string[]>([]);
   const [forwardSearch, setForwardSearch] = useState('');
   const [forwardSelected, setForwardSelected] = useState<Set<string>>(new Set());
   const [forwardComment, setForwardComment] = useState('');
@@ -261,6 +263,32 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
     } else {
       const { message } = await messagesApi.editMessage(messageId, ciphertext);
       setMessages((prev) => prev.map((m) => m.id === messageId ? { ...m, ciphertext: message.ciphertext, editedAt: message.editedAt } : m));
+    }
+  }
+
+  /**
+   * Delete one or more messages after a single confirmation.
+   *
+   * Reached from the shared-media tabs, where a selection can span several items — asking once
+   * per message would turn "delete 12 photos" into twelve dialogs.
+   */
+  async function deleteMessages(ids: string[]) {
+    if (ids.length === 0) return;
+    const ok = await confirm({
+      title: ids.length > 1 ? `Delete ${ids.length} messages?` : 'Delete this message?',
+      description: <>{ids.length > 1 ? 'They' : 'The message'} will be removed for everyone in this conversation. <b style={{ color: 'var(--text-muted)' }}>This cannot be undone.</b></>,
+      confirmLabel: 'Delete',
+      cancelLabel: 'Keep',
+    });
+    if (!ok) return;
+
+    for (const id of ids) {
+      if (socket) {
+        socket.emit('message:delete', { messageId: id });
+      } else {
+        await messagesApi.deleteMessage(id);
+        setMessages((prev) => prev.map((m) => m.id === id ? { ...m, ciphertext: '', file: undefined, deletedAt: new Date().toISOString() } : m));
+      }
     }
   }
 
@@ -461,8 +489,9 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
     setTimeout(() => setToast(null), 3500);
   }
 
-  function openForwardPicker(message: Message) {
-    setForwardingMessage(message);
+  function openForwardPicker(messageIds: string[]) {
+    if (messageIds.length === 0) return;
+    setForwardingIds(messageIds);
     setForwardSearch('');
     setForwardSelected(new Set());
     setForwardComment('');
@@ -473,21 +502,23 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   }
 
   async function handleForward() {
-    if (!forwardingMessage || forwardSelected.size === 0) return;
+    if (forwardingIds.length === 0 || forwardSelected.size === 0) return;
     setForwardLoading(true);
     const targets = allConversations.filter((c) => forwardSelected.has(c.id));
     try {
-      await Promise.all(targets.map((c) => messagesApi.forwardMessage(forwardingMessage.id, c.id)));
-      // Send optional comment to each target
-      if (forwardComment.trim()) {
-        const ciphertext = encodeMessageText(forwardComment.trim());
-        await Promise.all(targets.map((c) =>
-          messagesApi.sendMessage({ conversationId: c.id, ciphertext })
-        ));
-      }
+      // Targets run in parallel, but the messages within one target go in sequence: forwarding a
+      // selection should arrive in the order it was picked, and racing them would shuffle it.
+      await Promise.all(targets.map(async (c) => {
+        for (const id of forwardingIds) {
+          await messagesApi.forwardMessage(id, c.id);
+        }
+        if (forwardComment.trim()) {
+          await messagesApi.sendMessage({ conversationId: c.id, ciphertext: encodeMessageText(forwardComment.trim()) });
+        }
+      }));
       const names = targets.map((c) => getConversationTitle(c, user!.id)).join(', ');
-      showToast(`Forwarded to ${names}`);
-      setForwardingMessage(null);
+      showToast(forwardingIds.length > 1 ? `Forwarded ${forwardingIds.length} items to ${names}` : `Forwarded to ${names}`);
+      setForwardingIds([]);
     } catch (err) { window.alert((err as Error).message); }
     finally { setForwardLoading(false); }
   }
@@ -799,25 +830,25 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
 
       {/* Forward picker modal */}
       {/* ── Forward picker (Telegram-style) ── */}
-      {forwardingMessage && (() => {
+      {forwardingIds.length > 0 && (() => {
         const q = forwardSearch.toLowerCase();
         const filtered = allConversations.filter((c) =>
           getConversationTitle(c, user!.id).toLowerCase().includes(q)
         );
         return (
           <div className="absolute inset-0 z-40 flex items-end sm:items-center justify-center" style={{ background: 'rgba(0,0,0,0.55)' }}
-            onClick={(e) => { if (e.target === e.currentTarget) { setForwardingMessage(null); } }}>
+            onClick={(e) => { if (e.target === e.currentTarget) { setForwardingIds([]); } }}>
             <div className="w-full max-w-sm rounded-t-2xl sm:rounded-2xl overflow-hidden shadow-2xl flex flex-col" style={{ background: 'var(--panel)', border: '1px solid var(--border)', maxHeight: '80vh' }}>
 
               {/* Header */}
               <div className="flex items-center justify-between px-5 py-4 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
                 <div>
-                  <p className="font-semibold text-[15px]" style={{ color: 'var(--text)' }}>Forward message</p>
+                  <p className="font-semibold text-[15px]" style={{ color: 'var(--text)' }}>{forwardingIds.length > 1 ? `Forward ${forwardingIds.length} items` : 'Forward message'}</p>
                   <p className="text-[11px] font-mono mt-0.5" style={{ color: 'var(--text-dim)' }}>
                     {forwardSelected.size === 0 ? 'Choose who to forward to' : `${forwardSelected.size} selected`}
                   </p>
                 </div>
-                <button type="button" onClick={() => setForwardingMessage(null)} className="btn-icon" style={{ width: 30, height: 30 }}>
+                <button type="button" onClick={() => setForwardingIds([])} className="btn-icon" style={{ width: 30, height: 30 }}>
                   <FaXmark size={14} />
                 </button>
               </div>
@@ -1261,7 +1292,7 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
 
                           {/* 4. Forward */}
                           {!message.deletedAt && (
-                            <button type="button" onClick={() => { openForwardPicker(message); setOpenMenuId(null); }}
+                            <button type="button" onClick={() => { openForwardPicker([message.id]); setOpenMenuId(null); }}
                               className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover-panel-alt" style={{ color: 'var(--text-muted)' }}>
                               <FaShare size={14} style={{ color: 'var(--text-dim)' }} />
                               Forward
@@ -1385,6 +1416,9 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
                 setConversation((c) => (c ? { ...c, avatar_url: avatarUrl } : c));
                 onConversationAvatarChanged?.(conversationId, avatarUrl);
               }}
+              onForwardMessages={openForwardPicker}
+              onDeleteMessages={deleteMessages}
+              canDeleteMessages={user?.role === 'admin'}
               initialTab="media" />
           </aside>
         </>
