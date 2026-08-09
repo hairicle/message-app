@@ -73,7 +73,7 @@ export function ConversationInfoPanel({
   ];
 
   return (
-    <div className="flex flex-col h-full overflow-hidden" style={{ background: 'var(--bg)', fontFamily: "'Inter', system-ui, sans-serif" }}>
+    <div className="flex flex-col h-full overflow-hidden" style={{ background: 'var(--bg)', fontFamily: 'var(--font-sans)' }}>
       {/* Header */}
       <div className="flex items-center gap-3 px-4 py-3.5 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
         <h2 className="font-mono text-[13px] uppercase tracking-widest flex-1" style={{ color: 'var(--text-dim)' }}>Info</h2>

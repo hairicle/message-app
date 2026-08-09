@@ -129,7 +129,7 @@ export function VoicePlayer({ url, isMine, fileName, durationSecs }: { url: stri
       {/* Elapsed while playing, total otherwise — matches how the reference reads */}
       <span
         className="flex-shrink-0 tabular-nums"
-        style={{ fontSize: 11.5, color: dim, fontFamily: 'monospace' }}
+        style={{ fontSize: 11.5, color: dim, fontFamily: 'var(--font-mono)' }}
         title={fileName}
       >
         {duration > 0 ? fmt(playing || currentSecs > 0 ? currentSecs : duration) : '--:--'}

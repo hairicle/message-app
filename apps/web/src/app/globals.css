@@ -1,5 +1,16 @@
 @import "tailwindcss";
 
+/*
+ * Feeds the fonts loaded in layout.tsx into Tailwind's own scale, so `font-mono` resolves to
+ * JetBrains Mono and Tailwind's preflight picks up Inter for body text. The system stacks stay
+ * behind them as the fallback while the webfont loads, and for the two scripts the Latin subset
+ * does not cover.
+ */
+@theme {
+  --font-sans: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
 :root {
   --bg: #ffffff;
   --bg-deep: #f4f4f5;
@@ -111,7 +122,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: 13px;
   font-weight: 700;
   color: var(--accent);
@@ -143,7 +154,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: 14px;
   font-weight: 500;
   padding: 9px 15px;
@@ -162,7 +173,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  font-family: monospace;
+  font-family: var(--font-mono);
   font-size: 14px;
   font-weight: 500;
   padding: 9px 15px;

@@ -329,7 +329,7 @@ export function ProfilePanel({ onClose, onPrefsChange }: ProfilePanelProps) {
 
       {/* Slide-in panel */}
       <div className="w-full max-w-sm lg:max-w-none flex flex-col h-full overflow-hidden"
-        style={{ background: 'var(--bg)', borderLeft: '1px solid var(--border)', fontFamily: "'Inter', system-ui, sans-serif" }}>
+        style={{ background: 'var(--bg)', borderLeft: '1px solid var(--border)', fontFamily: 'var(--font-sans)' }}>
 
         {/* ── Avatar header ─────────────────────────────────────────────── */}
         <div className="flex-shrink-0 px-5 pt-5 pb-5" style={{ background: 'var(--panel)', borderBottom: '1px solid var(--border)' }}>

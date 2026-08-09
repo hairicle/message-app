@@ -129,7 +129,7 @@ export function AnnounceWorkspace({ onMobileDetailChange }: { onMobileDetailChan
   const isAdmin = user?.role === 'admin' || members.find((m) => m.user_id === user?.id)?.role === 'owner';
 
   return (
-    <div className="flex-1 flex overflow-hidden" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+    <div className="flex-1 flex overflow-hidden" style={{ fontFamily: 'var(--font-sans)' }}>
 
       {/* ── LEFT: channel list ── */}
       <div className={`flex-col flex-shrink-0 lg:w-[260px] ${selectedId ? 'hidden lg:flex' : 'flex w-full'}`} style={{ borderRight: '1px solid var(--border)', background: 'var(--bg)' }}>

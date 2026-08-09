@@ -204,7 +204,7 @@ export function TeamWorkspace({ onMobileDetailChange }: { onMobileDetailChange?:
   const activeTeam = teams.find((t) => t.id === activeTeamId) ?? null;
 
   return (
-    <div className="flex-1 flex overflow-hidden relative team-root" style={{ fontFamily: "'Inter', system-ui, sans-serif" }}>
+    <div className="flex-1 flex overflow-hidden relative team-root" style={{ fontFamily: 'var(--font-sans)' }}>
 
       {/* ── LEFT: team list — full-screen on mobile when no team selected, hidden when team open ── */}
       <div className={`flex-col flex-shrink-0 lg:w-[260px] ${activeTeamId ? 'hidden lg:flex' : 'flex w-full'}`} style={{ borderRight: '1px solid var(--border)', background: 'var(--bg)' }}>

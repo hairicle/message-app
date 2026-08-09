@@ -642,4 +642,4 @@ export function AdminDashboard() {
   );
 }
 
-const rootFont: React.CSSProperties = { fontFamily: "'Inter', system-ui, sans-serif" };
+const rootFont: React.CSSProperties = { fontFamily: 'var(--font-sans)' };
