@@ -70,11 +70,14 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   const [editingText, setEditingText] = useState('');
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [openMenuId, setOpenMenuId] = useState<string | null>(null);
-  // Which message currently owns the reaction popover. Exactly one at a time — the toolbar used
-  // to be rendered for every message and merely hidden with opacity, so a long thread carried
-  // hundreds of invisible toolbars and their emoji buttons in the DOM.
-  const [activeMsgId, setActiveMsgId] = useState<string | null>(null);
+  // Which message owns the reaction popover, and which way it opens. Exactly one at a time —
+  // the toolbar used to be rendered for every message and merely hidden with opacity, so a long
+  // thread carried hundreds of invisible toolbars and their emoji buttons in the DOM. Holding
+  // the direction here rather than per message keeps it impossible for a stale entry to decide
+  // where a later popover opens.
+  const [activePicker, setActivePicker] = useState<{ id: string; dir: 'up' | 'down' } | null>(null);
   const longPressRef = useRef<number | null>(null);
+  const hoverOpenRef = useRef<number | null>(null);
   const [pinnedMessages, setPinnedMessages] = useState<PinnedMessage[]>([]);
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
   const [bookmarks, setBookmarks] = useState<BookmarkedMessage[]>([]);
@@ -547,6 +550,33 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
     }
   }
 
+  /**
+   * Open the reaction popover against a bubble, choosing its side.
+   *
+   * Upward by default, so it does not cover the reply below it — but near the top of the thread
+   * there is nothing above to open into, and it would be clipped by the header.
+   */
+  function openPicker(el: Element, id: string) {
+    const rect = el.getBoundingClientRect();
+    const containerTop = scrollContainerRef.current?.getBoundingClientRect().top ?? 0;
+    const dir: 'up' | 'down' = rect.top - containerTop < 48 ? 'down' : 'up';
+    setActivePicker({ id, dir });
+  }
+
+  /**
+   * Hover opens on a delay. Without one, dragging the pointer across the thread to reach the
+   * scrollbar or the composer flashes a popover over every message it crosses.
+   */
+  function schedulePicker(el: Element, id: string) {
+    if (hoverOpenRef.current) window.clearTimeout(hoverOpenRef.current);
+    hoverOpenRef.current = window.setTimeout(() => openPicker(el, id), 140);
+  }
+
+  function cancelScheduledPicker() {
+    if (hoverOpenRef.current) window.clearTimeout(hoverOpenRef.current);
+    hoverOpenRef.current = null;
+  }
+
   // Compute toolbar open direction for a given element freshly each call
   function calcToolbarDir(el: Element, msgId: string) {
     const rect = el.getBoundingClientRect();
@@ -826,7 +856,7 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
       })()}
 
       {/* Backdrop to close dropdown */}
-      {openMenuId && <div className="fixed inset-0 z-10" onClick={() => { setOpenMenuId(null); setActiveMsgId(null); }} />}
+      {openMenuId && <div className="fixed inset-0 z-10" onClick={() => { setOpenMenuId(null); setActivePicker(null); }} />}
 
       {/* Forward picker modal */}
       {/* ── Forward picker (Telegram-style) ── */}
@@ -1071,17 +1101,6 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
               ref={(el) => { if (el) msgRefs.current.set(message.id, el); else msgRefs.current.delete(message.id); }}
               className={`flex items-start gap-2 group ${startsGroup ? 'mt-3' : 'mt-1'} ${mine ? 'flex-row-reverse' : 'flex-row'} transition-colors duration-300`}
               style={highlightedMsgId === message.id ? { background: 'var(--accent-wash)', borderRadius: 12, margin: '12px -4px', padding: '0 4px' } : undefined}
-              onMouseEnter={(e) => { calcToolbarDir(e.currentTarget, message.id); setActiveMsgId(message.id); }}
-              // Leaving only dismisses the popover when its menu is closed, so the menu does not
-              // vanish the moment the pointer travels toward it.
-              onMouseLeave={() => { if (openMenuId !== message.id) setActiveMsgId((id) => (id === message.id ? null : id)); }}
-              // Touch has no hover, so a long press stands in for it.
-              onTouchStart={(e) => {
-                const el = e.currentTarget;
-                longPressRef.current = window.setTimeout(() => { calcToolbarDir(el, message.id); setActiveMsgId(message.id); }, 450);
-              }}
-              onTouchEnd={() => { if (longPressRef.current) window.clearTimeout(longPressRef.current); }}
-              onTouchMove={() => { if (longPressRef.current) window.clearTimeout(longPressRef.current); }}
             >
               {/* Avatar — on the message that opens the block, so it sits level with the name
                   header. Later messages keep the indent with a spacer, and that spacer doubles
@@ -1148,7 +1167,26 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
                 {/* Bubble, reactions and the popover share a wrapper whose top edge is the
                     bubble's top edge — so the popover anchors directly above the bubble rather
                     than above the name header, which sits higher up in the column. */}
-                <div className="relative flex flex-col max-w-full" style={{ alignItems: mine ? 'flex-end' : 'flex-start' }}>
+                <div
+                  className="relative flex flex-col max-w-full"
+                  style={{ alignItems: mine ? 'flex-end' : 'flex-start' }}
+                  // Anchored to the bubble, not the row: the row spans the full width, so
+                  // hovering empty space far from the message used to summon its picker.
+                  onMouseEnter={(e) => { calcToolbarDir(e.currentTarget, message.id); schedulePicker(e.currentTarget, message.id); }}
+                  // Leaving only dismisses it when the menu is closed, so the menu does not
+                  // vanish the moment the pointer travels toward it.
+                  onMouseLeave={() => {
+                    cancelScheduledPicker();
+                    if (openMenuId !== message.id) setActivePicker((p) => (p?.id === message.id ? null : p));
+                  }}
+                  // Touch has no hover, so a long press stands in for it.
+                  onTouchStart={(e) => {
+                    const el = e.currentTarget;
+                    longPressRef.current = window.setTimeout(() => { calcToolbarDir(el, message.id); openPicker(el, message.id); }, 450);
+                  }}
+                  onTouchEnd={() => { if (longPressRef.current) window.clearTimeout(longPressRef.current); }}
+                  onTouchMove={() => { if (longPressRef.current) window.clearTimeout(longPressRef.current); }}
+                >
                 {/* Bubble */}
                 {isMediaBubble ? (
                   <div className="relative overflow-hidden max-w-full" style={{ borderRadius: bubbleBorderRadius }}>
@@ -1238,9 +1276,12 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
                 )}
               {/* Reaction popover — mounted only for the message that owns it, so exactly one
                   exists in the DOM, and anchored to the top of that message's bubble. */}
-              {activeMsgId === message.id && !isEditing && !message.deletedAt && (
-                <div className="absolute z-30 bottom-full mb-1" style={{ [mine ? 'right' : 'left']: 0 }}>
-                  <div className="flex items-center rounded-2xl overflow-visible" style={{ background: 'var(--panel)', border: '1px solid var(--border)', boxShadow: '0 8px 24px rgba(0,0,0,0.4)' }}>
+              {activePicker?.id === message.id && !isEditing && !message.deletedAt && (
+                <div
+                  className={`absolute z-30 ${activePicker.dir === 'up' ? 'bottom-full mb-1' : 'top-full mt-1'}`}
+                  style={{ [mine ? 'right' : 'left']: 0 }}
+                >
+                  <div className="flex items-center rounded-2xl overflow-visible" style={{ background: 'var(--panel)', border: '1px solid var(--border)', boxShadow: '0 4px 14px rgba(0,0,0,0.28)' }}>
                     {QUICK_EMOJIS.map((e) => (
                       <button key={e} onClick={() => toggleReaction(message.id, e)} className="flex w-8 h-8 text-[16px] items-center justify-center transition-colors first:rounded-l-2xl hover-panel-alt">{e}</button>
                     ))}
