@@ -1,32 +1,16 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
+import { Injectable } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { AvatarUrlService } from '../../common/avatar-url.service';
-import { randomUUID } from 'crypto';
-import * as path from 'path';
+import { AvatarStorageService } from '../../common/avatar-storage.service';
 
 @Injectable()
 export class UsersService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly config: ConfigService,
     private readonly avatars: AvatarUrlService,
+    private readonly avatarStorage: AvatarStorageService,
   ) {}
-
-  private get storageBase(): string {
-    const endpoint = this.config.get<string>('STORAGE_ENDPOINT') ?? '';
-    return endpoint.replace(/\/storage\/v1\/s3\/?$/, '');
-  }
-
-  private get avatarBucket(): string {
-    return this.config.get<string>('AVATAR_BUCKET') ?? 'avatars';
-  }
-
-  private supabaseHeaders(): Record<string, string> {
-    const key = this.config.get<string>('SUPABASE_SERVICE_KEY');
-    return key ? { Authorization: `Bearer ${key}` } : {};
-  }
 
   async getProfile(userId: string) {
     const row = await this.prisma.users.findUnique({
@@ -118,22 +102,10 @@ export class UsersService {
   }
 
   async uploadAvatar(userId: string, file: Express.Multer.File) {
-    if (file.size > 5 * 1024 * 1024) throw new BadRequestException('Avatar too large (max 5 MB)');
-    const ext = path.extname(file.originalname).toLowerCase() || '.jpg';
-    const storageKey = `${userId}/${randomUUID()}${ext}`;
-    const uploadUrl = `${this.storageBase}/storage/v1/object/${this.avatarBucket}/${storageKey}`;
-    const res = await fetch(uploadUrl, {
-      method: 'POST',
-      headers: { ...this.supabaseHeaders(), 'Content-Type': file.mimetype, 'x-upsert': 'true' },
-      body: file.buffer,
-    });
-    if (!res.ok) {
-      const msg = await res.text().catch(() => 'storage error');
-      throw new BadRequestException(`Avatar upload failed: ${msg}`);
-    }
     // Store the object key, not a public URL — the bucket is private and the response layer signs
     // it per request. Rows written before this change still hold a full URL; AvatarUrlService
     // accepts both shapes, so no backfill is needed.
+    const storageKey = await this.avatarStorage.upload(userId, file);
     const previous = await this.prisma.users.findUnique({
       where: { id: userId },
       select: { avatar_url: true },

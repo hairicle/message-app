@@ -1,6 +1,8 @@
-import { describe, it, expect, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach, vi } from 'vitest';
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { ConversationsService } from './conversations.service';
+import type { AvatarStorageService } from '../../common/avatar-storage.service';
+import type { AvatarUrlService } from '../../common/avatar-url.service';
 import { createPrismaMock, MEMBER, type PrismaMock } from '../../testing/prisma-mock';
 
 const CONV = 'conv-1';
@@ -10,14 +12,72 @@ const OTHER = 'user-2';
 describe('ConversationsService', () => {
   let prisma: PrismaMock;
   let service: ConversationsService;
+  let avatarStorage: { upload: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     prisma = createPrismaMock();
-    service = new ConversationsService(prisma);
+    avatarStorage = { upload: vi.fn().mockResolvedValue('conversation/conv-1/new.png') };
+    service = new ConversationsService(
+      prisma,
+      avatarStorage as unknown as AvatarStorageService,
+      { invalidate: vi.fn() } as unknown as AvatarUrlService,
+    );
   });
 
   const asMember = () => prisma.conversation_members.findUnique.mockResolvedValue(MEMBER);
   const asNonMember = () => prisma.conversation_members.findUnique.mockResolvedValue(null);
+
+  describe('updateAvatar', () => {
+    const FILE = { originalname: 'g.png', mimetype: 'image/png', size: 100, buffer: Buffer.from('x') } as Express.Multer.File;
+    const asGroup = () => prisma.conversations.findUnique.mockResolvedValue({ type: 'group', avatar_url: null });
+
+    it('stores the new key when an owner uploads', async () => {
+      asGroup();
+      prisma.conversation_members.findUnique.mockResolvedValue({ role: 'owner' });
+      prisma.conversations.update.mockResolvedValue({ id: CONV, avatar_url: 'conversation/conv-1/new.png' });
+
+      await service.updateAvatar(CONV, USER, FILE);
+
+      expect(prisma.conversations.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ avatar_url: 'conversation/conv-1/new.png' }) }),
+      );
+    });
+
+    it('accepts an admin as well as an owner', async () => {
+      asGroup();
+      prisma.conversation_members.findUnique.mockResolvedValue({ role: 'admin' });
+      prisma.conversations.update.mockResolvedValue({ id: CONV, avatar_url: 'k' });
+      await expect(service.updateAvatar(CONV, USER, FILE)).resolves.toBeDefined();
+    });
+
+    // The UI hides the control from plain members; that only stops them clicking it.
+    it('refuses a plain member, and never reaches storage', async () => {
+      asGroup();
+      prisma.conversation_members.findUnique.mockResolvedValue({ role: 'member' });
+      await expect(service.updateAvatar(CONV, USER, FILE)).rejects.toThrow(ForbiddenException);
+      expect(avatarStorage.upload).not.toHaveBeenCalled();
+      expect(prisma.conversations.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses someone who is not in the conversation at all', async () => {
+      asGroup();
+      prisma.conversation_members.findUnique.mockResolvedValue(null);
+      await expect(service.updateAvatar(CONV, OTHER, FILE)).rejects.toThrow(ForbiddenException);
+      expect(avatarStorage.upload).not.toHaveBeenCalled();
+    });
+
+    // A direct conversation renders the other person's avatar, so a stored one would be unread.
+    it('refuses a direct conversation even for its creator', async () => {
+      prisma.conversations.findUnique.mockResolvedValue({ type: 'direct', avatar_url: null });
+      await expect(service.updateAvatar(CONV, USER, FILE)).rejects.toThrow(ForbiddenException);
+      expect(avatarStorage.upload).not.toHaveBeenCalled();
+    });
+
+    it('404s on a conversation that does not exist', async () => {
+      prisma.conversations.findUnique.mockResolvedValue(null);
+      await expect(service.updateAvatar(CONV, USER, FILE)).rejects.toThrow(NotFoundException);
+    });
+  });
 
   describe('assertMember', () => {
     it('looks the membership up by the composite key, not by conversation alone', async () => {

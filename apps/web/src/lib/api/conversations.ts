@@ -16,6 +16,16 @@ export function createConversation(input: { type: ConversationType; name?: strin
   });
 }
 
+/** Group picture. The server re-checks that the caller is an owner or admin. */
+export function uploadConversationAvatar(id: string, file: Blob, fileName = 'avatar.png') {
+  const fd = new FormData();
+  fd.append('avatar', file, fileName);
+  return apiFetch<{ conversation: { id: string; avatar_url: string | null } }>(
+    `/api/conversations/${id}/avatar`,
+    { method: 'POST', body: fd },
+  );
+}
+
 export function listDirectory() {
   return apiFetch<{ users: DirectoryUser[] }>('/api/users/directory');
 }

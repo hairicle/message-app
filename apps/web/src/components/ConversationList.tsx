@@ -76,7 +76,7 @@ export function ConversationList({
                 }}
               >
                 {/* Square avatar */}
-                <Avatar name={title} avatarUrl={other?.avatar_url} size={36} radius={8} fontSize={13} showPresence={!!other} online={isOnline} />
+                <Avatar name={title} avatarUrl={other ? other.avatar_url : conversation.avatar_url} size={36} radius={8} fontSize={13} showPresence={!!other} online={isOnline} />
 
                 {/* Name + subtitle */}
                 <div className="flex-1 min-w-0">

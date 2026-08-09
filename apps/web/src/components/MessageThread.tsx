@@ -41,6 +41,8 @@ interface MessageThreadProps {
   conversationId: string;
   presence: Record<string, 'online' | 'offline'>;
   onBack?: () => void;
+  /** A group picture changed here; the conversation list holds its own copy of the row. */
+  onConversationAvatarChanged?: (conversationId: string, avatarUrl: string | null) => void;
 }
 
 export function addMessage(messages: Message[], message: Message): Message[] {
@@ -51,7 +53,7 @@ export function addMessage(messages: Message[], message: Message): Message[] {
   return [...messages.slice(0, insertAt), message, ...messages.slice(insertAt)];
 }
 
-export function MessageThread({ conversationId, presence, onBack }: MessageThreadProps) {
+export function MessageThread({ conversationId, presence, onBack, onConversationAvatarChanged }: MessageThreadProps) {
   const { user } = useAuth();
   const socket = useSocket();
   const { confirm, confirmDialog } = useConfirm();
@@ -550,7 +552,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
           </button>
         )}
         <button type="button" onClick={() => setShowInfoPanel(true)} className="flex items-center gap-3 flex-1 min-w-0 rounded-xl -mx-2 px-2 py-1 transition-colors text-left hover-panel-alt">
-          <Avatar name={title} avatarUrl={other?.avatar_url} size={36} radius={8} fontSize={14} />
+          <Avatar name={title} avatarUrl={other ? other.avatar_url : conversation.avatar_url} size={36} radius={8} fontSize={14} />
           <div className="flex-1 min-w-0">
             <h2 className="text-[18px] font-semibold leading-tight truncate" style={{ color: 'var(--text)' }}>{title}</h2>
             <div className="text-[13.5px] leading-tight mt-0.5 font-mono">
@@ -1376,7 +1378,14 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                        lg:relative lg:inset-auto lg:w-80 lg:flex-shrink-0 lg:z-auto lg:shadow-none"
             style={{ background: 'var(--bg)' }}
           >
-            <ConversationInfoPanel conversation={conversation} currentUserId={user!.id} presence={presence} onClose={() => setShowInfoPanel(false)} onOpenLightbox={(file, type) => setLightboxItem({ file, type })} onJumpToMessage={jumpToMessage} initialTab="media" />
+            <ConversationInfoPanel conversation={conversation} currentUserId={user!.id} presence={presence} onClose={() => setShowInfoPanel(false)} onOpenLightbox={(file, type) => setLightboxItem({ file, type })} onJumpToMessage={jumpToMessage}
+              onAvatarUpdated={(avatarUrl) => {
+                // Repaint the header and panel from local state, then tell the page so the
+                // conversation list picks it up too — all three read the same field.
+                setConversation((c) => (c ? { ...c, avatar_url: avatarUrl } : c));
+                onConversationAvatarChanged?.(conversationId, avatarUrl);
+              }}
+              initialTab="media" />
           </aside>
         </>
       )}

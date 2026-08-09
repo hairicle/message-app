@@ -1,6 +1,8 @@
 import {
   Controller, Get, Post, Delete, Put, Body, Param, Query, UseGuards, HttpCode, HttpStatus,
+  UseInterceptors, UploadedFile, ParseFilePipe, MaxFileSizeValidator,
 } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
 import { ConversationsService } from './conversations.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -22,6 +24,18 @@ export class ConversationsController {
     type: string; name?: string; description?: string; memberIds?: string[]; teamId?: string;
   }) {
     const conversation = await this.conversationsService.createConversation(user.id, body);
+    return { conversation };
+  }
+
+  @Post(':id/avatar')
+  @UseInterceptors(FileInterceptor('avatar'))
+  async uploadAvatar(
+    @Param('id') id: string,
+    @UploadedFile(new ParseFilePipe({ validators: [new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 })] }))
+    file: Express.Multer.File,
+    @CurrentUser() user: AuthPayload,
+  ) {
+    const conversation = await this.conversationsService.updateAvatar(id, user.id, file);
     return { conversation };
   }
 

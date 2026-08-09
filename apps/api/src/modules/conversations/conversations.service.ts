@@ -1,6 +1,8 @@
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Prisma, conversation_type, member_role, message_type } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { AvatarStorageService } from '../../common/avatar-storage.service';
+import { AvatarUrlService } from '../../common/avatar-url.service';
 
 /** ciphertext is bytea; the SQL form decoded it with convert_from(…, 'UTF8'). */
 const decode = (bytes: Uint8Array) => Buffer.from(bytes).toString('utf8');
@@ -21,7 +23,11 @@ const fileDto = (f: {
 
 @Injectable()
 export class ConversationsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly avatarStorage: AvatarStorageService,
+    private readonly avatars: AvatarUrlService,
+  ) {}
 
   async assertMember(conversationId: string, userId: string) {
     const member = await this.prisma.conversation_members.findUnique({
@@ -29,6 +35,43 @@ export class ConversationsService {
       select: { id: true },
     });
     if (!member) throw new ForbiddenException('Not a member of this conversation');
+  }
+
+  /**
+   * Sets a group's picture.
+   *
+   * The role check lives here rather than in the UI: hiding the camera overlay from a plain
+   * member stops them clicking it, not from posting the request themselves. Direct conversations
+   * are rejected outright — their avatar is the other person's, so writing one would produce a
+   * picture nothing reads back.
+   */
+  async updateAvatar(conversationId: string, userId: string, file: Express.Multer.File) {
+    const conversation = await this.prisma.conversations.findUnique({
+      where: { id: conversationId },
+      select: { type: true, avatar_url: true },
+    });
+    if (!conversation) throw new NotFoundException('Conversation not found');
+    if (conversation.type === 'direct') {
+      throw new ForbiddenException('A direct conversation has no picture of its own');
+    }
+
+    const member = await this.prisma.conversation_members.findUnique({
+      where: { conversation_id_user_id: { conversation_id: conversationId, user_id: userId } },
+      select: { role: true },
+    });
+    if (!member) throw new ForbiddenException('Not a member of this conversation');
+    if (member.role !== 'owner' && member.role !== 'admin') {
+      throw new ForbiddenException('Only an owner or admin can change the group picture');
+    }
+
+    const storageKey = await this.avatarStorage.upload(`conversation/${conversationId}`, file);
+    const updated = await this.prisma.conversations.update({
+      where: { id: conversationId },
+      data: { avatar_url: storageKey, updated_at: new Date() },
+      select: { id: true, avatar_url: true },
+    });
+    this.avatars.invalidate(conversation.avatar_url);
+    return updated;
   }
 
   /**

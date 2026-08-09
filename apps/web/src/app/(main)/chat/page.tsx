@@ -366,6 +366,9 @@ export default function ChatPage() {
             conversationId={selectedId}
             presence={presence}
             onBack={() => setSelectedId(null)}
+            onConversationAvatarChanged={(id, avatarUrl) =>
+              setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, avatar_url: avatarUrl } : c)))
+            }
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-3" style={{ color: 'var(--text-dim)' }}>

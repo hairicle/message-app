@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import * as conversationsApi from '../lib/api/conversations';
 import type {
   Conversation,
@@ -12,7 +12,9 @@ import type {
 import { useFileBlobUrl } from '../hooks/useFileBlobUrl';
 import { getConversationTitle, getOtherMember } from '../utils/conversation';
 import { formatFileSize } from '../utils/format';
+import { FaCamera } from 'react-icons/fa6';
 import { Avatar, Badge } from './ui';
+import { AvatarCropDialog } from './AvatarCropDialog';
 import { fileTypeMeta, VoicePlayer } from './MessageAttachment';
 
 export type InfoTab = 'media' | 'files' | 'voice';
@@ -25,6 +27,9 @@ interface Props {
   onOpenLightbox: (file: FileMeta, type: MessageType) => void;
   /** Scroll the thread to a shared item's original message and flash it, as a reply quote does. */
   onJumpToMessage: (messageId: string) => void;
+  /** Called with the new object key after a group picture upload, so the list, header and this
+   *  panel all repaint without waiting for a refetch. */
+  onAvatarUpdated: (avatarUrl: string | null) => void;
   initialTab?: InfoTab;
 }
 
@@ -35,9 +40,14 @@ export function ConversationInfoPanel({
   onClose,
   onOpenLightbox,
   onJumpToMessage,
+  onAvatarUpdated,
   initialTab = 'media',
 }: Props) {
   const [activeTab, setActiveTab] = useState<InfoTab>(initialTab);
+  const [pendingAvatar, setPendingAvatar] = useState<File | null>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState<string | null>(null);
+  const avatarInputRef = useRef<HTMLInputElement>(null);
   const [media, setMedia] = useState<ConversationMediaItem[] | null>(null);
   const [files, setFiles] = useState<ConversationAttachmentItem[] | null>(null);
   const [voice, setVoice] = useState<ConversationAttachmentItem[] | null>(null);
@@ -47,6 +57,23 @@ export function ConversationInfoPanel({
   const isOnline = other ? presence[other.user_id] === 'online' : false;
   const isGroup = conversation.type !== 'direct';
   const members = conversation.members ?? [];
+  // Mirrors the server's rule. The server re-checks it — this only decides whether to offer it.
+  const myRole = members.find((m) => m.user_id === currentUserId)?.role;
+  const canEditAvatar = isGroup && (myRole === 'owner' || myRole === 'admin');
+
+  async function handleCroppedAvatar(blob: Blob) {
+    setUploadingAvatar(true);
+    setAvatarError(null);
+    try {
+      const { conversation: updated } = await conversationsApi.uploadConversationAvatar(conversation.id, blob);
+      onAvatarUpdated(updated.avatar_url);
+      setPendingAvatar(null);
+    } catch (err) {
+      setAvatarError((err as Error).message || 'Could not update the picture');
+    } finally {
+      setUploadingAvatar(false);
+    }
+  }
 
   useEffect(() => {
     if (activeTab === 'media' && media === null) {
@@ -90,7 +117,45 @@ export function ConversationInfoPanel({
       <div className="flex-1 overflow-y-auto">
         {/* Profile section */}
         <div className="flex flex-col items-center px-6 py-6" style={{ borderBottom: '1px solid var(--border)' }}>
-          <Avatar name={title} avatarUrl={other?.avatar_url} size={72} radius={18} fontSize={26} className="mb-3" profileUserId={other?.user_id} />
+          {/* A group has its own picture; a direct conversation shows the other person's. The
+              panel used to read `other?.avatar_url` unconditionally, so a group avatar could
+              never appear here however it was set. */}
+          {isGroup ? (
+            <div className="relative mb-3 group" style={{ width: 72, height: 72 }}>
+              <Avatar name={title} avatarUrl={conversation.avatar_url} size={72} radius={18} fontSize={26} />
+              {canEditAvatar && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => avatarInputRef.current?.click()}
+                    className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition-opacity"
+                    style={{ borderRadius: 18, background: 'rgba(0,0,0,0.5)', color: '#fff' }}
+                    title="Change group picture"
+                    aria-label="Change group picture"
+                  >
+                    <FaCamera size={18} />
+                  </button>
+                  <input
+                    ref={avatarInputRef}
+                    type="file"
+                    accept="image/png,image/jpeg,image/webp,image/gif"
+                    className="hidden"
+                    onChange={(e) => {
+                      const picked = e.target.files?.[0];
+                      // Cleared so re-picking the same file still fires a change event.
+                      e.target.value = '';
+                      if (picked) setPendingAvatar(picked);
+                    }}
+                  />
+                </>
+              )}
+            </div>
+          ) : (
+            <Avatar name={title} avatarUrl={other?.avatar_url} size={72} radius={18} fontSize={26} className="mb-3" profileUserId={other?.user_id} />
+          )}
+          {avatarError && (
+            <p className="text-[11px] text-center mb-2" style={{ color: 'var(--danger)' }}>{avatarError}</p>
+          )}
           <h3 className="font-bold text-[16px] text-center leading-snug" style={{ color: 'var(--text)' }}>{title}</h3>
 
           {other && (
@@ -182,6 +247,15 @@ export function ConversationInfoPanel({
           )
         )}
       </div>
+
+      {pendingAvatar && (
+        <AvatarCropDialog
+          file={pendingAvatar}
+          busy={uploadingAvatar}
+          onCancel={() => setPendingAvatar(null)}
+          onConfirm={handleCroppedAvatar}
+        />
+      )}
     </div>
   );
 }
