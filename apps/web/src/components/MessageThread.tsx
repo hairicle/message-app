@@ -27,6 +27,7 @@ import { getConversationTitle, getOtherMember } from '../utils/conversation';
 import { decodeMessageText, encodeMessageText } from '../utils/text';
 import { FaBookmark, FaCheck, FaChevronDown, FaChevronLeft, FaImage, FaMagnifyingGlass, FaMicrophone, FaPaperPlane, FaPaperclip, FaPen, FaPhone, FaRegBookmark, FaRegCopy, FaReply, FaShare, FaThumbtack, FaTrash, FaVideo, FaXmark } from 'react-icons/fa6';
 import { attachmentNoun } from '../utils/messagePreview';
+import { groupingFor } from '../utils/messageGrouping';
 
 function attachmentTypeForMime(mimeType: string): MessageType {
   if (mimeType.startsWith('image/')) return 'image';
@@ -906,11 +907,11 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
           const isEditing = editingMessageId === message.id;
           const isMediaBubble = (message.type === 'image' || message.type === 'video') && !message.deletedAt && !isEditing;
 
-          // ── Date divider ──────────────────────────────────────────────────
+          // ── Day divider + consecutive-message grouping ────────────────────
+          // startsGroup carries the avatar and the name/time header; endsGroup closes the block.
           const msgDate = new Date(message.createdAt);
           const msgDay = msgDate.toDateString();
-          const prevDay = index > 0 ? new Date(messages[index - 1].createdAt).toDateString() : null;
-          const showDivider = msgDay !== prevDay;
+          const { startsGroup, endsGroup, startsDay: showDivider } = groupingFor(messages, index);
 
           let dividerLabel = '';
           if (showDivider) {
@@ -927,24 +928,15 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
           }
           // ─────────────────────────────────────────────────────────────────
 
-          // ── Consecutive-message grouping (same sender, within 3 min, same day) ──
-          const prevMsg = index > 0 ? messages[index - 1] : null;
-          const nextMsg = index < messages.length - 1 ? messages[index + 1] : null;
-          const nextDay = nextMsg ? new Date(nextMsg.createdAt).toDateString() : null;
-
-          const sameAsPrev = !showDivider && !!prevMsg &&
-            prevMsg.senderId === message.senderId &&
-            (msgDate.getTime() - new Date(prevMsg.createdAt).getTime()) < 3 * 60 * 1000;
-          const sameAsNext = !!nextMsg &&
-            nextMsg.senderId === message.senderId &&
-            nextDay === msgDay &&
-            (new Date(nextMsg.createdAt).getTime() - msgDate.getTime()) < 3 * 60 * 1000;
-
+          // Bubbles in one block lean toward each other: the outer corner is pointed where the
+          // block begins, and flattened where it continues, so a run reads as one shape.
           const R = 16;
           const POINT = 6;
+          const outerTop = startsGroup ? POINT : R;
+          const outerBottom = endsGroup ? R : POINT;
           const bubbleBorderRadius = mine
-            ? `${R}px ${sameAsPrev ? R : POINT}px ${sameAsNext ? R : R}px ${R}px`
-            : `${sameAsPrev ? R : POINT}px ${R}px ${R}px ${sameAsNext ? R : R}px`;
+            ? `${R}px ${outerTop}px ${outerBottom}px ${R}px`
+            : `${outerTop}px ${R}px ${R}px ${outerBottom}px`;
 
           // Helper: reply quote block
           const ReplyQuote = ({ replyId }: { replyId: string }) => {
@@ -1002,17 +994,18 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
               )}
             <div
               ref={(el) => { if (el) msgRefs.current.set(message.id, el); else msgRefs.current.delete(message.id); }}
-              className={`flex items-end gap-2 group ${sameAsPrev ? 'mt-0.5' : 'mt-3'} ${mine ? 'flex-row-reverse' : 'flex-row'} transition-colors duration-300`}
+              className={`flex items-start gap-2 group ${startsGroup ? 'mt-3' : 'mt-0.5'} ${mine ? 'flex-row-reverse' : 'flex-row'} transition-colors duration-300`}
               style={highlightedMsgId === message.id ? { background: 'var(--accent-wash)', borderRadius: 12, margin: '12px -4px', padding: '0 4px' } : undefined}
               onMouseEnter={(e) => calcToolbarDir(e.currentTarget, message.id)}
             >
-              {/* Avatar — only on the last message in a consecutive group from the same sender */}
-              {sameAsNext ? (
+              {/* Avatar — on the message that opens the block, so it sits level with the name
+                  header. Later messages in the block keep the indent with a spacer. */}
+              {!startsGroup ? (
                 <div className="flex-shrink-0" style={{ width: 32 }} />
               ) : (() => {
                 const avatarUrl = mine ? user!.avatarUrl : sender?.avatar_url;
                 const name = mine ? user!.displayName : (sender?.display_name ?? '?');
-                return <Avatar name={name} avatarUrl={avatarUrl} size={32} radius={8} fontSize={13} className="self-end mb-0.5" title={name} profileUserId={message.senderId} />;
+                return <Avatar name={name} avatarUrl={avatarUrl} size={32} radius={8} fontSize={13} className="flex-shrink-0" title={name} profileUserId={message.senderId} />;
               })()}
 
               {/* Column: name+time header + bubble + reactions */}
@@ -1029,8 +1022,8 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                   </div>
                 )}
 
-                {/* Name + timestamp — only on the first message in a group */}
-                {!message.deletedAt && !sameAsPrev && (
+                {/* Name + timestamp — only on the message that opens the block */}
+                {!message.deletedAt && startsGroup && (
                   <div className="flex items-baseline gap-2 mb-1 px-1" style={{ flexDirection: mine ? 'row-reverse' : 'row' }}>
                     <span className="text-[13px] font-semibold" style={{ color: mine ? 'var(--accent)' : 'var(--text)' }}>
                       {mine ? 'You' : sender?.display_name ?? 'Unknown'}
@@ -1060,7 +1053,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                     </span>
                   </div>
                 ) : (
-                  <div className="px-4 py-2.5" style={{ borderRadius: bubbleBorderRadius, background: mine ? 'var(--accent)' : 'var(--panel)', border: mine ? 'none' : '1px solid var(--border)', color: mine ? 'var(--bg-deep)' : 'var(--text-muted)' }}>
+                  <div className="px-4 py-2.5" title={msgDate.toLocaleString()} style={{ borderRadius: bubbleBorderRadius, background: mine ? 'var(--accent)' : 'var(--panel)', border: mine ? 'none' : '1px solid var(--border)', color: mine ? 'var(--bg-deep)' : 'var(--text-muted)' }}>
                     {message.replyToMessageId && <ReplyQuote replyId={message.replyToMessageId} />}
                     {message.deletedAt ? (
                       <p className="text-sm italic" style={{ color: mine ? 'rgba(8,10,15,0.55)' : 'var(--text-dim)' }}>This message was deleted</p>
@@ -1097,11 +1090,12 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                     {message.editedAt && !message.deletedAt && (
                       <span className="block text-right text-[10.5px] mt-1 select-none italic font-mono" style={{ color: mine ? 'rgba(8,10,15,0.5)' : 'var(--text-dim)' }}>(edited)</span>
                     )}
-                    {/* Timestamp on the last bubble of a group (name header is hidden here) */}
-                    {sameAsPrev && !sameAsNext && !message.deletedAt && (
-                      <span className="block mt-1 text-[10px] font-mono select-none" style={{ color: mine ? 'rgba(8,10,15,0.55)' : 'var(--text-dim)', textAlign: mine ? 'right' : 'left' }}>
-                        {new Date(message.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        {mine && read && ' · ✓✓'}
+                    {/* Read receipt closing the block. The time itself is deliberately absent:
+                        the block's header already carries one, and repeating it per bubble was
+                        the bulk of the thread's noise. Hovering any bubble still reveals it. */}
+                    {!startsGroup && endsGroup && mine && read && !message.deletedAt && (
+                      <span className="block mt-0.5 text-[10px] font-mono select-none" style={{ color: 'rgba(8,10,15,0.55)', textAlign: 'right' }}>
+                        ✓✓
                       </span>
                     )}
                   </div>
