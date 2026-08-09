@@ -906,6 +906,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
           const sender = membersById.get(message.senderId ?? '');
           const isEditing = editingMessageId === message.id;
           const isMediaBubble = (message.type === 'image' || message.type === 'video') && !message.deletedAt && !isEditing;
+          const deleted = !!message.deletedAt;
 
           // ── Day divider + consecutive-message grouping ────────────────────
           // startsGroup carries the avatar and the name/time header; endsGroup closes the block.
@@ -934,9 +935,21 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
           const POINT = 6;
           const outerTop = startsGroup ? POINT : R;
           const outerBottom = endsGroup ? R : POINT;
-          const bubbleBorderRadius = mine
-            ? `${R}px ${outerTop}px ${outerBottom}px ${R}px`
-            : `${outerTop}px ${R}px ${R}px ${outerBottom}px`;
+          // A deleted message keeps its slot in the thread but gives up every marker of
+          // authorship — no accent fill, no tail pointing back at its sender, no border. It is
+          // a placeholder for something that is gone, so it should read as one.
+          const bubbleBorderRadius = deleted
+            ? `${R}px`
+            : mine
+              ? `${R}px ${outerTop}px ${outerBottom}px ${R}px`
+              : `${outerTop}px ${R}px ${R}px ${outerBottom}px`;
+          const bubbleStyle: React.CSSProperties = deleted
+            ? { background: 'var(--panel-alt)', border: 'none', color: 'var(--text-dim)', opacity: 0.6 }
+            : {
+                background: mine ? 'var(--accent)' : 'var(--panel)',
+                border: mine ? 'none' : '1px solid var(--border)',
+                color: mine ? 'var(--bg-deep)' : 'var(--text-muted)',
+              };
 
           // Helper: reply quote block
           const ReplyQuote = ({ replyId }: { replyId: string }) => {
@@ -1039,8 +1052,10 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                   </div>
                 )}
 
-                {/* Name + timestamp — only on the message that opens the block */}
-                {!message.deletedAt && startsGroup && (
+                {/* Name + timestamp — only on the message that opens the block. Shown for
+                    deleted messages too: the avatar renders regardless, so suppressing just the
+                    name left an avatar captioned by nothing. Who posted is not the secret. */}
+                {startsGroup && (
                   <div className="flex items-baseline gap-2 mb-1 px-1" style={{ flexDirection: mine ? 'row-reverse' : 'row' }}>
                     <span className="text-[13px] font-semibold" style={{ color: mine ? 'var(--accent)' : 'var(--text)' }}>
                       {mine ? 'You' : sender?.display_name ?? 'Unknown'}
@@ -1070,10 +1085,12 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                     </span>
                   </div>
                 ) : (
-                  <div className="px-4 py-2.5" title={msgDate.toLocaleString()} style={{ borderRadius: bubbleBorderRadius, background: mine ? 'var(--accent)' : 'var(--panel)', border: mine ? 'none' : '1px solid var(--border)', color: mine ? 'var(--bg-deep)' : 'var(--text-muted)' }}>
-                    {message.replyToMessageId && <ReplyQuote replyId={message.replyToMessageId} />}
-                    {message.deletedAt ? (
-                      <p className="text-sm italic" style={{ color: mine ? 'rgba(8,10,15,0.55)' : 'var(--text-dim)' }}>This message was deleted</p>
+                  <div className="px-4 py-2.5" title={msgDate.toLocaleString()} style={{ borderRadius: bubbleBorderRadius, ...bubbleStyle }}>
+                    {/* The reply quote is suppressed once deleted: nothing remains to give it
+                        context, and its accent styling fought the receded bubble. */}
+                    {!deleted && message.replyToMessageId && <ReplyQuote replyId={message.replyToMessageId} />}
+                    {deleted ? (
+                      <p className="text-sm italic">This message was deleted</p>
                     ) : (<>
                       {message.file && <MessageAttachment type={message.type} file={message.file} isMine={mine} onOpen={(file, type) => setLightboxItem({ file, type })} />}
                       {isEditing ? (
