@@ -8,7 +8,8 @@ import { useWaveform } from '../hooks/useWaveform';
 
 interface MessageAttachmentProps {
   type: MessageType;
-  file: FileMeta;
+  /** Optional: an attachment message can outlive its file row, and that case is rendered. */
+  file?: FileMeta;
   isMine?: boolean;
   compact?: boolean;
   onOpen?: (file: FileMeta, type: MessageType) => void;
@@ -194,7 +195,16 @@ export function MessageAttachment({ type, file, isMine, compact, onOpen }: Messa
   const previewUrl = useFileBlobUrl(file?.id, file?.hasThumbnail ? 'thumbnail' : 'original');
   const loadingStyle = { color: isMine ? 'var(--bg-deep)' : 'var(--text-dim)', opacity: 0.7 };
 
-  if (!file) return null;
+  // A message typed as an attachment whose file row is missing. Forwards made before the
+  // attachment was carried across left rows like this behind, and returning null rendered them
+  // as a completely empty bubble with no hint that anything was meant to be there.
+  if (!file) {
+    return (
+      <p className="text-xs italic" style={{ color: isMine ? 'rgba(8,10,15,0.55)' : 'var(--text-dim)' }}>
+        This {type === 'file' ? 'file' : type} is no longer available
+      </p>
+    );
+  }
 
   if (type === 'image') {
     if (previewUrl === 'error') {

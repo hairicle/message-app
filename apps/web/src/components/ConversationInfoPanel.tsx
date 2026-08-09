@@ -23,6 +23,8 @@ interface Props {
   presence: Record<string, 'online' | 'offline'>;
   onClose: () => void;
   onOpenLightbox: (file: FileMeta, type: MessageType) => void;
+  /** Scroll the thread to a shared item's original message and flash it, as a reply quote does. */
+  onJumpToMessage: (messageId: string) => void;
   initialTab?: InfoTab;
 }
 
@@ -32,6 +34,7 @@ export function ConversationInfoPanel({
   presence,
   onClose,
   onOpenLightbox,
+  onJumpToMessage,
   initialTab = 'media',
 }: Props) {
   const [activeTab, setActiveTab] = useState<InfoTab>(initialTab);
@@ -149,7 +152,7 @@ export function ConversationInfoPanel({
             // which read as a misalignment against every other row in the panel.
             <div className="p-3 grid grid-cols-3 gap-1.5">
               {media.map((item) => (
-                <MediaThumb key={item.file.id} item={item} onOpen={onOpenLightbox} />
+                <MediaThumb key={item.file.id} item={item} onOpen={onOpenLightbox} onJump={onJumpToMessage} />
               ))}
             </div>
           )
@@ -161,7 +164,7 @@ export function ConversationInfoPanel({
           ) : (
             <div className="p-3 space-y-1">
               {files.map((item) => (
-                <FileItem key={item.file.id} item={item} />
+                <FileItem key={item.file.id} item={item} onJump={onJumpToMessage} />
               ))}
             </div>
           )
@@ -173,7 +176,7 @@ export function ConversationInfoPanel({
           ) : (
             <div className="p-3 space-y-1">
               {voice.map((item) => (
-                <VoiceItem key={item.file.id} item={item} />
+                <VoiceItem key={item.file.id} item={item} onJump={onJumpToMessage} />
               ))}
             </div>
           )
@@ -202,20 +205,37 @@ function TabEmpty({ label }: { label: string }) {
 function MediaThumb({
   item,
   onOpen,
+  onJump,
 }: {
   item: ConversationMediaItem;
   onOpen: (file: FileMeta, type: MessageType) => void;
+  onJump: (messageId: string) => void;
 }) {
   const variant = item.type === 'image' && item.file.hasThumbnail ? 'thumbnail' : 'original';
   const url = useFileBlobUrl(item.file.id, variant);
 
   return (
-    <button
-      type="button"
-      onClick={() => onOpen(item.file, item.type as MessageType)}
-      className="relative aspect-square overflow-hidden rounded-lg hover:opacity-80 transition-opacity"
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onJump(item.messageId)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onJump(item.messageId); } }}
+      className="group relative aspect-square overflow-hidden rounded-lg cursor-pointer hover:opacity-80 transition-opacity"
       style={{ background: 'var(--panel-alt)', border: '1px solid var(--border)' }}
     >
+      {/* Opening the viewer stays reachable — the tile's own click now goes to the message,
+          and losing the viewer entirely would be a worse trade than a second affordance. */}
+      <button
+        type="button"
+        title="Open"
+        onClick={(e) => { e.stopPropagation(); onOpen(item.file, item.type as MessageType); }}
+        className="absolute top-1 right-1 z-10 w-6 h-6 rounded-md flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+        style={{ background: 'rgba(0,0,0,0.55)', color: '#fff' }}
+      >
+        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8V4h4M20 8V4h-4M4 16v4h4M20 16v4h-4" />
+        </svg>
+      </button>
       {url && item.type === 'image' && (
         <img src={url} alt="" className="w-full h-full object-cover" />
       )}
@@ -236,20 +256,23 @@ function MediaThumb({
           <div className="w-4 h-4 rounded-full animate-spin" style={{ border: '2px solid var(--border)', borderTopColor: 'transparent' }} />
         </div>
       )}
-    </button>
+    </div>
   );
 }
 
-function FileItem({ item }: { item: ConversationAttachmentItem }) {
+function FileItem({ item, onJump }: { item: ConversationAttachmentItem; onJump: (messageId: string) => void }) {
   const url = useFileBlobUrl(item.file.id, 'original');
   const { label: extLabel, color: extColor } = fileTypeMeta(item.file.fileName);
 
   return (
-    <a
-      href={url ?? '#'}
-      download={url ? item.file.fileName : undefined}
-      onClick={(e) => { if (!url) e.preventDefault(); }}
-      className="flex items-center gap-3 p-2.5 rounded-xl transition-colors group hover-panel-alt"
+    // The row jumps to the message; downloading stays on the icon at the end of it, so the
+    // panel does not lose the one action it previously had.
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onJump(item.messageId)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onJump(item.messageId); } }}
+      className="flex items-center gap-3 p-2.5 rounded-xl transition-colors group hover-panel-alt cursor-pointer"
     >
       <span className="flex-shrink-0 rounded-lg flex items-center justify-center relative" style={{ width: 40, height: 40, background: `${extColor}22` }}>
         <svg className="w-[18px] h-[18px]" fill="none" stroke={extColor} viewBox="0 0 24 24">
@@ -266,26 +289,44 @@ function FileItem({ item }: { item: ConversationAttachmentItem }) {
         <p className="text-[13.5px] font-medium truncate leading-tight" style={{ color: 'var(--text)' }}>{item.file.fileName}</p>
         <p className="text-[11.5px] font-mono mt-0.5" style={{ color: 'var(--text-dim)' }}>{formatFileSize(item.file.sizeBytes)}</p>
       </div>
-      <svg className="w-4 h-4 flex-shrink-0 transition-colors" style={{ color: 'var(--text-dim)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
-      </svg>
-    </a>
+      <a
+        href={url ?? '#'}
+        download={url ? item.file.fileName : undefined}
+        title="Download"
+        onClick={(e) => { e.stopPropagation(); if (!url) e.preventDefault(); }}
+        className="flex-shrink-0 p-1 rounded-md transition-colors"
+        style={{ color: 'var(--text-dim)' }}
+      >
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" />
+        </svg>
+      </a>
+    </div>
   );
 }
 
-function VoiceItem({ item }: { item: ConversationAttachmentItem }) {
+function VoiceItem({ item, onJump }: { item: ConversationAttachmentItem; onJump: (messageId: string) => void }) {
   const url = useFileBlobUrl(item.file.id, 'original');
   const date = new Date(item.createdAt).toLocaleDateString([], { month: 'short', day: 'numeric' });
 
   return (
-    <div className="flex items-center gap-3 p-2.5 rounded-xl transition-colors hover-panel-alt">
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={() => onJump(item.messageId)}
+      onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onJump(item.messageId); } }}
+      className="flex items-center gap-3 p-2.5 rounded-xl transition-colors hover-panel-alt cursor-pointer"
+    >
       <div className="rounded-full flex items-center justify-center flex-shrink-0" style={{ width: 40, height: 40, background: 'var(--accent-wash)' }}>
         <svg className="w-5 h-5" style={{ color: 'var(--accent)' }} fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
         </svg>
       </div>
       <div className="flex-1 min-w-0">
-        <VoicePlayer url={url} isMine={false} fileName={item.file.fileName} durationSecs={item.file.durationSecs ?? null} />
+        {/* Seeking and play/pause must not also jump the thread. */}
+        <div onClick={(e) => e.stopPropagation()}>
+          <VoicePlayer url={url} isMine={false} fileName={item.file.fileName} durationSecs={item.file.durationSecs ?? null} />
+        </div>
         <p className="text-[11.5px] font-mono" style={{ color: 'var(--text-dim)' }}>{date}</p>
       </div>
     </div>

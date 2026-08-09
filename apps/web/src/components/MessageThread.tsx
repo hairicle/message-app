@@ -28,6 +28,7 @@ import { decodeMessageText, encodeMessageText } from '../utils/text';
 import { FaBookmark, FaCheck, FaChevronDown, FaChevronLeft, FaImage, FaMagnifyingGlass, FaMicrophone, FaPaperPlane, FaPaperclip, FaPen, FaPhone, FaRegBookmark, FaRegCopy, FaReply, FaShare, FaThumbtack, FaTrash, FaVideo, FaXmark } from 'react-icons/fa6';
 import { attachmentNoun } from '../utils/messagePreview';
 import { groupingFor } from '../utils/messageGrouping';
+import { ReplyPreview } from './ReplyPreview';
 
 function attachmentTypeForMime(mimeType: string): MessageType {
   if (mimeType.startsWith('image/')) return 'image';
@@ -496,6 +497,21 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
     }
     setHighlightedMsgId(messageId);
     setTimeout(() => setHighlightedMsgId(null), 1800);
+  }
+
+  /**
+   * Jump to a message from the info panel's Media/Files/Voice tabs.
+   *
+   * Those tabs list every attachment in the conversation, including ones far above the loaded
+   * window — so unlike a reply quote, a miss here is expected rather than exceptional, and has to
+   * say so instead of silently doing nothing.
+   */
+  function jumpToMessage(messageId: string) {
+    if (msgRefs.current.has(messageId)) {
+      scrollToMessage(messageId);
+    } else {
+      showToast('That message is further back than the loaded history');
+    }
   }
 
   // Compute toolbar open direction for a given element freshly each call
@@ -992,9 +1008,14 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
               >
                 {original ? (<>
                   <p className="text-[11px] font-semibold mb-0.5" style={{ color: mine ? 'rgba(255,255,255,0.8)' : 'var(--accent)' }}>{authorName}</p>
-                  <p className="text-xs truncate" style={{ color: mine ? 'rgba(255,255,255,0.6)' : 'var(--text-dim)' }}>
-                    {original.deletedAt ? 'This message was deleted' : original.file ? '📎 Attachment' : decodeMessageText(original.ciphertext)}
-                  </p>
+                  <ReplyPreview
+                    type={original.type}
+                    file={original.file}
+                    ciphertext={original.ciphertext}
+                    deleted={!!original.deletedAt}
+                    color={mine ? 'rgba(255,255,255,0.6)' : 'var(--text-dim)'}
+                    iconColor={mine ? 'rgba(255,255,255,0.8)' : 'var(--accent)'}
+                  />
                 </>) : (
                   <p className="text-xs italic" style={{ color: mine ? 'rgba(255,255,255,0.5)' : 'var(--text-dim)' }}>Original message</p>
                 )}
@@ -1122,7 +1143,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                     {deleted ? (
                       <p className="text-sm italic">This message was deleted</p>
                     ) : (<>
-                      {message.file && <MessageAttachment type={message.type} file={message.file} isMine={mine} onOpen={(file, type) => setLightboxItem({ file, type })} />}
+                      {message.type !== 'text' && <MessageAttachment type={message.type} file={message.file} isMine={mine} onOpen={(file, type) => setLightboxItem({ file, type })} />}
                       {isEditing ? (
                         <form className="flex flex-col gap-2" onSubmit={(e) => { e.preventDefault(); submitEdit(message.id); }}>
                           <input value={editingText} onChange={(e) => setEditingText(e.target.value)} autoFocus className="w-full rounded-lg px-3 py-1.5 text-sm focus:outline-none"
@@ -1294,9 +1315,16 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
             <p className="text-xs font-semibold leading-tight font-mono" style={{ color: 'var(--accent)' }}>
               {replyingTo.senderId === user!.id ? user!.displayName : membersById.get(replyingTo.senderId ?? '')?.display_name ?? 'Someone'}
             </p>
-            <p className="text-xs truncate leading-tight mt-0.5" style={{ color: 'var(--text-dim)' }}>
-              {replyingTo.deletedAt ? 'This message was deleted' : replyingTo.file ? '📎 Attachment' : decodeMessageText(replyingTo.ciphertext)}
-            </p>
+            <div className="mt-0.5 leading-tight">
+              <ReplyPreview
+                type={replyingTo.type}
+                file={replyingTo.file}
+                ciphertext={replyingTo.ciphertext}
+                deleted={!!replyingTo.deletedAt}
+                color="var(--text-dim)"
+                iconColor="var(--accent)"
+              />
+            </div>
           </div>
           <button type="button" onClick={() => setReplyingTo(null)} className="p-1.5 rounded-lg transition-colors flex-shrink-0 hover-panel-alt" style={{ color: 'var(--text-dim)' }} aria-label="Cancel reply">
             <FaXmark size={14} />
@@ -1348,7 +1376,7 @@ export function MessageThread({ conversationId, presence, onBack }: MessageThrea
                        lg:relative lg:inset-auto lg:w-80 lg:flex-shrink-0 lg:z-auto lg:shadow-none"
             style={{ background: 'var(--bg)' }}
           >
-            <ConversationInfoPanel conversation={conversation} currentUserId={user!.id} presence={presence} onClose={() => setShowInfoPanel(false)} onOpenLightbox={(file, type) => setLightboxItem({ file, type })} initialTab="media" />
+            <ConversationInfoPanel conversation={conversation} currentUserId={user!.id} presence={presence} onClose={() => setShowInfoPanel(false)} onOpenLightbox={(file, type) => setLightboxItem({ file, type })} onJumpToMessage={jumpToMessage} initialTab="media" />
           </aside>
         </>
       )}
