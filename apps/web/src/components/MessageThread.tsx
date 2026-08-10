@@ -25,7 +25,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { getConversationTitle, getOtherMember } from '../utils/conversation';
 import { decodeMessageText, encodeMessageText } from '../utils/text';
-import { FaBookmark, FaCheck, FaEllipsisVertical, FaRegFaceSmile, FaChevronDown, FaChevronLeft, FaImage, FaMagnifyingGlass, FaMicrophone, FaPaperPlane, FaPaperclip, FaPen, FaPhone, FaRegBookmark, FaRegCopy, FaReply, FaShare, FaThumbtack, FaTrash, FaVideo, FaXmark } from 'react-icons/fa6';
+import { FaArrowRotateRight, FaBookmark, FaCheck, FaEllipsisVertical, FaRegFaceSmile, FaChevronDown, FaChevronLeft, FaImage, FaMagnifyingGlass, FaMicrophone, FaPaperPlane, FaPaperclip, FaPen, FaPhone, FaRegBookmark, FaRegCopy, FaReply, FaShare, FaThumbtack, FaTrash, FaVideo, FaXmark } from 'react-icons/fa6';
 import { attachmentNoun } from '../utils/messagePreview';
 import { groupingFor } from '../utils/messageGrouping';
 import { ReplyPreview } from './ReplyPreview';
@@ -53,13 +53,21 @@ const MESSAGE_PAGE_SIZE = 50;
 /** Roughly six lines. Past this the composer scrolls rather than eating the conversation. */
 const COMPOSER_MAX_HEIGHT = 132;
 
-/** One queued attachment, from being picked to the message being sent. */
-interface UploadEntry {
+/**
+ * An attachment the user has chosen but not yet sent.
+ *
+ * Picking a file stages it; nothing leaves the browser until Send is pressed. Dropping a file
+ * straight into the conversation used to post it immediately, which left no chance to see what
+ * had been picked, add a note to it, or change your mind.
+ */
+interface StagedFile {
   id: string;
   file: File;
-  /** 0–1, as reported by the request body's progress. */
+  /** Object URL for images and video, so the strip shows the picture rather than a filename. */
+  previewUrl?: string;
+  /** 0–1 while uploading. */
   progress: number;
-  status: 'queued' | 'uploading' | 'failed';
+  status: 'staged' | 'uploading' | 'failed';
   error?: string;
 }
 
@@ -144,7 +152,8 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   /** Distance from the bottom, kept across a prepend so the view does not jump. */
   const anchorFromBottomRef = useRef<number | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
-  const [uploads, setUploads] = useState<UploadEntry[]>([]);
+  const [staged, setStaged] = useState<StagedFile[]>([]);
+  const [sending, setSending] = useState(false);
   const [dragging, setDragging] = useState(false);
   /** Nested enter/leave events fire per child; counting them avoids flicker over the thread. */
   const dragDepthRef = useRef(0);
@@ -152,6 +161,12 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   useEffect(() => {
     let cancelled = false;
     markedReadRef.current = new Set();
+    // Anything staged belonged to the conversation being left. Carrying it over would send those
+    // files into whichever conversation was opened next.
+    setStaged((prev) => {
+      for (const f of prev) if (f.previewUrl) URL.revokeObjectURL(f.previewUrl);
+      return [];
+    });
     setMessages([]);
     setConversation(null);
     setReadReceipts({});
@@ -358,7 +373,7 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
     // both, and the text is what was meant.
     if (e.clipboardData.getData('text/plain').trim()) return;
     e.preventDefault();
-    void enqueueFiles(files);
+    stageFiles(files);
   }
 
   function handleInputChange(value: string) {
@@ -456,68 +471,104 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
     void handleSend(e);
   }
 
+  /**
+   * Send whatever is composed: the staged attachments, then the typed text.
+   *
+   * Attachments go first so the text reads as a note about them, which is the order both
+   * Messenger and Telegram end up showing. They upload one at a time rather than together, so
+   * they arrive in the order they were picked instead of by whichever finished first.
+   *
+   * The reply is spent on the first thing actually sent — a reply points at one message, and
+   * repeating it would quote the same thing several times over.
+   */
   async function handleSend(e: FormEvent | React.KeyboardEvent) {
     e.preventDefault();
     const text = input.trim();
-    if (!text) return;
+    const toSend = staged.filter((f) => f.status !== 'uploading');
+    if ((!text && toSend.length === 0) || sending) return;
+
     setInput('');
     if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current);
     socket?.emit('typing:stop', { conversationId });
-    await dispatchMessage({ conversationId, ciphertext: encodeMessageText(text), replyToMessageId: replyingTo?.id });
-    setReplyingTo(null);
-  }
 
-  /**
-   * Send one attachment, tracked in the queue so it can report progress and be retried.
-   *
-   * Each file becomes its own message, which is why the reply is attached to the first of a batch
-   * only — a reply points at one message, and repeating it on all of them would quote the same
-   * thing several times over.
-   */
-  async function uploadOne(entry: UploadEntry, attachReplyTo: string | undefined) {
-    setUploads((prev) => prev.map((u) => (u.id === entry.id ? { ...u, status: 'uploading', progress: 0, error: undefined } : u)));
+    const replyToId = replyingTo?.id;
+    setReplyingTo(null);
+    setSending(true);
     try {
-      const { file: meta } = await filesApi.uploadFile(entry.file, entry.file.name, {
-        onProgress: (fraction) =>
-          setUploads((prev) => prev.map((u) => (u.id === entry.id ? { ...u, progress: fraction } : u))),
-      });
-      await dispatchMessage({
-        conversationId,
-        type: attachmentTypeForMime(entry.file.type),
-        fileId: meta.id,
-        replyToMessageId: attachReplyTo,
-      });
-      setUploads((prev) => prev.filter((u) => u.id !== entry.id));
-    } catch (err) {
-      // Kept in the queue rather than dropped: the file is still here, and a failed upload the
-      // user cannot retry means picking it again from scratch.
-      setUploads((prev) => prev.map((u) => (u.id === entry.id
-        ? { ...u, status: 'failed', error: (err as Error).message || 'Upload failed' }
-        : u)));
+      let replySpent = false;
+      for (const item of toSend) {
+        const ok = await sendStaged(item, replySpent ? undefined : replyToId);
+        if (ok) replySpent = true;
+      }
+      // Still sent even if an attachment failed — the words were written and holding them back
+      // because a file did not upload would lose them.
+      if (text) {
+        await dispatchMessage({
+          conversationId,
+          ciphertext: encodeMessageText(text),
+          replyToMessageId: replySpent ? undefined : replyToId,
+        });
+      }
+    } finally {
+      setSending(false);
     }
   }
 
-  /**
-   * Queue a batch and send it one at a time.
-   *
-   * Sequential rather than parallel so the messages arrive in the order they were picked;
-   * uploading together would let a small file overtake a large one that was chosen first.
-   */
-  async function enqueueFiles(files: File[]) {
+  /** Stage files without sending them. Nothing is uploaded until Send is pressed. */
+  function stageFiles(files: File[]) {
     if (files.length === 0) return;
-    const replyToId = replyingTo?.id;
-    setReplyingTo(null);
+    setStaged((prev) => [
+      ...prev,
+      ...files.map((file) => ({
+        id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+        file,
+        previewUrl: file.type.startsWith('image/') || file.type.startsWith('video/')
+          ? URL.createObjectURL(file)
+          : undefined,
+        progress: 0,
+        status: 'staged' as const,
+      })),
+    ]);
+  }
 
-    const entries: UploadEntry[] = files.map((file) => ({
-      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
-      file,
-      progress: 0,
-      status: 'queued',
-    }));
-    setUploads((prev) => [...prev, ...entries]);
+  /** Drop a staged file, releasing the preview so the object URL is not leaked. */
+  function unstage(id: string) {
+    setStaged((prev) => {
+      const going = prev.find((f) => f.id === id);
+      if (going?.previewUrl) URL.revokeObjectURL(going.previewUrl);
+      return prev.filter((f) => f.id !== id);
+    });
+  }
 
-    for (const [index, entry] of entries.entries()) {
-      await uploadOne(entry, index === 0 ? replyToId : undefined);
+  /**
+   * Upload one staged file and post it as a message.
+   *
+   * Returns whether it succeeded, so the caller can decide what to do with the rest of the batch
+   * and whether the reply has been spent.
+   */
+  async function sendStaged(item: StagedFile, replyToId: string | undefined): Promise<boolean> {
+    setStaged((prev) => prev.map((f) => (f.id === item.id ? { ...f, status: 'uploading', progress: 0, error: undefined } : f)));
+    try {
+      const { file: meta } = await filesApi.uploadFile(item.file, item.file.name, {
+        onProgress: (fraction) =>
+          setStaged((prev) => prev.map((f) => (f.id === item.id ? { ...f, progress: fraction } : f))),
+      });
+      await dispatchMessage({
+        conversationId,
+        type: attachmentTypeForMime(item.file.type),
+        fileId: meta.id,
+        replyToMessageId: replyToId,
+      });
+      if (item.previewUrl) URL.revokeObjectURL(item.previewUrl);
+      setStaged((prev) => prev.filter((f) => f.id !== item.id));
+      return true;
+    } catch (err) {
+      // Left staged with its error rather than discarded: the file is still here, and losing it
+      // would mean picking it again from scratch.
+      setStaged((prev) => prev.map((f) => (f.id === item.id
+        ? { ...f, status: 'failed', error: (err as Error).message || 'Upload failed' }
+        : f)));
+      return false;
     }
   }
 
@@ -525,7 +576,7 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
     const picked = Array.from(e.target.files ?? []);
     // Cleared so choosing the same file again still fires a change event.
     e.target.value = '';
-    void enqueueFiles(picked);
+    stageFiles(picked);
   }
 
   async function startRecording() {
@@ -839,7 +890,7 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
           e.preventDefault();
           dragDepthRef.current = 0;
           setDragging(false);
-          void enqueueFiles(Array.from(e.dataTransfer.files ?? []));
+          stageFiles(Array.from(e.dataTransfer.files ?? []));
         }}
       >
         {dragging && (
@@ -1705,48 +1756,57 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
       )}
 
       {/* Input bar */}
-      {/* Upload queue — progress while sending, and a failure that can be retried rather than
-          silently discarded. */}
-      {uploads.length > 0 && (
-        <div className="flex flex-col gap-1.5 px-4 pt-2 flex-shrink-0" style={{ background: 'var(--panel)', borderTop: '1px solid var(--border)' }}>
-          {uploads.map((u) => (
-            <div key={u.id} className="flex items-center gap-2.5">
-              <FaPaperclip size={12} className="flex-shrink-0" style={{ color: 'var(--text-dim)' }} />
-              <div className="flex-1 min-w-0">
-                <div className="flex items-baseline gap-2">
-                  <span className="text-[12px] truncate" style={{ color: 'var(--text-muted)' }}>{u.file.name}</span>
-                  <span className="text-[10px] font-mono flex-shrink-0" style={{ color: u.status === 'failed' ? 'var(--danger)' : 'var(--text-dim)' }}>
-                    {u.status === 'failed' ? (u.error ?? 'Failed') : `${Math.round(u.progress * 100)}%`}
-                  </span>
-                </div>
-                {u.status !== 'failed' && (
-                  <div className="mt-1 h-[3px] rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
-                    <div
-                      className="h-full rounded-full transition-[width] duration-150"
-                      style={{ width: `${Math.round(u.progress * 100)}%`, background: 'var(--accent)' }}
-                    />
+      {/* Staged attachments — chosen, not yet sent. Thumbnails rather than filenames, because
+          what matters before sending is whether this is the right picture. */}
+      {staged.length > 0 && (
+        <div className="flex gap-2 px-4 pt-3 pb-1 overflow-x-auto flex-shrink-0" style={{ background: 'var(--panel)', borderTop: '1px solid var(--border)' }}>
+          {staged.map((f) => (
+            <div key={f.id} className="relative flex-shrink-0" style={{ width: 72 }}>
+              <div
+                className="relative overflow-hidden flex items-center justify-center"
+                style={{ width: 72, height: 72, borderRadius: 10, background: 'var(--panel-alt)', border: '1px solid var(--border)' }}
+              >
+                {f.previewUrl && f.file.type.startsWith('image/') && (
+                  <img src={f.previewUrl} alt="" className="w-full h-full object-cover" />
+                )}
+                {f.previewUrl && f.file.type.startsWith('video/') && (
+                  <video src={f.previewUrl} muted preload="metadata" className="w-full h-full object-cover" />
+                )}
+                {!f.previewUrl && <FaPaperclip size={18} style={{ color: 'var(--text-dim)' }} />}
+
+                {f.status === 'uploading' && (
+                  <div className="absolute inset-0 flex items-end" style={{ background: 'rgba(0,0,0,0.45)' }}>
+                    <div className="w-full h-[3px]" style={{ background: 'rgba(255,255,255,0.25)' }}>
+                      <div className="h-full transition-[width] duration-150" style={{ width: `${Math.round(f.progress * 100)}%`, background: 'var(--accent)' }} />
+                    </div>
                   </div>
                 )}
+                {f.status === 'failed' && (
+                  <button
+                    type="button"
+                    onClick={() => sendStaged(f, undefined)}
+                    title={f.error}
+                    className="absolute inset-0 flex flex-col items-center justify-center gap-0.5 text-white"
+                    style={{ background: 'rgba(0,0,0,0.6)' }}
+                  >
+                    <FaArrowRotateRight size={14} />
+                    <span className="text-[9px] font-mono">Retry</span>
+                  </button>
+                )}
               </div>
-              {u.status === 'failed' && (
+
+              {f.status !== 'uploading' && (
                 <button
                   type="button"
-                  onClick={() => uploadOne(u, undefined)}
-                  className="text-[11px] font-mono px-2 py-0.5 rounded-md flex-shrink-0 transition-colors hover-panel-alt"
-                  style={{ color: 'var(--accent)', border: '1px solid var(--accent-dim)' }}
+                  onClick={() => unstage(f.id)}
+                  className="absolute -top-1 -right-1 w-5 h-5 rounded-full flex items-center justify-center"
+                  style={{ background: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text-dim)' }}
+                  aria-label={`Remove ${f.file.name}`}
                 >
-                  Retry
+                  <FaXmark size={10} />
                 </button>
               )}
-              <button
-                type="button"
-                onClick={() => setUploads((prev) => prev.filter((x) => x.id !== u.id))}
-                className="flex-shrink-0 p-1 rounded-md transition-colors hover-panel-alt"
-                style={{ color: 'var(--text-dim)' }}
-                aria-label={`Remove ${u.file.name}`}
-              >
-                <FaXmark size={11} />
-              </button>
+              <p className="mt-1 text-[10px] truncate" style={{ color: 'var(--text-dim)' }} title={f.file.name}>{f.file.name}</p>
             </div>
           ))}
         </div>
@@ -1779,7 +1839,7 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
           className="input-base flex-1 disabled:opacity-60 resize-none"
           style={{ maxHeight: COMPOSER_MAX_HEIGHT, overflowY: 'auto', lineHeight: 1.45 }}
         />
-        <button type="submit" disabled={!input.trim() || uploading || isRecording} title="Send" className="btn-primary disabled:opacity-40">
+        <button type="submit" disabled={(!input.trim() && staged.length === 0) || uploading || isRecording || sending} title="Send" className="btn-primary disabled:opacity-40">
           <FaPaperPlane size={14} />
         </button>
       </form>
