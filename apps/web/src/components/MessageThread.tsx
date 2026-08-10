@@ -19,6 +19,7 @@ import { ConversationInfoPanel } from './ConversationInfoPanel';
 import { Lightbox, type LightboxItem } from './Lightbox';
 import { MessageAttachment } from './MessageAttachment';
 import { Linkify } from './Linkify';
+import { MessageText } from './MessageText';
 import { useConfirm } from './ConfirmDialog';
 import { Avatar } from './ui';
 import { useAuth } from '../context/AuthContext';
@@ -169,6 +170,9 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   /** Which reaction pill is showing who reacted. One at a time, like the message picker. */
   const [reactionTip, setReactionTip] = useState<{ messageId: string; emoji: string } | null>(null);
   const reactionTipRef = useRef<number | null>(null);
+  /** The "@…" being typed right now, if any, and where it starts in the input. */
+  const [mentionQuery, setMentionQuery] = useState<{ at: number; term: string } | null>(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
   const [jumping, setJumping] = useState(false);
   const jumpingRef = useRef(false);
   const [staged, setStaged] = useState<StagedFile[]>([]);
@@ -410,8 +414,48 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
     setLightbox(index === -1 ? { items: [{ file, type }], index: 0 } : { items, index });
   }
 
+  /**
+   * Recognise an "@…" the caret is currently inside, so the picker can offer names for it.
+   *
+   * Anchored to the word the caret is in rather than the last "@" in the box: with two mentions
+   * in a message, editing the first must not offer completions for the second.
+   */
+  function detectMention(value: string, caret: number) {
+    const upToCaret = value.slice(0, caret);
+    const at = upToCaret.lastIndexOf('@');
+    if (at === -1) return setMentionQuery(null);
+
+    // Must begin a word, or an email address would open the picker mid-address.
+    const before = at === 0 ? '' : upToCaret[at - 1];
+    if (before && /[\w@]/.test(before)) return setMentionQuery(null);
+
+    const term = upToCaret.slice(at + 1);
+    // A space ends it: "@" alone offers everyone, but "@dara said" is no longer a mention query.
+    if (/\s/.test(term)) return setMentionQuery(null);
+
+    setMentionQuery({ at, term });
+    setMentionIndex(0);
+  }
+
+  /** Replace the "@…" being typed with a full username. */
+  function applyMention(username: string) {
+    if (!mentionQuery) return;
+    const el = composerRef.current;
+    const caret = el?.selectionStart ?? input.length;
+    const next = `${input.slice(0, mentionQuery.at)}@${username} ${input.slice(caret)}`;
+    setInput(next);
+    setMentionQuery(null);
+    // Put the caret after the inserted name, or typing continues from wherever it happened to be.
+    requestAnimationFrame(() => {
+      const pos = mentionQuery.at + username.length + 2;
+      el?.focus();
+      el?.setSelectionRange(pos, pos);
+    });
+  }
+
   function handleInputChange(value: string) {
     setInput(value);
+    detectMention(value, composerRef.current?.selectionStart ?? value.length);
     if (!socket) return;
     socket.emit('typing:start', { conversationId });
     if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current);
@@ -496,6 +540,27 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
    * candidate word and must not also post the message.
    */
   function handleComposerKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    // The mention picker takes these first. Without that, Enter would send the message instead of
+    // choosing the highlighted name, which is the one keystroke everybody uses.
+    if (mentionCandidates.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionIndex((i) => (i + 1) % mentionCandidates.length);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionIndex((i) => (i - 1 + mentionCandidates.length) % mentionCandidates.length);
+        return;
+      }
+      if (e.key === 'Enter' || e.key === 'Tab') {
+        e.preventDefault();
+        applyMention(mentionCandidates[mentionIndex].username);
+        return;
+      }
+      if (e.key === 'Escape') { setMentionQuery(null); return; }
+    }
+
     if (e.key === 'Escape') { setReplyingTo(null); return; }
     if (e.key !== 'Enter') return;
     if (e.nativeEvent.isComposing) return;
@@ -951,6 +1016,19 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   const isTyping = typingUsers.size > 0;
   const isGroup = conversation.type !== 'direct';
   const membersById = new Map((conversation.members ?? []).map((m) => [m.user_id, m]));
+  const memberUsernames = (conversation.members ?? []).map((m) => m.username).filter(Boolean);
+  // Everyone but you: mentioning yourself notifies nobody and is never what was meant.
+  const mentionCandidates = mentionQuery
+    ? (conversation.members ?? [])
+        .filter((m) => m.user_id !== user!.id)
+        .filter((m) => {
+          const term = mentionQuery.term.toLowerCase();
+          return !term
+            || m.username.toLowerCase().startsWith(term)
+            || m.display_name.toLowerCase().includes(term);
+        })
+        .slice(0, 6)
+    : [];
   const messagesById = new Map(messages.map((m) => [m.id, m]));
   // Media sent as a batch is drawn as one grid; the members after the first render nothing.
   const { albums, absorbed } = buildAlbums(messages);
@@ -1653,7 +1731,18 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
                         </form>
                       ) : (text && (
                         <p className="text-sm whitespace-pre-wrap break-words">
-                          <Linkify text={text} linkStyle={{ color: mine ? 'var(--bg-deep)' : 'var(--accent)' }} />
+                          <MessageText
+                            text={text}
+                            usernames={memberUsernames}
+                            currentUsername={user!.username}
+                            linkStyle={{ color: mine ? 'var(--bg-deep)' : 'var(--accent)' }}
+                            mentionStyle={{ color: mine ? 'var(--bg-deep)' : 'var(--accent)' }}
+                            // A mention of you is washed rather than merely coloured, so scanning
+                            // a busy thread finds it without reading every line.
+                            selfMentionStyle={mine
+                              ? { color: 'var(--bg-deep)', background: 'rgba(0,0,0,0.12)' }
+                              : { color: 'var(--accent)', background: 'var(--accent-wash)' }}
+                          />
                         </p>
                       ))}
                     </>)}
@@ -1879,6 +1968,28 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
       )}
 
       {/* Input bar */}
+      {mentionCandidates.length > 0 && (
+        <div className="mx-4 mb-1 rounded-xl overflow-hidden flex-shrink-0"
+          style={{ background: 'var(--panel)', border: '1px solid var(--border)', boxShadow: '0 -4px 14px rgba(0,0,0,0.18)' }}>
+          {mentionCandidates.map((m, i) => (
+            <button
+              key={m.user_id}
+              type="button"
+              // Chosen on mousedown, not click: click lands after the textarea has already lost
+              // focus, which closes the picker before the choice arrives.
+              onMouseDown={(e) => { e.preventDefault(); applyMention(m.username); }}
+              onMouseEnter={() => setMentionIndex(i)}
+              className="w-full flex items-center gap-2.5 px-3 py-2 text-left transition-colors"
+              style={{ background: i === mentionIndex ? 'var(--accent-wash)' : 'transparent' }}
+            >
+              <Avatar name={m.display_name} avatarUrl={m.avatar_url} size={26} radius={7} fontSize={11} />
+              <span className="text-[13px] truncate" style={{ color: 'var(--text)' }}>{m.display_name}</span>
+              <span className="text-[11px] font-mono truncate" style={{ color: 'var(--text-dim)' }}>@{m.username}</span>
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Staged attachments — chosen, not yet sent. Thumbnails rather than filenames, because
           what matters before sending is whether this is the right picture. */}
       {staged.length > 0 && (

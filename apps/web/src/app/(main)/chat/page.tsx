@@ -17,6 +17,7 @@ import { AnnounceWorkspace } from '@/components/AnnounceWorkspace';
 import { ProfilePanel } from '@/components/ProfilePanel';
 import { OPEN_CONVERSATION_EVENT, OPEN_OWN_PROFILE_EVENT } from '@/components/UserProfileCard';
 import { sortConversations } from '@/utils/conversationOrder';
+import { mentions } from '@/utils/mentions';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { BrandLogo } from '@/components/BrandLogo';
 import { ComingSoon, type ComingSoonProps } from '@/components/ComingSoon';
@@ -158,15 +159,20 @@ export default function ChatPage() {
         const isTeamChannelActive = sectionRef.current === 'teams' && !!c.team_id;
         const shouldIncrement = !isMyMessage && !isActive && !isTeamChannelActive;
 
-        // Muted conversations still count as unread — muting silences the interruption, it does
-        // not mark things read — but they make no sound and raise no notification.
-        if (shouldIncrement && !c.is_muted) {
+        // Being named is the exception to muting. Someone quiets a busy channel to stop hearing
+        // every message in it, not to stop hearing that they were asked something directly.
+        const namesMe = m.type === 'text' && mentions(decodeMessageText(m.ciphertext), user?.username);
+
+        if (shouldIncrement && (!c.is_muted || namesMe)) {
           const prefs = notifyPrefsRef.current;
           if (prefs.soundEnabled) playNotificationSound();
           // Fires whenever this conversation isn't the one you're looking at — not gated on the
           // whole tab being backgrounded, since you're usually still "in" the app on another section.
           if (prefs.desktopEnabled && typeof Notification !== 'undefined' && Notification.permission === 'granted') {
-            const senderName = m.senderId ? (c.members?.find((mb) => mb.user_id === m.senderId)?.display_name ?? 'New message') : 'New message';
+            const sender = m.senderId ? (c.members?.find((mb) => mb.user_id === m.senderId)?.display_name ?? 'New message') : 'New message';
+            // Said in the title, because a mention is a different kind of message and the title
+            // is the part read before deciding whether to look.
+            const senderName = namesMe ? `${sender} mentioned you` : sender;
             // The sender is already the notification title, so the body omits the name — and this
             // no longer produces "Sent a image".
             const body = messagePreview({ type: m.type, ciphertext: m.ciphertext });
