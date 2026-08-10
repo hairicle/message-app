@@ -15,6 +15,8 @@ export class AccountStatusService {
   // In-process cache: userId → expiry timestamp. Avoids a Redis round-trip per request for
   // active users. Short TTL so a disable propagates quickly even without an explicit evict.
   private readonly activeCache = new Map<string, number>();
+  /** userId → { role, expires }. Same short TTL, for the same reason. */
+  private readonly roleCache = new Map<string, { role: string; expires: number }>();
   private static readonly CACHE_TTL_MS = 30_000;
 
   /** Emits 'disabled' with the userId, so live sockets can be dropped instead of lingering. */
@@ -25,9 +27,35 @@ export class AccountStatusService {
     private readonly prisma: PrismaService,
   ) {}
 
-  /** Forget a cached decision — call after changing an account's status. */
+  /** Forget every cached decision about a user — call after changing their status or role. */
   evict(userId: string) {
     this.activeCache.delete(userId);
+    this.roleCache.delete(userId);
+  }
+
+  /**
+   * The role the account has now, rather than the one its token was issued with.
+   *
+   * RolesGuard used to read the role straight from the JWT, which meant demoting an administrator
+   * did not take effect until their token expired — up to eight hours of access they no longer
+   * had. The same problem disabling an account had, solved the same way: read the truth, cache it
+   * briefly, and evict on change.
+   *
+   * Null when the account cannot be read at all, so an unknown user is refused rather than
+   * inheriting whatever their token claimed.
+   */
+  async currentRole(userId: string): Promise<string | null> {
+    const cached = this.roleCache.get(userId);
+    if (cached && cached.expires > Date.now()) return cached.role;
+
+    const row = await this.prisma.users.findUnique({
+      where: { id: userId },
+      select: { role: true },
+    });
+    if (!row) return null;
+
+    this.roleCache.set(userId, { role: row.role, expires: Date.now() + AccountStatusService.CACHE_TTL_MS });
+    return row.role;
   }
 
   /** Announce that a user was disabled so connected sockets can be closed immediately. */

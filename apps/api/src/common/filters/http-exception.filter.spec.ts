@@ -77,6 +77,39 @@ describe('HttpExceptionFilter', () => {
     });
   });
 
+  describe('an identifier the database cannot read', () => {
+    // Which code is raised depends on how the query reaches the database, so both must be caught.
+    for (const code of ['P2007', 'P2023']) {
+      it(`answers 400 for ${code}, not 500`, () => {
+        const { res, sent } = makeResponse();
+        const err = Object.assign(new Error('invalid input syntax for type uuid'), {
+          name: 'PrismaClientKnownRequestError', code,
+        });
+        filter.catch(err, hostFor(res));
+        expect(sent.status).toBe(HttpStatus.BAD_REQUEST);
+      });
+    }
+
+    // The value came from the URL; echoing it back is how reflected content travels.
+    it('does not repeat the offending value', () => {
+      const { res, sent } = makeResponse();
+      const err = Object.assign(new Error('invalid input syntax for type uuid: "<script>"'), {
+        name: 'PrismaClientKnownRequestError', code: 'P2007',
+      });
+      filter.catch(err, hostFor(res));
+      expect(JSON.stringify(sent.body)).not.toContain('script');
+    });
+
+    it('leaves other Prisma failures as server faults', () => {
+      const { res, sent } = makeResponse();
+      const err = Object.assign(new Error('connection lost'), {
+        name: 'PrismaClientKnownRequestError', code: 'P1001',
+      });
+      filter.catch(err, hostFor(res));
+      expect(sent.status).toBe(HttpStatus.INTERNAL_SERVER_ERROR);
+    });
+  });
+
   describe('everything else is unchanged', () => {
     it('passes an HttpException through with its own status', () => {
       const { res, sent } = makeResponse();

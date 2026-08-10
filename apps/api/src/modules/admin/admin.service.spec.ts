@@ -3,6 +3,7 @@ import { BadRequestException } from '@nestjs/common';
 import { AdminService } from './admin.service';
 import { createPrismaMock, type PrismaMock } from '../../testing/prisma-mock';
 import type { AuthService } from '../auth/auth.service';
+import type { AccountStatusService } from '../../common/account-status.service';
 
 const ADMIN = 'admin-1';
 const OTHER_ADMIN = 'admin-2';
@@ -11,12 +12,15 @@ const STAFF = 'staff-1';
 describe('AdminService', () => {
   let prisma: PrismaMock;
   let service: AdminService;
+  let accountStatus: { evict: ReturnType<typeof vi.fn> };
 
   beforeEach(() => {
     prisma = createPrismaMock();
+    accountStatus = { evict: vi.fn() };
     service = new AdminService(
       prisma,
       { blockUser: vi.fn(), unblockUser: vi.fn() } as unknown as AuthService,
+      accountStatus as unknown as AccountStatusService,
     );
     prisma.audit_logs.create.mockResolvedValue({});
     prisma.users.updateMany.mockResolvedValue({ count: 1 });
@@ -107,6 +111,12 @@ describe('AdminService', () => {
           data: expect.objectContaining({ action: 'admin.user.disabled', user_id: ADMIN, target_id: STAFF }),
         }),
       );
+    });
+
+    it('drops the cached role so a demotion takes effect at once', async () => {
+      target('staff');
+      await service.changeUserRole(STAFF, 'admin', ADMIN);
+      expect(accountStatus.evict).toHaveBeenCalledWith(STAFF);
     });
 
     it('keeps both ends of a role change', async () => {

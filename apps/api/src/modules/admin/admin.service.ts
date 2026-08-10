@@ -2,6 +2,7 @@ import { Injectable, BadRequestException, Logger } from '@nestjs/common';
 import { Prisma, user_status } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { AuthService } from '../auth/auth.service';
+import { AccountStatusService } from '../../common/account-status.service';
 
 /**
  * Roles the application understands.
@@ -26,6 +27,7 @@ export class AdminService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authService: AuthService,
+    private readonly accountStatus: AccountStatusService,
   ) {}
 
   /**
@@ -184,6 +186,9 @@ export class AdminService {
       // The changed field names, not their values: an audit trail should say what was touched
       // without becoming a second copy of the data.
       await this.record(actorId, 'admin.user.updated', targetId, { fields: Object.keys(fields) });
+      // The guard caches the role for thirty seconds; without this a demotion would keep working
+      // for that long, which is the gap this whole change exists to close.
+      if (fields.role !== undefined) this.accountStatus.evict(targetId);
     }
 
     if (fields.status === 'disabled') await this.authService.blockUser(targetId);
@@ -215,6 +220,7 @@ export class AdminService {
     await this.prisma.users.updateMany({ where: { id: targetId }, data: { role: normalised } });
     // Both ends recorded: a role change is the one admin action where what it was matters as much
     // as what it became.
+    this.accountStatus.evict(targetId);
     await this.record(actorId, 'admin.user.role_changed', targetId, { from: before?.role, to: normalised });
   }
 
