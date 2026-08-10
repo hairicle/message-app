@@ -68,6 +68,15 @@ const MAX_JUMP_PAGES = 10;
 /** Roughly six lines. Past this the composer scrolls rather than eating the conversation. */
 const COMPOSER_MAX_HEIGHT = 132;
 
+/** A message written but not yet accepted by the server. */
+interface OutboxItem {
+  id: string;
+  text: string;
+  replyToMessageId?: string;
+  state: 'sending' | 'failed';
+  error?: string;
+}
+
 /**
  * An attachment the user has chosen but not yet sent.
  *
@@ -180,6 +189,15 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   /** The "@…" being typed right now, if any, and where it starts in the input. */
   const [mentionQuery, setMentionQuery] = useState<{ at: number; term: string } | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
+  /**
+   * Messages written but not yet accepted by the server.
+   *
+   * Kept beside the thread rather than inside it: the message list drives grouping, pagination
+   * and jump-to-message, all of which key off server ids that these do not have yet.
+   */
+  const [outbox, setOutbox] = useState<OutboxItem[]>([]);
+  const flushingRef = useRef(false);
+
   /** Picking several messages at once, to forward or delete them together. */
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -476,6 +494,48 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
     });
   }
 
+  /**
+   * Send everything waiting, oldest first.
+   *
+   * Serial, and guarded so two triggers cannot run it at once — reconnecting while a retry is
+   * already in flight would otherwise send the same message twice.
+   */
+  async function flushOutbox() {
+    if (flushingRef.current) return;
+    flushingRef.current = true;
+    try {
+      // Read from a ref-free snapshot each pass so items queued during the flush are picked up.
+      for (;;) {
+        const next = await new Promise<OutboxItem | undefined>((resolve) => {
+          setOutbox((prev) => {
+            resolve(prev.find((o) => o.state !== 'sending') ?? prev.find((o) => o.state === 'failed'));
+            return prev;
+          });
+        });
+        if (!next) break;
+
+        setOutbox((prev) => prev.map((o) => (o.id === next.id ? { ...o, state: 'sending', error: undefined } : o)));
+        try {
+          await dispatchMessage({
+            conversationId,
+            ciphertext: encodeMessageText(next.text),
+            replyToMessageId: next.replyToMessageId,
+          });
+          setOutbox((prev) => prev.filter((o) => o.id !== next.id));
+        } catch (err) {
+          setOutbox((prev) => prev.map((o) => (o.id === next.id
+            ? { ...o, state: 'failed', error: (err as Error).message || 'Could not send' }
+            : o)));
+          // Stop at the first failure: pressing on would deliver later messages before earlier
+          // ones, which is worse than waiting.
+          break;
+        }
+      }
+    } finally {
+      flushingRef.current = false;
+    }
+  }
+
   function toggleSelected(messageId: string) {
     setSelectedIds((prev) => {
       const next = new Set(prev);
@@ -505,15 +565,37 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
     typingTimeoutRef.current = window.setTimeout(() => { socket.emit('typing:stop', { conversationId }); }, 2000);
   }
 
-  async function dispatchMessage(payload: { conversationId: string; type?: MessageType; ciphertext?: string; fileId?: string; replyToMessageId?: string }) {
-    if (socket) {
-      socket.emit('message:send', payload, (res: { ok: boolean; message?: Message; error?: string }) => {
-        if (res.ok && res.message) setMessages((prev) => addMessage(prev, res.message!));
+  /**
+   * Send a message, resolving only once the server has it.
+   *
+   * The socket path is used only while it is actually connected. socket.io buffers an emit made
+   * on a disconnected socket and delivers it whenever it reconnects, with the acknowledgement
+   * arriving much later or never — so a send with no network used to resolve instantly and be
+   * lost without a trace. Falling back to HTTP means an offline send fails, which is the honest
+   * answer and the one the outbox can act on.
+   */
+  function dispatchMessage(payload: { conversationId: string; type?: MessageType; ciphertext?: string; fileId?: string; replyToMessageId?: string }): Promise<Message> {
+    if (socket?.connected) {
+      return new Promise<Message>((resolve, reject) => {
+        // Acknowledged or given up on: without a timeout a send into a half-open connection
+        // waits for ever and the message sits as "sending" until the page is reloaded.
+        socket.timeout(12_000).emit(
+          'message:send',
+          payload,
+          (timedOut: Error | null, res?: { ok: boolean; message?: Message; error?: string }) => {
+            if (timedOut) return reject(new Error('No answer from the server'));
+            if (!res?.ok || !res.message) return reject(new Error(res?.error ?? 'The server refused it'));
+            setMessages((prev) => addMessage(prev, res.message!));
+            resolve(res.message);
+          },
+        );
       });
-    } else {
-      const { message } = await messagesApi.sendMessage(payload);
-      setMessages((prev) => addMessage(prev, message));
     }
+
+    return messagesApi.sendMessage(payload).then(({ message }) => {
+      setMessages((prev) => addMessage(prev, message));
+      return message;
+    });
   }
 
   function startEdit(message: Message) { setEditingMessageId(message.id); setEditingText(decodeMessageText(message.ciphertext)); }
@@ -645,11 +727,15 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
       // Still sent even if an attachment failed — the words were written and holding them back
       // because a file did not upload would lose them.
       if (text) {
-        await dispatchMessage({
-          conversationId,
-          ciphertext: encodeMessageText(text),
+        // Through the outbox rather than straight out: a send with no network has to survive
+        // failing, and the queue is the only thing that remembers it.
+        setOutbox((prev) => [...prev, {
+          id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          text,
           replyToMessageId: replySpent ? undefined : replyToId,
-        });
+          state: 'sending',
+        }]);
+        await flushOutbox();
       }
     } finally {
       setSending(false);
@@ -2030,6 +2116,44 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
             </div>
           );
         })}
+        {/* Waiting to be sent. Drawn after the thread because that is where they will land, and
+            dimmed so they read as not-yet-here rather than as ordinary messages. */}
+        {outbox.map((item) => (
+          <div key={item.id} className="flex items-start gap-2 mt-1 flex-row-reverse">
+            <div className="flex-shrink-0" style={{ width: 32 }} />
+            <div className="flex flex-col max-w-[80%] sm:max-w-[62%]" style={{ alignItems: 'flex-end' }}>
+              <div
+                className="px-4 py-2.5"
+                style={{
+                  borderRadius: 16,
+                  background: 'var(--accent)',
+                  color: 'var(--bg-deep)',
+                  opacity: item.state === 'failed' ? 0.55 : 0.7,
+                }}
+              >
+                <p className="text-sm whitespace-pre-wrap break-words">{item.text}</p>
+              </div>
+              <span className="mt-0.5 text-[10px] font-mono flex items-center gap-1.5"
+                style={{ color: item.state === 'failed' ? 'var(--danger)' : 'var(--text-dim)' }}>
+                {item.state === 'failed' ? (
+                  <>
+                    {item.error ?? 'Not sent'}
+                    <button type="button" onClick={() => flushOutbox()}
+                      className="underline underline-offset-2" style={{ color: 'var(--accent)' }}>
+                      Retry
+                    </button>
+                    <button type="button"
+                      onClick={() => setOutbox((prev) => prev.filter((o) => o.id !== item.id))}
+                      className="underline underline-offset-2" style={{ color: 'var(--text-dim)' }}>
+                      Discard
+                    </button>
+                  </>
+                ) : 'Sending…'}
+              </span>
+            </div>
+          </div>
+        ))}
+
         {/* Spacer so the last message is never hidden behind the input bar or hover toolbar */}
         <div ref={bottomRef} style={{ paddingBottom: 8 }} />
       </div>
