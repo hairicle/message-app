@@ -1,8 +1,11 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { Prisma } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { AvatarUrlService } from '../../common/avatar-url.service';
 import { AvatarStorageService } from '../../common/avatar-storage.service';
+
+/** Matches what the profile form asks for, so the two cannot disagree about what is acceptable. */
+const MIN_PASSWORD_LENGTH = 8;
 
 @Injectable()
 export class UsersService {
@@ -153,7 +156,24 @@ export class UsersService {
     return this.getNotificationPrefs(userId);
   }
 
+  /**
+   * Change your own password, having proved you know the current one.
+   *
+   * Getting the current password wrong is the caller's mistake, not a server fault: this used to
+   * throw a plain Error, which is not an HttpException, so it came back as 500 "Internal server
+   * error" — and the profile form shows the server's message verbatim, so mistyping told the user
+   * the system had broken.
+   *
+   * 400 rather than 401 deliberately. Any 401 outside the sign-in paths makes the client treat
+   * the session as expired and sign the user out, so answering 401 here would log someone out for
+   * a typo.
+   */
   async changePassword(userId: string, current: string, next: string) {
+    // Checked here as well as in the form, because the endpoint is reachable without it.
+    if (!next || next.length < MIN_PASSWORD_LENGTH) {
+      throw new BadRequestException(`A password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+    }
+
     const bcrypt = await import('bcryptjs');
     const row = await this.prisma.users.findUnique({
       where: { id: userId },
@@ -161,7 +181,7 @@ export class UsersService {
     });
     const hash = row?.password_hash;
     if (!hash || !(await bcrypt.compare(current, hash))) {
-      throw new Error('Current password is incorrect');
+      throw new BadRequestException('Current password is incorrect');
     }
     const newHash = await bcrypt.hash(next, 12);
     await this.prisma.users.update({
