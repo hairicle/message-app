@@ -4,7 +4,7 @@ import { useRef, useState } from 'react';
 import type { Conversation } from '@messenger/shared';
 import { getConversationTitle, getOtherMember } from '../utils/conversation';
 import { messagePreview } from '../utils/messagePreview';
-import { FaBell, FaBellSlash, FaThumbtack } from 'react-icons/fa6';
+import { FaBell, FaBellSlash, FaRightFromBracket, FaThumbtack } from 'react-icons/fa6';
 import { Avatar, SearchInput } from './ui';
 
 interface ConversationListProps {
@@ -15,6 +15,7 @@ interface ConversationListProps {
   onSelect: (id: string) => void;
   onTogglePin: (id: string, pinned: boolean) => void;
   onToggleMute: (id: string, muted: boolean) => void;
+  onLeave: (id: string) => void;
 }
 
 export function ConversationList({
@@ -25,6 +26,7 @@ export function ConversationList({
   onSelect,
   onTogglePin,
   onToggleMute,
+  onLeave,
 }: ConversationListProps) {
   const [search, setSearch] = useState('');
   /** The row whose menu is open, and where to draw it. */
@@ -178,6 +180,24 @@ export function ConversationList({
               {menuFor.is_muted ? <FaBell size={12} style={{ color: 'var(--text-dim)' }} /> : <FaBellSlash size={12} style={{ color: 'var(--text-dim)' }} />}
               {menuFor.is_muted ? 'Unmute' : 'Mute notifications'}
             </button>
+
+            {/* Only for groups: there is nothing to leave in a direct conversation, and the
+                server refuses it anyway. Separated and coloured, because it is the one item here
+                that cannot be undone by picking it again. */}
+            {menuFor.type !== 'direct' && (
+              <>
+                <div className="h-px mx-3 my-1" style={{ background: 'var(--border)' }} />
+                <button
+                  type="button"
+                  onClick={() => { const id = menuFor.id; setMenu(null); onLeave(id); }}
+                  className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover-panel-alt"
+                  style={{ color: 'var(--danger)' }}
+                >
+                  <FaRightFromBracket size={12} />
+                  Leave group
+                </button>
+              </>
+            )}
           </div>
         </>
       )}

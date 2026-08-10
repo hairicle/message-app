@@ -293,6 +293,27 @@ export default function ChatPage() {
     }
   }, []);
 
+  const leaveConversation = useCallback(async (id: string) => {
+    const conv = conversations.find((c) => c.id === id);
+    const ok = await confirm({
+      title: `Leave ${conv?.name ?? 'this group'}?`,
+      description: <>You will stop receiving its messages. <b style={{ color: 'var(--text-muted)' }}>Someone will have to add you back.</b></>,
+      confirmLabel: 'Leave',
+      cancelLabel: 'Cancel',
+    });
+    if (!ok) return;
+
+    try {
+      await conversationsApi.removeConversationMember(id, user!.id);
+      // Dropped only once the server has agreed. Removing it first and restoring it on failure
+      // would flicker the list for a request that is usually about to succeed anyway.
+      setConversations((prev) => prev.filter((c) => c.id !== id));
+      setSelectedId((current) => (current === id ? null : current));
+    } catch (err) {
+      window.alert((err as Error).message);
+    }
+  }, [confirm, user, conversations]);
+
   // Reset unread for a conversation when user navigates to it
   const clearConvUnread = useCallback((convId: string) => {
     setConversations((prev) =>
@@ -412,6 +433,7 @@ export default function ChatPage() {
               onSelect={(id) => { setSelectedId(id); clearConvUnread(id); }}
               onTogglePin={togglePin}
               onToggleMute={toggleMute}
+              onLeave={leaveConversation}
             />
             <div className="p-3 flex-shrink-0" style={{ borderTop: '1px solid var(--border)' }}>
               <NewConversationDialog onCreated={handleConversationCreated} />
