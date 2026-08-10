@@ -287,11 +287,53 @@ describe('MessagesService', () => {
     });
 
     it('removes only this user\'s reaction of that emoji', async () => {
+      prisma.messages.findUnique.mockResolvedValue({ conversation_id: CONV, deleted_at: null });
       prisma.message_reactions.deleteMany.mockResolvedValue({ count: 1 });
       await service.removeReaction(MSG, USER, '👍');
       expect(prisma.message_reactions.deleteMany).toHaveBeenCalledWith({
         where: { message_id: MSG, user_id: USER, emoji: '👍' },
       });
+    });
+
+    // The bug these cover: the broadcast lived only in the socket handler, and the web client
+    // reacts over HTTP — so reactions reached the database and no other screen.
+    it('announces an added reaction with everything the client renders', async () => {
+      prisma.messages.findUnique.mockResolvedValue({ conversation_id: CONV, deleted_at: null });
+      asMember();
+      prisma.message_reactions.upsert.mockResolvedValue({});
+      prisma.users.findUnique.mockResolvedValue({ username: 'nini', display_name: 'Nini' });
+
+      const seen: unknown[] = [];
+      service.events.on('reaction:added', (p) => seen.push(p));
+      await service.addReaction(MSG, USER, '👍');
+
+      expect(seen).toEqual([{
+        messageId: MSG, conversationId: CONV, userId: USER, emoji: '👍',
+        username: 'nini', displayName: 'Nini',
+      }]);
+    });
+
+    it('announces a removed reaction', async () => {
+      prisma.messages.findUnique.mockResolvedValue({ conversation_id: CONV, deleted_at: null });
+      prisma.message_reactions.deleteMany.mockResolvedValue({ count: 1 });
+
+      const seen: unknown[] = [];
+      service.events.on('reaction:removed', (p) => seen.push(p));
+      await service.removeReaction(MSG, USER, '👍');
+
+      expect(seen).toEqual([{ messageId: MSG, conversationId: CONV, userId: USER, emoji: '👍' }]);
+    });
+
+    // Otherwise a double tap tells every client to drop a reaction that is still there.
+    it('stays silent when nothing was actually removed', async () => {
+      prisma.messages.findUnique.mockResolvedValue({ conversation_id: CONV, deleted_at: null });
+      prisma.message_reactions.deleteMany.mockResolvedValue({ count: 0 });
+
+      const seen: unknown[] = [];
+      service.events.on('reaction:removed', (p) => seen.push(p));
+      await service.removeReaction(MSG, USER, '👍');
+
+      expect(seen).toEqual([]);
     });
   });
 

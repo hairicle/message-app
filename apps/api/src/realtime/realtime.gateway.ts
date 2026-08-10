@@ -48,6 +48,15 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.messages.events.on('message:new', (message: { conversationId: string }) => {
       this.io?.to(`conversation:${message.conversationId}`).emit('message:new', message);
     });
+
+    // Reactions are relayed the same way, and from the service rather than the socket handlers
+    // below: the web client reacts over HTTP, which never reached those handlers at all.
+    this.messages.events.on('reaction:added', (payload: { conversationId: string }) => {
+      this.io?.to(`conversation:${payload.conversationId}`).emit('reaction:added', payload);
+    });
+    this.messages.events.on('reaction:removed', (payload: { conversationId: string }) => {
+      this.io?.to(`conversation:${payload.conversationId}`).emit('reaction:removed', payload);
+    });
   }
 
   async handleConnection(socket: AuthedSocket) {
@@ -239,19 +248,9 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     @MessageBody() payload: { messageId: string; emoji: string; conversationId: string },
   ) {
     try {
+      // No broadcast here — addReaction emits, and the subscription above relays it. Doing both
+      // would deliver the event twice to anyone reacting over the socket.
       await this.messages.addReaction(payload.messageId, socket.data.user.id, payload.emoji);
-      const userRow = await this.prisma.users.findUnique({
-        where: { id: socket.data.user.id },
-        select: { username: true, display_name: true },
-      });
-      this.io.to(`conversation:${payload.conversationId}`).emit('reaction:added', {
-        messageId: payload.messageId,
-        conversationId: payload.conversationId,
-        userId: socket.data.user.id,
-        emoji: payload.emoji,
-        username: userRow?.username ?? '',
-        displayName: userRow?.display_name ?? '',
-      });
       return { ok: true };
     } catch (err: unknown) {
       return { ok: false, error: err instanceof Error ? err.message : 'Failed to add reaction' };
@@ -265,11 +264,6 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
   ) {
     try {
       await this.messages.removeReaction(payload.messageId, socket.data.user.id, payload.emoji);
-      this.io.to(`conversation:${payload.conversationId}`).emit('reaction:removed', {
-        messageId: payload.messageId,
-        userId: socket.data.user.id,
-        emoji: payload.emoji,
-      });
       return { ok: true };
     } catch (err: unknown) {
       return { ok: false, error: err instanceof Error ? err.message : 'Failed to remove reaction' };

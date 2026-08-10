@@ -267,6 +267,13 @@ export class MessagesService {
     return { id: m.id, conversationId: m.conversation_id, deletedAt: m.deleted_at };
   }
 
+  /**
+   * Reactions announce themselves from here, not from whichever transport carried them.
+   *
+   * The broadcast used to live only in the WebSocket handler, while the web client reacts over
+   * HTTP — so a reaction reached the database and nobody else's screen. Emitting where the change
+   * is made means both routes behave the same, and neither can forget to.
+   */
   async addReaction(messageId: string, userId: string, emoji: string) {
     const conversationId = await this.conversationIdOf(messageId, true);
     await this.assertMember(conversationId, userId);
@@ -276,12 +283,33 @@ export class MessagesService {
       update: {},
       create: { message_id: messageId, user_id: userId, emoji },
     });
+
+    const who = await this.prisma.users.findUnique({
+      where: { id: userId },
+      select: { username: true, display_name: true },
+    });
+    this.events.emit('reaction:added', {
+      messageId,
+      conversationId,
+      userId,
+      emoji,
+      username: who?.username ?? '',
+      displayName: who?.display_name ?? '',
+    });
   }
 
   async removeReaction(messageId: string, userId: string, emoji: string) {
-    await this.prisma.message_reactions.deleteMany({
+    // Resolved before the delete, so the broadcast still has a destination once the row is gone.
+    const conversationId = await this.conversationIdOf(messageId);
+
+    const { count } = await this.prisma.message_reactions.deleteMany({
       where: { message_id: messageId, user_id: userId, emoji },
     });
+    // Nothing was removed — a double tap, or a client working from a stale view. Announcing it
+    // would tell everyone to drop a reaction that was never there.
+    if (count === 0) return;
+
+    this.events.emit('reaction:removed', { messageId, conversationId, userId, emoji });
   }
 
   async markRead(messageId: string, userId: string) {
