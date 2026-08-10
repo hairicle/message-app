@@ -72,3 +72,31 @@ export function buildAlbums(messages: Message[]): AlbumLayout {
 
   return { albums, absorbed };
 }
+
+/**
+ * Column spans for each tile, out of a six-column grid.
+ *
+ * Six because it divides by both two and three, which is what lets every row be filled edge to
+ * edge whatever the count: rows of three become spans of two, a leftover pair becomes two halves,
+ * and a single leftover takes the full width. Without that, a count like five leaves a ragged
+ * hole in the last row.
+ *
+ * Every tile is laid out — an album that hides its last picture behind a "+2" means those
+ * pictures cannot be seen at all without opening the viewer.
+ */
+export function albumSpans(count: number): number[] {
+  if (count <= 0) return [];
+  if (count === 1) return [6];
+  if (count === 2) return [3, 3];
+  // One wide over two reads better than a row of three narrow strips.
+  if (count === 3) return [6, 3, 3];
+  if (count === 4) return [3, 3, 3, 3];
+
+  const spans: number[] = [];
+  const fullRows = Math.floor(count / 3);
+  const remainder = count % 3;
+  for (let i = 0; i < fullRows * 3; i++) spans.push(2);
+  if (remainder === 1) spans.push(6);
+  if (remainder === 2) spans.push(3, 3);
+  return spans;
+}

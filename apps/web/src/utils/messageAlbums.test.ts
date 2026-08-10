@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import type { Message } from '@messenger/shared';
-import { buildAlbums, ALBUM_WINDOW_MS } from './messageAlbums';
+import { buildAlbums, albumSpans, ALBUM_WINDOW_MS } from './messageAlbums';
 
 const START = new Date(2026, 7, 7, 10, 0, 0).getTime();
 const at = (secondsFromStart: number) => new Date(START + secondsFromStart * 1000).toISOString();
@@ -91,5 +91,51 @@ describe('buildAlbums', () => {
 
   it('returns nothing for an empty thread', () => {
     expect(buildAlbums([]).albums.size).toBe(0);
+  });
+});
+
+describe('albumSpans', () => {
+  const rows = (spans: number[]) => {
+    const out: number[][] = [];
+    let row: number[] = [];
+    let width = 0;
+    for (const s of spans) {
+      row.push(s);
+      width += s;
+      if (width === 6) { out.push(row); row = []; width = 0; }
+    }
+    if (row.length) out.push(row);
+    return out;
+  };
+
+  it('lays two side by side', () => {
+    expect(albumSpans(2)).toEqual([3, 3]);
+  });
+
+  it('gives three one wide over two', () => {
+    expect(albumSpans(3)).toEqual([6, 3, 3]);
+  });
+
+  it('lays four as a square', () => {
+    expect(albumSpans(4)).toEqual([3, 3, 3, 3]);
+  });
+
+  // The point of the change: nothing is hidden behind a "+N".
+  it('lays out every tile, however many there are', () => {
+    for (const n of [5, 6, 7, 8, 9, 12, 17]) {
+      expect(albumSpans(n)).toHaveLength(n);
+    }
+  });
+
+  it('fills every row edge to edge, leaving no ragged gap', () => {
+    for (const n of [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 17]) {
+      for (const row of rows(albumSpans(n))) {
+        expect(row.reduce((a, b) => a + b, 0)).toBe(6);
+      }
+    }
+  });
+
+  it('returns nothing for an empty album', () => {
+    expect(albumSpans(0)).toEqual([]);
   });
 });

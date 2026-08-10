@@ -3,9 +3,7 @@
 import type { FileMeta, Message, MessageType } from '@messenger/shared';
 import { useFileBlobUrl } from '../hooks/useFileBlobUrl';
 import { ATTACHMENT } from './MessageAttachment';
-
-/** Tiles beyond this are folded into a "+N" on the last one. */
-const MAX_TILES = 4;
+import { albumSpans } from '../utils/messageAlbums';
 
 interface Props {
   messages: Message[];
@@ -18,32 +16,27 @@ interface Props {
  * Sending four photos used to produce four stacked bubbles, each the width of the thread — a
  * batch of holiday pictures pushed the rest of the conversation off screen. As a grid they read
  * as one act, and take the height of a single bubble.
+ *
+ * Every picture is laid out. Folding the tail into a "+3" hides pictures that were sent to be
+ * looked at, and the viewer is not much help when you cannot see what you are opening.
  */
 export function MessageAlbum({ messages, onOpen }: Props) {
-  const shown = messages.slice(0, MAX_TILES);
-  const hidden = messages.length - shown.length;
+  const spans = albumSpans(messages.length);
 
   return (
     <div
       className="grid gap-[3px] overflow-hidden"
       style={{
-        // Three tiles read better as one wide over two than as a ragged row, so the first spans
-        // the full width; every other count divides evenly into two columns.
-        gridTemplateColumns: 'repeat(2, 1fr)',
+        // Six columns: divisible by both two and three, which is what lets a row of three and a
+        // row of two both fill the width exactly.
+        gridTemplateColumns: 'repeat(6, 1fr)',
         // Corners and shadow belong to the bubble that wraps this, so a grouped album keeps the
         // same pointed corner as any other message rather than rounding inside it.
         maxWidth: ATTACHMENT.maxWidth,
       }}
     >
-      {shown.map((message, index) => (
-        <AlbumTile
-          key={message.id}
-          message={message}
-          span={shown.length === 3 && index === 0 ? 2 : 1}
-          // The last visible tile carries the count of everything not shown.
-          more={index === shown.length - 1 ? hidden : 0}
-          onOpen={onOpen}
-        />
+      {messages.map((message, index) => (
+        <AlbumTile key={message.id} message={message} span={spans[index] ?? 2} onOpen={onOpen} />
       ))}
     </div>
   );
@@ -52,12 +45,11 @@ export function MessageAlbum({ messages, onOpen }: Props) {
 function AlbumTile({
   message,
   span,
-  more,
   onOpen,
 }: {
   message: Message;
-  span: 1 | 2;
-  more: number;
+  /** Columns out of six. */
+  span: number;
   onOpen: (file: FileMeta, type: MessageType) => void;
 }) {
   const file = message.file!;
@@ -69,7 +61,12 @@ function AlbumTile({
       type="button"
       onClick={() => onOpen(file, message.type as MessageType)}
       className="relative block w-full overflow-hidden transition-opacity hover:opacity-90"
-      style={{ gridColumn: span === 2 ? 'span 2' : undefined, aspectRatio: span === 2 ? '2 / 1' : '1 / 1', background: 'var(--panel-alt)' }}
+      style={{
+        gridColumn: `span ${span}`,
+        // A full-width tile is the only one that would be absurdly tall as a square.
+        aspectRatio: span === 6 ? '2 / 1' : '1 / 1',
+        background: 'var(--panel-alt)',
+      }}
       aria-label={file.fileName}
     >
       {ready && (message.type === 'video'
@@ -92,14 +89,6 @@ function AlbumTile({
         </span>
       )}
 
-      {more > 0 && (
-        <span
-          className="absolute inset-0 flex items-center justify-center font-mono text-white pointer-events-none"
-          style={{ background: 'rgba(0,0,0,0.55)', fontSize: 20 }}
-        >
-          +{more}
-        </span>
-      )}
     </button>
   );
 }
