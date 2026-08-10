@@ -1,0 +1,31 @@
+# Deployment handover
+
+Written for the DevOps team taking this system to production. Everything here was read off the
+code on `dev2` at commit `8395080`, not from an earlier design document — where the code and the
+older docs disagree, the code wins and the difference is called out.
+
+| # | Document | Read it when |
+|---|---|---|
+| 1 | [Overview](01-overview.md) | You need to know what this is, what it's built from, and what's actually shipped |
+| 2 | [Project structure](02-structure.md) | You need to know what builds from where, and in what order |
+| 3 | [How it works](03-flow.md) | You need to know what talks to what, so you know what to provision and what breaks when it's missing |
+| 4 | [API reference](04-api-reference.md) | You're writing smoke tests, a gateway config, or a WAF rule |
+| 5 | [Production deployment](05-deployment.md) | You're doing the deploy |
+
+Staging is already running and documented separately in
+[../staging-deploy.md](../staging-deploy.md). Production follows the same shape; document 5 covers
+what differs and what must not be shared between the two.
+
+## Read this before you start
+
+Three things in the repository are misleading, and each has cost time already:
+
+- **The root `README.md` is stale.** It describes a pre-monorepo layout (`backend/`, `frontend/`),
+  Express, and Vite. None of that is true any more — the API is NestJS and the web app is Next.js,
+  both under `apps/`. Trust these documents over it.
+- **`.env.example` is stale in the same way.** It describes a self-hosted Docker Compose stack with
+  MinIO and local Postgres. The deployed system uses Supabase and Upstash. The authoritative
+  variable list is in [05-deployment.md](05-deployment.md#environment-variables).
+- **Three environment variables are documented but not read by the code.** `CORS_ORIGIN`,
+  `FRONTEND_URL`, and `MAX_FILE_SIZE_MB` have no effect. This matters for security, not just
+  tidiness — see [Known gaps](05-deployment.md#known-gaps-read-before-going-live).
