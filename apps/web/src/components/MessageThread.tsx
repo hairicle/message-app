@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import * as conversationsApi from '../lib/api/conversations';
 import * as filesApi from '../lib/api/files';
 import * as messagesApi from '../lib/api/messages';
@@ -44,6 +44,9 @@ interface MessageThreadProps {
   /** A group picture changed here; the conversation list holds its own copy of the row. */
   onConversationAvatarChanged?: (conversationId: string, avatarUrl: string | null) => void;
 }
+
+/** Matches the API's default page size, which is what tells us whether more history exists. */
+const MESSAGE_PAGE_SIZE = 50;
 
 export function addMessage(messages: Message[], message: Message): Message[] {
   if (messages.some((m) => m.id === message.id)) return messages;
@@ -117,6 +120,14 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   const fileInputRef = useRef<HTMLInputElement>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
+  // Older history is fetched a page at a time as the reader scrolls up. Only the newest page used
+  // to load, so anything past it was unreachable — and a jump to an older message, from a reply
+  // quote or the shared-media tabs, could never land.
+  const [hasOlder, setHasOlder] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const loadingOlderRef = useRef(false);
+  /** Distance from the bottom, kept across a prepend so the view does not jump. */
+  const anchorFromBottomRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -130,9 +141,13 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
       if (!cancelled) setConversation(conversation);
     }).catch(() => {});
 
+    setHasOlder(false);
     messagesApi.listMessages(conversationId).then(({ messages }) => {
       // Backend already returns oldest → newest (ORDER BY created_at DESC, then reversed server-side)
-      if (!cancelled) setMessages(messages);
+      if (cancelled) return;
+      setMessages(messages);
+      // A short page means this is the whole conversation; a full one means there may be more.
+      setHasOlder(messages.length >= MESSAGE_PAGE_SIZE);
     }).catch(() => {});
 
     messagesApi.getPinnedMessages(conversationId).then(({ pinned }) => {
@@ -228,7 +243,20 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
     };
   }, [socket, conversationId, user]);
 
-  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
+  // Restoring the offset has to happen before the browser paints, or the thread visibly jumps.
+  useLayoutEffect(() => {
+    const el = scrollContainerRef.current;
+    if (!el || anchorFromBottomRef.current === null) return;
+    el.scrollTop = el.scrollHeight - anchorFromBottomRef.current;
+    anchorFromBottomRef.current = null;
+  }, [messages]);
+
+  useEffect(() => {
+    // A prepend changes `messages` too. Scrolling to the bottom then would throw the reader back
+    // to the newest message the moment they reached for older ones.
+    if (anchorFromBottomRef.current !== null) return;
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages]);
 
   useEffect(() => {
     if (!socket || !user) return;
@@ -244,6 +272,46 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
     markedReadRef.current.add(newest.id);
     socket.emit('message:read', { messageId: newest.id });
   }, [socket, user, messages]);
+
+  /**
+   * Fetch the page before the oldest message currently held.
+   *
+   * Guarded by a ref rather than the state flag: scroll events arrive far faster than React
+   * re-renders, so reading `loadingOlder` here would let several identical requests through
+   * before the first had set it.
+   */
+  async function loadOlderMessages() {
+    const el = scrollContainerRef.current;
+    if (!el || loadingOlderRef.current || !hasOlder || messages.length === 0) return;
+
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    // Measured from the bottom, since the top is exactly what the prepend moves.
+    anchorFromBottomRef.current = el.scrollHeight - el.scrollTop;
+
+    try {
+      const { messages: older } = await messagesApi.listMessages(conversationId, messages[0].id);
+      if (older.length < MESSAGE_PAGE_SIZE) setHasOlder(false);
+      if (older.length === 0) {
+        anchorFromBottomRef.current = null;
+        return;
+      }
+      setMessages((prev) => {
+        const known = new Set(prev.map((m) => m.id));
+        const fresh = older.filter((m) => !known.has(m.id));
+        if (fresh.length === 0) {
+          anchorFromBottomRef.current = null;
+          return prev;
+        }
+        return [...fresh, ...prev];
+      });
+    } catch {
+      anchorFromBottomRef.current = null;
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  }
 
   function handleInputChange(value: string) {
     setInput(value);
@@ -555,7 +623,7 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
     if (msgRefs.current.has(messageId)) {
       scrollToMessage(messageId);
     } else {
-      showToast('That message is further back than the loaded history');
+      showToast('That message is older than what is loaded — scroll up to load more');
     }
   }
 
@@ -1010,7 +1078,30 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
       })()}
 
       {/* Message list */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto px-4 pt-4 pb-16 flex flex-col" style={{ background: 'var(--bg)' }}>
+      <div
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto px-4 pt-4 pb-16 flex flex-col"
+        style={{ background: 'var(--bg)' }}
+        // Fetched a little before the top so the next page is usually in place by the time the
+        // reader gets there, rather than stopping them at a spinner.
+        onScroll={(e) => { if (e.currentTarget.scrollTop < 240) loadOlderMessages(); }}
+      >
+        {hasOlder && (
+          <div className="flex items-center justify-center py-3 flex-shrink-0">
+            {loadingOlder ? (
+              <span className="text-[11px] font-mono" style={{ color: 'var(--text-dim)' }}>Loading earlier messages…</span>
+            ) : (
+              <button
+                type="button"
+                onClick={loadOlderMessages}
+                className="text-[11px] font-mono px-3 py-1 rounded-full transition-colors hover-panel-alt"
+                style={{ color: 'var(--text-dim)', border: '1px solid var(--border)' }}
+              >
+                Load earlier messages
+              </button>
+            )}
+          </div>
+        )}
         {messages.map((message, index) => {
           const mine = message.senderId === user!.id;
           const read = other ? readReceipts[message.id]?.has(other.user_id) : false;
