@@ -48,6 +48,9 @@ interface MessageThreadProps {
 /** Matches the API's default page size, which is what tells us whether more history exists. */
 const MESSAGE_PAGE_SIZE = 50;
 
+/** Roughly six lines. Past this the composer scrolls rather than eating the conversation. */
+const COMPOSER_MAX_HEIGHT = 132;
+
 export function addMessage(messages: Message[], message: Message): Message[] {
   if (messages.some((m) => m.id === message.id)) return messages;
   const newTime = new Date(message.createdAt).getTime();
@@ -128,6 +131,7 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   const loadingOlderRef = useRef(false);
   /** Distance from the bottom, kept across a prepend so the view does not jump. */
   const anchorFromBottomRef = useRef<number | null>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -313,6 +317,20 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
     }
   }
 
+  /**
+   * Height follows the content. Collapsed to `auto` first so the measurement is of the text
+   * itself rather than of whatever the box already happened to be — without that it can only
+   * ever grow, never shrink back as lines are deleted.
+   */
+  function resizeComposer() {
+    const el = composerRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, COMPOSER_MAX_HEIGHT)}px`;
+  }
+
+  useLayoutEffect(resizeComposer, [input]);
+
   function handleInputChange(value: string) {
     setInput(value);
     if (!socket) return;
@@ -388,7 +406,27 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
     }
   }
 
-  async function handleSend(e: FormEvent) {
+  /**
+   * Enter sends; Shift+Enter (or Ctrl/Cmd+Enter) starts a new line.
+   *
+   * The composer used to be a single-line input, so a message could not contain a line break at
+   * all — the bubble has always rendered them with whitespace-pre-wrap, there was simply no way
+   * to type one.
+   *
+   * IME composition is excluded: while composing Khmer, Chinese or Japanese, Enter accepts the
+   * candidate word and must not also post the message.
+   */
+  function handleComposerKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === 'Escape') { setReplyingTo(null); return; }
+    if (e.key !== 'Enter') return;
+    if (e.nativeEvent.isComposing) return;
+    if (e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
+
+    e.preventDefault();
+    void handleSend(e);
+  }
+
+  async function handleSend(e: FormEvent | React.KeyboardEvent) {
     e.preventDefault();
     const text = input.trim();
     if (!text) return;
@@ -1545,7 +1583,9 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
       )}
 
       {/* Input bar */}
-      <form className="flex items-center gap-2 px-4 pt-3 flex-shrink-0" style={{ background: 'var(--panel)', borderTop: '1px solid var(--border)', paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }} onSubmit={handleSend}>
+      {/* items-end, not items-center: the composer grows upward with its content, and centring
+          would drag the attach and send buttons up the side of a tall message. */}
+      <form className="flex items-end gap-2 px-4 pt-3 flex-shrink-0" style={{ background: 'var(--panel)', borderTop: '1px solid var(--border)', paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }} onSubmit={handleSend}>
         <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} />
         <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading || isRecording} title="Attach file" className="disabled:opacity-40 disabled:cursor-not-allowed btn-icon">
           <FaPaperclip size={14} />
@@ -1555,10 +1595,20 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
           style={isRecording ? { width: 34, height: 34, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--danger)', background: 'var(--danger-wash)', border: '1px solid var(--danger-border)' } : undefined}>
           <FaMicrophone size={14} />
         </button>
-        <input value={input} onChange={(e) => handleInputChange(e.target.value)} onKeyDown={(e) => { if (e.key === 'Escape') setReplyingTo(null); }}
+        <textarea
+          ref={composerRef}
+          rows={1}
+          value={input}
+          onChange={(e) => handleInputChange(e.target.value)}
+          onKeyDown={handleComposerKeyDown}
           placeholder={isRecording ? 'Recording...' : uploading ? 'Uploading...' : replyingTo ? 'Reply...' : 'Message...'}
-          autoComplete="off" disabled={isRecording || uploading}
-          className="input-base flex-1 disabled:opacity-60 transition-all" />
+          autoComplete="off"
+          disabled={isRecording || uploading}
+          // resize-none because the grip would fight the auto-grow, and the height is already
+          // driven by the content.
+          className="input-base flex-1 disabled:opacity-60 resize-none"
+          style={{ maxHeight: COMPOSER_MAX_HEIGHT, overflowY: 'auto', lineHeight: 1.45 }}
+        />
         <button type="submit" disabled={!input.trim() || uploading || isRecording} title="Send" className="btn-primary disabled:opacity-40">
           <FaPaperPlane size={14} />
         </button>
