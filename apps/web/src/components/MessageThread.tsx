@@ -28,6 +28,7 @@ import { decodeMessageText, encodeMessageText } from '../utils/text';
 import { FaArrowRotateRight, FaBookmark, FaCheck, FaEllipsisVertical, FaRegFaceSmile, FaChevronDown, FaChevronLeft, FaImage, FaMagnifyingGlass, FaMicrophone, FaPaperPlane, FaPaperclip, FaPen, FaPhone, FaRegBookmark, FaRegCopy, FaReply, FaShare, FaThumbtack, FaTrash, FaVideo, FaXmark } from 'react-icons/fa6';
 import { attachmentNoun } from '../utils/messagePreview';
 import { groupingFor } from '../utils/messageGrouping';
+import { groupReactions } from '../utils/reactionSummary';
 import { ReplyPreview } from './ReplyPreview';
 import { MessageAlbum } from './MessageAlbum';
 import { buildAlbums } from '../utils/messageAlbums';
@@ -165,6 +166,9 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   /** Distance from the bottom, kept across a prepend so the view does not jump. */
   const anchorFromBottomRef = useRef<number | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  /** Which reaction pill is showing who reacted. One at a time, like the message picker. */
+  const [reactionTip, setReactionTip] = useState<{ messageId: string; emoji: string } | null>(null);
+  const reactionTipRef = useRef<number | null>(null);
   const [jumping, setJumping] = useState(false);
   const jumpingRef = useRef(false);
   const [staged, setStaged] = useState<StagedFile[]>([]);
@@ -1683,18 +1687,46 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
                 {/* Reactions inside column */}
                 {!message.deletedAt && (message.reactions ?? []).length > 0 && (
                   <div className="flex flex-wrap gap-1 mt-2">
-                    {Object.entries((message.reactions ?? []).reduce<Record<string, { count: number; mine: boolean }>>((acc, r) => {
-                      acc[r.emoji] = { count: (acc[r.emoji]?.count ?? 0) + 1, mine: acc[r.emoji]?.mine || r.userId === user!.id };
-                      return acc;
-                    }, {})).map(([emoji, { count, mine: iMine }]) => (
-                      <button key={emoji} onClick={() => toggleReaction(message.id, emoji)}
-                        className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[12px] border transition-all"
-                        style={iMine
-                          ? { background: 'var(--accent)', borderColor: 'var(--accent)', color: '#fff' }
-                          : { background: 'var(--panel)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
-                        {emoji} <span className={iMine ? 'font-bold' : 'font-medium'}>{count}</span>
-                      </button>
-                    ))}
+                    {groupReactions(message.reactions ?? [], user!.id).map(({ emoji, count, mine: iMine, names }) => {
+                      const showing = reactionTip?.messageId === message.id && reactionTip.emoji === emoji;
+                      return (
+                        <div key={emoji} className="relative">
+                          <button
+                            onClick={() => toggleReaction(message.id, emoji)}
+                            // Clicking still toggles your own reaction; who reacted is a
+                            // different question, so it is answered by hovering rather than by
+                            // taking the tap away from the thing the pill is for.
+                            onMouseEnter={() => setReactionTip({ messageId: message.id, emoji })}
+                            onMouseLeave={() => setReactionTip((t) => (t?.emoji === emoji && t.messageId === message.id ? null : t))}
+                            onFocus={() => setReactionTip({ messageId: message.id, emoji })}
+                            onBlur={() => setReactionTip(null)}
+                            // Touch has no hover, so a long press asks the same question.
+                            onTouchStart={() => {
+                              reactionTipRef.current = window.setTimeout(
+                                () => setReactionTip({ messageId: message.id, emoji }), 400);
+                            }}
+                            onTouchEnd={() => { if (reactionTipRef.current) window.clearTimeout(reactionTipRef.current); }}
+                            className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[12px] border transition-all"
+                            style={iMine
+                              ? { background: 'var(--accent)', borderColor: 'var(--accent)', color: '#fff' }
+                              : { background: 'var(--panel)', borderColor: 'var(--border)', color: 'var(--text-muted)' }}
+                          >
+                            {emoji} <span className={iMine ? 'font-bold' : 'font-medium'}>{count}</span>
+                          </button>
+
+                          {showing && (
+                            <div
+                              className={`absolute z-40 bottom-full mb-1 whitespace-nowrap rounded-lg px-2.5 py-1.5 pointer-events-none ${mine ? 'right-0' : 'left-0'}`}
+                              style={{ background: 'var(--panel)', border: '1px solid var(--border)', boxShadow: '0 4px 14px rgba(0,0,0,0.28)' }}
+                            >
+                              <span className="text-[11.5px]" style={{ color: 'var(--text-muted)' }}>
+                                {emoji} {names.join(', ')}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
                 )}
               {/* Hover controls — two small icons beside the bubble. The five quick reactions
