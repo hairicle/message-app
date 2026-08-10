@@ -180,6 +180,9 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   /** The "@…" being typed right now, if any, and where it starts in the input. */
   const [mentionQuery, setMentionQuery] = useState<{ at: number; term: string } | null>(null);
   const [mentionIndex, setMentionIndex] = useState(0);
+  /** Picking several messages at once, to forward or delete them together. */
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [jumping, setJumping] = useState(false);
   const jumpingRef = useRef(false);
   const [staged, setStaged] = useState<StagedFile[]>([]);
@@ -191,6 +194,8 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   useEffect(() => {
     let cancelled = false;
     markedReadRef.current = new Set();
+    setSelectMode(false);
+    setSelectedIds(new Set());
     // Anything staged belonged to the conversation being left. Carrying it over would send those
     // files into whichever conversation was opened next.
     setStaged((prev) => {
@@ -469,6 +474,26 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
       el?.focus();
       el?.setSelectionRange(pos, pos);
     });
+  }
+
+  function toggleSelected(messageId: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(messageId)) next.delete(messageId); else next.add(messageId);
+      return next;
+    });
+  }
+
+  function beginSelecting(messageId: string) {
+    setSelectMode(true);
+    setSelectedIds(new Set([messageId]));
+    setOpenMenuId(null);
+    setActivePicker(null);
+  }
+
+  function exitSelecting() {
+    setSelectMode(false);
+    setSelectedIds(new Set());
   }
 
   function handleInputChange(value: string) {
@@ -1626,8 +1651,17 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
               )}
             <div
               ref={(el) => { if (el) msgRefs.current.set(message.id, el); else msgRefs.current.delete(message.id); }}
-              className={`flex items-start gap-2 group ${startsGroup ? 'mt-3' : 'mt-1'} ${mine ? 'flex-row-reverse' : 'flex-row'} transition-colors duration-300`}
-              style={highlightedMsgId === message.id ? { background: 'var(--accent-wash)', borderRadius: 12, margin: '12px -4px', padding: '0 4px' } : undefined}
+              // While selecting, the whole row is the target — hunting for a small checkbox on
+              // every message is slower than the thing it is trying to make quick.
+              onClick={selectMode && !message.deletedAt ? () => toggleSelected(message.id) : undefined}
+              className={`flex items-start gap-2 group ${startsGroup ? 'mt-3' : 'mt-1'} ${mine ? 'flex-row-reverse' : 'flex-row'} transition-colors duration-300 ${selectMode && !message.deletedAt ? 'cursor-pointer' : ''}`}
+              style={
+                selectedIds.has(message.id)
+                  ? { background: 'var(--accent-wash)', borderRadius: 12, margin: '4px -4px', padding: '0 4px' }
+                  : highlightedMsgId === message.id
+                    ? { background: 'var(--accent-wash)', borderRadius: 12, margin: '12px -4px', padding: '0 4px' }
+                    : undefined
+              }
             >
               {/* Avatar — on the message that opens the block, so it sits level with the name
                   header. Later messages keep the indent with a spacer, and that spacer doubles
@@ -1857,7 +1891,20 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
               {/* Hover controls — two small icons beside the bubble. The five quick reactions
                   used to sit open next to every hovered message, which is a lot of colour for
                   something you mostly scroll past; they now live behind the smiley. */}
-              {activePicker?.id === message.id && !isEditing && !message.deletedAt && (
+              {selectMode && (
+                <span
+                  className="flex-shrink-0 self-center w-5 h-5 rounded-full flex items-center justify-center"
+                  style={{
+                    background: selectedIds.has(message.id) ? 'var(--accent)' : 'transparent',
+                    border: `1.5px solid ${selectedIds.has(message.id) ? 'var(--accent)' : 'var(--border)'}`,
+                    opacity: message.deletedAt ? 0.3 : 1,
+                  }}
+                >
+                  {selectedIds.has(message.id) && <FaCheck size={10} className="text-white" />}
+                </span>
+              )}
+
+              {!selectMode && activePicker?.id === message.id && !isEditing && !message.deletedAt && (
                 <div
                   className={`absolute z-30 flex items-center gap-0.5 top-1/2 -translate-y-1/2 ${mine ? 'right-full pr-1' : 'left-full pl-1'}`}
                   // Entering the controls cancels the pending close; they are a DOM child of the
@@ -1926,6 +1973,15 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
                               className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover-panel-alt" style={{ color: 'var(--text-muted)' }}>
                               <FaThumbtack size={14} style={{ color: pinnedIds.has(message.id) ? 'var(--accent)' : 'var(--text-dim)' }} />
                               {pinnedIds.has(message.id) ? 'Unpin for all' : 'Pin for all'}
+                            </button>
+                          )}
+
+                          {/* 3c. Select — starts a multi-selection with this message in it */}
+                          {!message.deletedAt && (
+                            <button type="button" onClick={() => beginSelecting(message.id)}
+                              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover-panel-alt" style={{ color: 'var(--text-muted)' }}>
+                              <FaCheck size={13} style={{ color: 'var(--text-dim)' }} />
+                              Select
                             </button>
                           )}
 
@@ -2004,7 +2060,41 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
       )}
 
       {/* Input bar */}
-      {mentionCandidates.length > 0 && (
+      {/* Replaces the composer rather than sitting above it: while selecting, sending is not
+          what the bar is for, and leaving both would offer two different jobs at once. */}
+      {selectMode && (
+        <div className="flex items-center gap-2 px-4 py-3 flex-shrink-0"
+          style={{ background: 'var(--panel)', borderTop: '1px solid var(--border)', paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}>
+          <button type="button" onClick={exitSelecting} className="btn-icon" style={{ width: 32, height: 32 }} aria-label="Cancel selection">
+            <FaXmark size={13} />
+          </button>
+          <span className="flex-1 text-[12px] font-mono" style={{ color: 'var(--text-dim)' }}>
+            {selectedIds.size === 0 ? 'Select messages' : `${selectedIds.size} selected`}
+          </span>
+          <button
+            type="button"
+            disabled={selectedIds.size === 0}
+            onClick={() => { openForwardPicker([...selectedIds]); exitSelecting(); }}
+            className="btn-ghost disabled:opacity-35"
+            style={{ padding: '6px 12px' }}
+          >
+            <FaShare size={12} /> Forward
+          </button>
+          {user?.role === 'admin' && (
+            <button
+              type="button"
+              disabled={selectedIds.size === 0}
+              onClick={async () => { const ids = [...selectedIds]; exitSelecting(); await deleteMessages(ids); }}
+              className="btn-ghost disabled:opacity-35"
+              style={{ padding: '6px 12px', color: 'var(--danger)', borderColor: 'var(--danger-border)' }}
+            >
+              <FaTrash size={12} /> Delete
+            </button>
+          )}
+        </div>
+      )}
+
+      {!selectMode && mentionCandidates.length > 0 && (
         <div className="mx-4 mb-1 rounded-xl overflow-hidden flex-shrink-0"
           style={{ background: 'var(--panel)', border: '1px solid var(--border)', boxShadow: '0 -4px 14px rgba(0,0,0,0.18)' }}>
           {mentionCandidates.map((m, i) => (
@@ -2084,7 +2174,7 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
 
       {/* items-end, not items-center: the composer grows upward with its content, and centring
           would drag the attach and send buttons up the side of a tall message. */}
-      <form className="flex items-end gap-2 px-4 pt-3 flex-shrink-0" style={{ background: 'var(--panel)', borderTop: '1px solid var(--border)', paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }} onSubmit={handleSend}>
+      {!selectMode && <form className="flex items-end gap-2 px-4 pt-3 flex-shrink-0" style={{ background: 'var(--panel)', borderTop: '1px solid var(--border)', paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }} onSubmit={handleSend}>
         <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileChange} />
         <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading || isRecording} title="Attach file" className="disabled:opacity-40 disabled:cursor-not-allowed btn-icon">
           <FaPaperclip size={14} />
@@ -2112,7 +2202,7 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
         <button type="submit" disabled={(!input.trim() && staged.length === 0) || uploading || isRecording || sending} title="Send" className="btn-primary disabled:opacity-40">
           <FaPaperPlane size={14} />
         </button>
-      </form>
+      </form>}
 
       {/* Jumping can take several requests when the target is far back, so it says so rather
           than appearing to have ignored the click. */}
