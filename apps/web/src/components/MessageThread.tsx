@@ -51,6 +51,16 @@ const MESSAGE_PAGE_SIZE = 50;
 /** Roughly six lines. Past this the composer scrolls rather than eating the conversation. */
 const COMPOSER_MAX_HEIGHT = 132;
 
+/** One queued attachment, from being picked to the message being sent. */
+interface UploadEntry {
+  id: string;
+  file: File;
+  /** 0–1, as reported by the request body's progress. */
+  progress: number;
+  status: 'queued' | 'uploading' | 'failed';
+  error?: string;
+}
+
 export function addMessage(messages: Message[], message: Message): Message[] {
   if (messages.some((m) => m.id === message.id)) return messages;
   const newTime = new Date(message.createdAt).getTime();
@@ -132,6 +142,10 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   /** Distance from the bottom, kept across a prepend so the view does not jump. */
   const anchorFromBottomRef = useRef<number | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const [uploads, setUploads] = useState<UploadEntry[]>([]);
+  const [dragging, setDragging] = useState(false);
+  /** Nested enter/leave events fire per child; counting them avoids flicker over the thread. */
+  const dragDepthRef = useRef(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -331,6 +345,20 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
 
   useLayoutEffect(resizeComposer, [input]);
 
+  /**
+   * Screenshots and copied images arrive on the clipboard as files. Without this the only way to
+   * send one was to save it to disk first and pick it from the file dialog.
+   */
+  function handleComposerPaste(e: React.ClipboardEvent) {
+    const files = Array.from(e.clipboardData?.files ?? []);
+    if (files.length === 0) return;
+    // Only when there is no text alongside — pasting a copied cell from a spreadsheet carries
+    // both, and the text is what was meant.
+    if (e.clipboardData.getData('text/plain').trim()) return;
+    e.preventDefault();
+    void enqueueFiles(files);
+  }
+
   function handleInputChange(value: string) {
     setInput(value);
     if (!socket) return;
@@ -437,16 +465,65 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
     setReplyingTo(null);
   }
 
-  async function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = '';
-    if (!file) return;
-    setUploading(true);
+  /**
+   * Send one attachment, tracked in the queue so it can report progress and be retried.
+   *
+   * Each file becomes its own message, which is why the reply is attached to the first of a batch
+   * only — a reply points at one message, and repeating it on all of them would quote the same
+   * thing several times over.
+   */
+  async function uploadOne(entry: UploadEntry, attachReplyTo: string | undefined) {
+    setUploads((prev) => prev.map((u) => (u.id === entry.id ? { ...u, status: 'uploading', progress: 0, error: undefined } : u)));
     try {
-      const { file: fileMeta } = await filesApi.uploadFile(file, file.name);
-      await dispatchMessage({ conversationId, type: attachmentTypeForMime(file.type), fileId: fileMeta.id, replyToMessageId: replyingTo?.id });
-      setReplyingTo(null);
-    } finally { setUploading(false); }
+      const { file: meta } = await filesApi.uploadFile(entry.file, entry.file.name, {
+        onProgress: (fraction) =>
+          setUploads((prev) => prev.map((u) => (u.id === entry.id ? { ...u, progress: fraction } : u))),
+      });
+      await dispatchMessage({
+        conversationId,
+        type: attachmentTypeForMime(entry.file.type),
+        fileId: meta.id,
+        replyToMessageId: attachReplyTo,
+      });
+      setUploads((prev) => prev.filter((u) => u.id !== entry.id));
+    } catch (err) {
+      // Kept in the queue rather than dropped: the file is still here, and a failed upload the
+      // user cannot retry means picking it again from scratch.
+      setUploads((prev) => prev.map((u) => (u.id === entry.id
+        ? { ...u, status: 'failed', error: (err as Error).message || 'Upload failed' }
+        : u)));
+    }
+  }
+
+  /**
+   * Queue a batch and send it one at a time.
+   *
+   * Sequential rather than parallel so the messages arrive in the order they were picked;
+   * uploading together would let a small file overtake a large one that was chosen first.
+   */
+  async function enqueueFiles(files: File[]) {
+    if (files.length === 0) return;
+    const replyToId = replyingTo?.id;
+    setReplyingTo(null);
+
+    const entries: UploadEntry[] = files.map((file) => ({
+      id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+      file,
+      progress: 0,
+      status: 'queued',
+    }));
+    setUploads((prev) => [...prev, ...entries]);
+
+    for (const [index, entry] of entries.entries()) {
+      await uploadOne(entry, index === 0 ? replyToId : undefined);
+    }
+  }
+
+  function handleFileChange(e: ChangeEvent<HTMLInputElement>) {
+    const picked = Array.from(e.target.files ?? []);
+    // Cleared so choosing the same file again still fires a change event.
+    e.target.value = '';
+    void enqueueFiles(picked);
   }
 
   async function startRecording() {
@@ -738,7 +815,39 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
     // Row, so the info panel can sit beside the thread on wide screens and the conversation
     // reflows into the remaining width instead of being covered by it.
     <div className="relative flex h-full overflow-hidden">
-      <div className="relative flex flex-col flex-1 min-w-0 h-full overflow-hidden">
+      <div
+        className="relative flex flex-col flex-1 min-w-0 h-full overflow-hidden"
+        onDragEnter={(e) => {
+          if (!Array.from(e.dataTransfer.types).includes('Files')) return;
+          dragDepthRef.current += 1;
+          setDragging(true);
+        }}
+        onDragOver={(e) => {
+          if (!Array.from(e.dataTransfer.types).includes('Files')) return;
+          // Required, or the browser navigates to the dropped file instead of handing it over.
+          e.preventDefault();
+        }}
+        onDragLeave={() => {
+          dragDepthRef.current = Math.max(0, dragDepthRef.current - 1);
+          if (dragDepthRef.current === 0) setDragging(false);
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          dragDepthRef.current = 0;
+          setDragging(false);
+          void enqueueFiles(Array.from(e.dataTransfer.files ?? []));
+        }}
+      >
+        {dragging && (
+          <div
+            className="absolute inset-0 z-40 flex items-center justify-center pointer-events-none"
+            style={{ background: 'var(--accent-wash)', border: '2px dashed var(--accent)', borderRadius: 12 }}
+          >
+            <span className="font-mono text-[13px] px-3 py-1.5 rounded-lg" style={{ background: 'var(--panel)', color: 'var(--accent)', border: '1px solid var(--accent-dim)' }}>
+              Drop to send
+            </span>
+          </div>
+        )}
       {/* Header */}
       <header className="flex items-center gap-3 px-4 py-4 flex-shrink-0" style={{ background: 'var(--bg)', borderBottom: '1px solid var(--border)' }}>
         {onBack && (
@@ -1583,10 +1692,57 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
       )}
 
       {/* Input bar */}
+      {/* Upload queue — progress while sending, and a failure that can be retried rather than
+          silently discarded. */}
+      {uploads.length > 0 && (
+        <div className="flex flex-col gap-1.5 px-4 pt-2 flex-shrink-0" style={{ background: 'var(--panel)', borderTop: '1px solid var(--border)' }}>
+          {uploads.map((u) => (
+            <div key={u.id} className="flex items-center gap-2.5">
+              <FaPaperclip size={12} className="flex-shrink-0" style={{ color: 'var(--text-dim)' }} />
+              <div className="flex-1 min-w-0">
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[12px] truncate" style={{ color: 'var(--text-muted)' }}>{u.file.name}</span>
+                  <span className="text-[10px] font-mono flex-shrink-0" style={{ color: u.status === 'failed' ? 'var(--danger)' : 'var(--text-dim)' }}>
+                    {u.status === 'failed' ? (u.error ?? 'Failed') : `${Math.round(u.progress * 100)}%`}
+                  </span>
+                </div>
+                {u.status !== 'failed' && (
+                  <div className="mt-1 h-[3px] rounded-full overflow-hidden" style={{ background: 'var(--border)' }}>
+                    <div
+                      className="h-full rounded-full transition-[width] duration-150"
+                      style={{ width: `${Math.round(u.progress * 100)}%`, background: 'var(--accent)' }}
+                    />
+                  </div>
+                )}
+              </div>
+              {u.status === 'failed' && (
+                <button
+                  type="button"
+                  onClick={() => uploadOne(u, undefined)}
+                  className="text-[11px] font-mono px-2 py-0.5 rounded-md flex-shrink-0 transition-colors hover-panel-alt"
+                  style={{ color: 'var(--accent)', border: '1px solid var(--accent-dim)' }}
+                >
+                  Retry
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={() => setUploads((prev) => prev.filter((x) => x.id !== u.id))}
+                className="flex-shrink-0 p-1 rounded-md transition-colors hover-panel-alt"
+                style={{ color: 'var(--text-dim)' }}
+                aria-label={`Remove ${u.file.name}`}
+              >
+                <FaXmark size={11} />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* items-end, not items-center: the composer grows upward with its content, and centring
           would drag the attach and send buttons up the side of a tall message. */}
       <form className="flex items-end gap-2 px-4 pt-3 flex-shrink-0" style={{ background: 'var(--panel)', borderTop: '1px solid var(--border)', paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }} onSubmit={handleSend}>
-        <input ref={fileInputRef} type="file" className="hidden" onChange={handleFileChange} />
+        <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileChange} />
         <button type="button" onClick={() => fileInputRef.current?.click()} disabled={uploading || isRecording} title="Attach file" className="disabled:opacity-40 disabled:cursor-not-allowed btn-icon">
           <FaPaperclip size={14} />
         </button>
@@ -1601,6 +1757,7 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
           value={input}
           onChange={(e) => handleInputChange(e.target.value)}
           onKeyDown={handleComposerKeyDown}
+          onPaste={handleComposerPaste}
           placeholder={isRecording ? 'Recording...' : uploading ? 'Uploading...' : replyingTo ? 'Reply...' : 'Message...'}
           autoComplete="off"
           disabled={isRecording || uploading}
