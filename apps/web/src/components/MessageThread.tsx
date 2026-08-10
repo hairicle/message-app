@@ -45,6 +45,10 @@ interface MessageThreadProps {
   onBack?: () => void;
   /** A group picture changed here; the conversation list holds its own copy of the row. */
   onConversationAvatarChanged?: (conversationId: string, avatarUrl: string | null) => void;
+  /** A rename or membership change, so the list row can follow. */
+  onConversationChanged?: (conversation: Conversation) => void;
+  /** The user left this conversation; it should stop being shown at all. */
+  onConversationLeft?: (conversationId: string) => void;
 }
 
 /** Matches the API's default page size, which is what tells us whether more history exists. */
@@ -79,7 +83,7 @@ export function addMessage(messages: Message[], message: Message): Message[] {
   return [...messages.slice(0, insertAt), message, ...messages.slice(insertAt)];
 }
 
-export function MessageThread({ conversationId, presence, onBack, onConversationAvatarChanged }: MessageThreadProps) {
+export function MessageThread({ conversationId, presence, onBack, onConversationAvatarChanged, onConversationChanged, onConversationLeft }: MessageThreadProps) {
   const { user } = useAuth();
   const socket = useSocket();
   const { confirm, confirmDialog } = useConfirm();
@@ -1893,6 +1897,14 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
               onForwardMessages={openForwardPicker}
               onDeleteMessages={deleteMessages}
               canDeleteMessages={user?.role === 'admin'}
+              onConversationUpdated={(updated) => {
+                setConversation(updated);
+                onConversationChanged?.(updated);
+              }}
+              onLeft={() => {
+                setShowInfoPanel(false);
+                onConversationLeft?.(conversationId);
+              }}
               initialTab="media" />
           </aside>
         </>

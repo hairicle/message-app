@@ -6,15 +6,17 @@ import type {
   Conversation,
   ConversationAttachmentItem,
   ConversationMediaItem,
+  DirectoryUser,
   FileMeta,
   MessageType,
 } from '@messenger/shared';
 import { useFileBlobUrl } from '../hooks/useFileBlobUrl';
 import { getConversationTitle, getOtherMember } from '../utils/conversation';
 import { formatFileSize } from '../utils/format';
-import { FaCamera, FaCheck, FaEye, FaShare, FaTrash, FaXmark } from 'react-icons/fa6';
+import { FaCamera, FaCheck, FaEye, FaPen, FaPlus, FaRightFromBracket, FaShare, FaTrash, FaXmark } from 'react-icons/fa6';
 import { Avatar, Badge } from './ui';
 import { AvatarCropDialog } from './AvatarCropDialog';
+import { useConfirm } from './ConfirmDialog';
 import { fileTypeMeta, VoicePlayer } from './MessageAttachment';
 
 export type InfoTab = 'media' | 'files' | 'voice';
@@ -62,6 +64,10 @@ interface Props {
   onDeleteMessages: (messageIds: string[]) => void;
   /** Mirrors the thread's rule: deleting someone else's message is an admin action. */
   canDeleteMessages: boolean;
+  /** A rename, or a membership change, so the header and list can follow. */
+  onConversationUpdated: (conversation: Conversation) => void;
+  /** The current user left; the thread has nothing left to show. */
+  onLeft: () => void;
   initialTab?: InfoTab;
 }
 
@@ -76,10 +82,22 @@ export function ConversationInfoPanel({
   onForwardMessages,
   onDeleteMessages,
   canDeleteMessages,
+  onConversationUpdated,
+  onLeft,
   initialTab = 'media',
 }: Props) {
   const [activeTab, setActiveTab] = useState<InfoTab>(initialTab);
   const [pendingAvatar, setPendingAvatar] = useState<File | null>(null);
+  const [editingDetails, setEditingDetails] = useState(false);
+  const [draftName, setDraftName] = useState('');
+  const [draftDescription, setDraftDescription] = useState('');
+  const [savingDetails, setSavingDetails] = useState(false);
+  const [detailsError, setDetailsError] = useState<string | null>(null);
+  const [addingMembers, setAddingMembers] = useState(false);
+  const [directory, setDirectory] = useState<DirectoryUser[] | null>(null);
+  const [addSearch, setAddSearch] = useState('');
+  const [addSelected, setAddSelected] = useState<Set<string>>(new Set());
+  const [busyMemberId, setBusyMemberId] = useState<string | null>(null);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -99,7 +117,9 @@ export function ConversationInfoPanel({
   const members = conversation.members ?? [];
   // Mirrors the server's rule. The server re-checks it — this only decides whether to offer it.
   const myRole = members.find((m) => m.user_id === currentUserId)?.role;
-  const canEditAvatar = isGroup && (myRole === 'owner' || myRole === 'admin');
+  // One rule for every group control, mirroring what the server enforces.
+  const canManage = isGroup && (myRole === 'owner' || myRole === 'admin');
+  const canEditAvatar = canManage;
 
   function toggleSelected(messageId: string) {
     setSelected((prev) => {
@@ -128,6 +148,82 @@ export function ConversationInfoPanel({
         if (longPressRef.current) window.clearTimeout(longPressRef.current);
       },
     };
+  }
+
+  const { confirm, confirmDialog } = useConfirm();
+
+  function beginEditingDetails() {
+    setDraftName(conversation.name ?? '');
+    setDraftDescription(conversation.description ?? '');
+    setDetailsError(null);
+    setEditingDetails(true);
+  }
+
+  async function saveDetails() {
+    setSavingDetails(true);
+    setDetailsError(null);
+    try {
+      const { conversation: updated } = await conversationsApi.updateConversation(conversation.id, {
+        name: draftName,
+        description: draftDescription,
+      });
+      onConversationUpdated(updated);
+      setEditingDetails(false);
+    } catch (err) {
+      setDetailsError((err as Error).message || 'Could not save');
+    } finally {
+      setSavingDetails(false);
+    }
+  }
+
+  function openAddMembers() {
+    setAddSelected(new Set());
+    setAddSearch('');
+    setAddingMembers(true);
+    if (directory === null) {
+      conversationsApi.listDirectory().then(({ users }) => setDirectory(users)).catch(() => setDirectory([]));
+    }
+  }
+
+  async function confirmAddMembers() {
+    if (addSelected.size === 0) return;
+    try {
+      const { conversation: updated } = await conversationsApi.addConversationMembers(conversation.id, [...addSelected]);
+      onConversationUpdated(updated);
+      setAddingMembers(false);
+    } catch (err) {
+      window.alert((err as Error).message);
+    }
+  }
+
+  async function removeMember(userId: string, displayName: string) {
+    const leaving = userId === currentUserId;
+    const ok = await confirm({
+      title: leaving ? 'Leave this group?' : `Remove ${displayName}?`,
+      description: leaving
+        ? <>You will stop receiving its messages. <b style={{ color: 'var(--text-muted)' }}>Someone will have to add you back.</b></>
+        : <>They will stop receiving this conversation&apos;s messages.</>,
+      confirmLabel: leaving ? 'Leave' : 'Remove',
+      cancelLabel: 'Cancel',
+    });
+    if (!ok) return;
+
+    setBusyMemberId(userId);
+    try {
+      await conversationsApi.removeConversationMember(conversation.id, userId);
+      if (leaving) {
+        onLeft();
+        return;
+      }
+      // Refetched rather than filtered locally: removing the owner promotes someone, and the
+      // panel would otherwise still show the old roles.
+      const { conversation: updated } = await conversationsApi.getConversation(conversation.id);
+      onConversationUpdated(updated);
+    } catch (err) {
+      window.alert((err as Error).message);
+    } finally {
+      setBusyMemberId(null);
+    }
   }
 
   async function handleCroppedAvatar(blob: Blob) {
@@ -225,7 +321,45 @@ export function ConversationInfoPanel({
           {avatarError && (
             <p className="text-[11px] text-center mb-2" style={{ color: 'var(--danger)' }}>{avatarError}</p>
           )}
-          <h3 className="font-bold text-[16px] text-center leading-snug" style={{ color: 'var(--text)' }}>{title}</h3>
+          {editingDetails ? (
+            <div className="w-full flex flex-col gap-2">
+              <input
+                autoFocus
+                value={draftName}
+                onChange={(e) => setDraftName(e.target.value)}
+                onKeyDown={(e) => { if (e.key === 'Enter') saveDetails(); if (e.key === 'Escape') setEditingDetails(false); }}
+                placeholder="Group name"
+                className="input-base w-full text-center font-semibold"
+              />
+              <textarea
+                rows={2}
+                value={draftDescription}
+                onChange={(e) => setDraftDescription(e.target.value)}
+                placeholder="What is this group for? (optional)"
+                className="input-base w-full resize-none text-[13px]"
+              />
+              {detailsError && <p className="text-[11px] text-center" style={{ color: 'var(--danger)' }}>{detailsError}</p>}
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setEditingDetails(false)} disabled={savingDetails} className="btn-ghost flex-1 justify-center disabled:opacity-40">Cancel</button>
+                <button type="button" onClick={saveDetails} disabled={savingDetails || !draftName.trim()} className="btn-primary flex-1 justify-center disabled:opacity-40">
+                  {savingDetails ? 'Saving…' : 'Save'}
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1.5">
+              <h3 className="font-bold text-[16px] text-center leading-snug" style={{ color: 'var(--text)' }}>{title}</h3>
+              {canManage && (
+                <button type="button" onClick={beginEditingDetails} title="Edit name and description" aria-label="Edit name and description"
+                  className="p-1 rounded-md transition-colors hover-panel-alt" style={{ color: 'var(--text-dim)' }}>
+                  <FaPen size={11} />
+                </button>
+              )}
+            </div>
+          )}
+          {!editingDetails && conversation.description && (
+            <p className="text-[12.5px] text-center mt-1.5 px-2" style={{ color: 'var(--text-muted)' }}>{conversation.description}</p>
+          )}
 
           {other && (
             <span className="text-[12px] mt-1.5 font-mono font-medium" style={{ color: isOnline ? 'var(--accent)' : 'var(--text-dim)' }}>
@@ -242,8 +376,18 @@ export function ConversationInfoPanel({
           {/* Group member list */}
           {isGroup && members.length > 0 && (
             <div className="w-full mt-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-mono uppercase tracking-wider" style={{ color: 'var(--text-dim)' }}>Members</span>
+                {canManage && (
+                  <button type="button" onClick={openAddMembers}
+                    className="flex items-center gap-1 text-[11px] font-mono px-2 py-1 rounded-md transition-colors hover-panel-alt"
+                    style={{ color: 'var(--accent)' }}>
+                    <FaPlus size={9} /> Add
+                  </button>
+                )}
+              </div>
               {members.map((m) => (
-                <div key={m.user_id} className="flex items-center gap-2.5 py-0.5">
+                <div key={m.user_id} className="group flex items-center gap-2.5 py-0.5">
                   <Avatar name={m.display_name} avatarUrl={m.avatar_url} size={32} radius={8} fontSize={12}
                     showPresence={m.user_id !== currentUserId} online={presence[m.user_id] === 'online'} profileUserId={m.user_id} />
                   <div className="flex-1 min-w-0">
@@ -253,9 +397,37 @@ export function ConversationInfoPanel({
                   {(m.role === 'owner' || m.role === 'admin') && (
                     <Badge tone="warning">{m.role}</Badge>
                   )}
+                  {/* The owner is not offered: the server refuses removing them, and showing a
+                      control that always fails is worse than not showing one. */}
+                  {canManage && m.user_id !== currentUserId && m.role !== 'owner' && (
+                    <button
+                      type="button"
+                      title={`Remove ${m.display_name}`}
+                      aria-label={`Remove ${m.display_name}`}
+                      disabled={busyMemberId === m.user_id}
+                      onClick={() => removeMember(m.user_id, m.display_name)}
+                      className="flex-shrink-0 p-1 rounded-md transition-opacity opacity-0 group-hover:opacity-100 focus-visible:opacity-100 hover-panel-alt disabled:opacity-40"
+                      style={{ color: 'var(--danger)' }}
+                    >
+                      <FaXmark size={12} />
+                    </button>
+                  )}
                 </div>
               ))}
             </div>
+          )}
+
+          {isGroup && (
+            <button
+              type="button"
+              onClick={() => removeMember(currentUserId, 'you')}
+              disabled={busyMemberId === currentUserId}
+              className="w-full mt-4 flex items-center justify-center gap-2 py-2 rounded-lg text-[13px] font-mono transition-colors disabled:opacity-40"
+              style={{ color: 'var(--danger)', border: '1px solid var(--danger-border)' }}
+            >
+              <FaRightFromBracket size={12} />
+              {busyMemberId === currentUserId ? 'Leaving…' : 'Leave group'}
+            </button>
           )}
         </div>
 
@@ -391,6 +563,78 @@ export function ConversationInfoPanel({
           </div>
         </>
       )}
+
+      {/* Add members — the directory minus whoever is already here, so nobody is offered twice. */}
+      {addingMembers && (() => {
+        const already = new Set(members.map((m) => m.user_id));
+        const q = addSearch.trim().toLowerCase();
+        const candidates = (directory ?? []).filter((u) =>
+          !already.has(u.id) && (!q || u.display_name.toLowerCase().includes(q) || u.username.toLowerCase().includes(q)));
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: 'rgba(0,0,0,0.55)' }}
+            onClick={(e) => { if (e.target === e.currentTarget) setAddingMembers(false); }}>
+            <div className="w-full max-w-sm rounded-2xl overflow-hidden flex flex-col" style={{ background: 'var(--panel)', border: '1px solid var(--border)', maxHeight: '80vh' }}>
+              <div className="flex items-center justify-between px-5 py-4 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
+                <div>
+                  <p className="font-semibold text-[15px]" style={{ color: 'var(--text)' }}>Add people</p>
+                  <p className="text-[11px] font-mono mt-0.5" style={{ color: 'var(--text-dim)' }}>
+                    {addSelected.size === 0 ? 'Choose who to add' : `${addSelected.size} selected`}
+                  </p>
+                </div>
+                <button type="button" onClick={() => setAddingMembers(false)} className="btn-icon" style={{ width: 30, height: 30 }} aria-label="Cancel">
+                  <FaXmark size={14} />
+                </button>
+              </div>
+
+              <div className="px-4 py-3 flex-shrink-0" style={{ borderBottom: '1px solid var(--border)' }}>
+                <input autoFocus value={addSearch} onChange={(e) => setAddSearch(e.target.value)}
+                  placeholder="Search people…" className="input-base w-full text-[13px]" />
+              </div>
+
+              <div className="flex-1 overflow-y-auto py-1">
+                {directory === null && <p className="px-4 py-6 text-center text-[13px]" style={{ color: 'var(--text-dim)' }}>Loading…</p>}
+                {directory !== null && candidates.length === 0 && (
+                  <p className="px-4 py-6 text-center text-[13px]" style={{ color: 'var(--text-dim)' }}>
+                    {already.size > 1 && !addSearch ? 'Everyone is already in this group' : 'Nobody found'}
+                  </p>
+                )}
+                {candidates.map((u) => {
+                  const picked = addSelected.has(u.id);
+                  return (
+                    <button key={u.id} type="button"
+                      onClick={() => setAddSelected((prev) => {
+                        const next = new Set(prev);
+                        if (next.has(u.id)) next.delete(u.id); else next.add(u.id);
+                        return next;
+                      })}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors hover-panel-alt">
+                      <Avatar name={u.display_name} avatarUrl={u.avatar_url} size={32} radius={8} fontSize={12} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-[14px] truncate" style={{ color: 'var(--text)' }}>{u.display_name}</p>
+                        <p className="text-[11px] font-mono truncate" style={{ color: 'var(--text-dim)' }}>@{u.username}</p>
+                      </div>
+                      <span className="flex-shrink-0 w-5 h-5 rounded-full flex items-center justify-center"
+                        style={{ background: picked ? 'var(--accent)' : 'transparent', border: `1.5px solid ${picked ? 'var(--accent)' : 'var(--border)'}` }}>
+                        {picked && <FaCheck size={11} className="text-white" />}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div className="px-4 py-4 flex-shrink-0" style={{ borderTop: '1px solid var(--border)' }}>
+                <button type="button" onClick={confirmAddMembers} disabled={addSelected.size === 0}
+                  className="btn-primary w-full justify-center disabled:opacity-40">
+                  {addSelected.size === 0 ? 'Add' : `Add ${addSelected.size}`}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {confirmDialog}
 
       {pendingAvatar && (
         <AvatarCropDialog

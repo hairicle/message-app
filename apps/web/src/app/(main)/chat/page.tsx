@@ -384,6 +384,15 @@ export default function ChatPage() {
             onConversationAvatarChanged={(id, avatarUrl) =>
               setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, avatar_url: avatarUrl } : c)))
             }
+            onConversationChanged={(updated) =>
+              // Merged rather than replaced: the list row carries unread_count and last_message,
+              // which the single-conversation payload does not include.
+              setConversations((prev) => prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c)))
+            }
+            onConversationLeft={(id) => {
+              setConversations((prev) => prev.filter((c) => c.id !== id));
+              setSelectedId(null);
+            }}
           />
         ) : (
           <div className="flex-1 flex flex-col items-center justify-center gap-3" style={{ color: 'var(--text-dim)' }}>
