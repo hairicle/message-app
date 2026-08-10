@@ -16,6 +16,7 @@ import { AdminDashboard } from '@/components/AdminDashboard';
 import { AnnounceWorkspace } from '@/components/AnnounceWorkspace';
 import { ProfilePanel } from '@/components/ProfilePanel';
 import { OPEN_CONVERSATION_EVENT, OPEN_OWN_PROFILE_EVENT } from '@/components/UserProfileCard';
+import { sortConversations } from '@/utils/conversationOrder';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { BrandLogo } from '@/components/BrandLogo';
 import { ComingSoon, type ComingSoonProps } from '@/components/ComingSoon';
@@ -191,7 +192,7 @@ export default function ChatPage() {
           updated_at: m.createdAt,
           unread_count: shouldIncrement ? (c.unread_count ?? 0) + 1 : c.unread_count,
         });
-        return next;
+        return sortConversations(next);
       });
     // Someone started a conversation with us while we were online. onMsg discards messages for
     // a conversation it does not know, so without this the first message of a brand new chat
@@ -271,6 +272,17 @@ export default function ChatPage() {
       window.removeEventListener(OPEN_CONVERSATION_EVENT, openConversation);
       window.removeEventListener(OPEN_OWN_PROFILE_EVENT, openOwnProfile);
     };
+  }, []);
+
+  const togglePin = useCallback(async (id: string, pinned: boolean) => {
+    // Moved immediately, then confirmed: pinning is a direct manipulation of the list, and
+    // waiting for a round-trip before the row moves makes it feel like the click missed.
+    setConversations((prev) => sortConversations(prev.map((c) => (c.id === id ? { ...c, is_pinned: pinned } : c))));
+    try {
+      await conversationsApi.setConversationPinned(id, pinned);
+    } catch {
+      setConversations((prev) => sortConversations(prev.map((c) => (c.id === id ? { ...c, is_pinned: !pinned } : c))));
+    }
   }, []);
 
   // Reset unread for a conversation when user navigates to it
@@ -386,6 +398,7 @@ export default function ChatPage() {
               currentUserId={user.id}
               presence={presence}
               onSelect={(id) => { setSelectedId(id); clearConvUnread(id); }}
+              onTogglePin={togglePin}
             />
             <div className="p-3 flex-shrink-0" style={{ borderTop: '1px solid var(--border)' }}>
               <NewConversationDialog onCreated={handleConversationCreated} />

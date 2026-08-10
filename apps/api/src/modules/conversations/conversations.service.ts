@@ -139,6 +139,23 @@ export class ConversationsService {
     return { conversationId, mutedUntil: until };
   }
 
+  /**
+   * Pin a conversation to the top of this member's list, or unpin it.
+   *
+   * Per member for the same reason muting is: it is how one person orders their own list, not
+   * something the conversation carries for everyone in it.
+   */
+  async setPinned(conversationId: string, userId: string, pinned: boolean) {
+    await this.assertMember(conversationId, userId);
+    await this.prisma.conversation_members.update({
+      where: { conversation_id_user_id: { conversation_id: conversationId, user_id: userId } },
+      // The moment it was pinned, so pinned rows keep a stable order among themselves rather
+      // than shuffling whenever one of them receives a message.
+      data: { pinned_at: pinned ? new Date() : null },
+    });
+    return { conversationId, pinned };
+  }
+
   /** Rename a group, or change what it says it is for. */
   async updateDetails(conversationId: string, userId: string, data: { name?: string; description?: string }) {
     await this.assertGroupAdmin(conversationId, userId);
@@ -252,6 +269,7 @@ export class ConversationsService {
     return this.prisma.$queryRaw<unknown[]>`
       SELECT c.*,
         (cm.muted_until IS NOT NULL AND cm.muted_until > now()) AS is_muted,
+        (cm.pinned_at IS NOT NULL) AS is_pinned,
         COALESCE(unread.count, 0)::int AS unread_count,
         lm.msg AS last_message,
         mem.members AS members
@@ -289,7 +307,9 @@ export class ConversationsService {
         ) cm2
         JOIN users u ON u.id = cm2.user_id
       ) mem ON true
-      ORDER BY c.updated_at DESC`;
+      -- Pinned first, and among themselves by when they were pinned, so pinning something does
+      -- not reorder the ones already up there. Everything else stays newest-first.
+      ORDER BY (cm.pinned_at IS NOT NULL) DESC, cm.pinned_at ASC, c.updated_at DESC`;
   }
 
   async getConversation(id: string, userId: string) {

@@ -4,7 +4,7 @@ import { useState } from 'react';
 import type { Conversation } from '@messenger/shared';
 import { getConversationTitle, getOtherMember } from '../utils/conversation';
 import { messagePreview } from '../utils/messagePreview';
-import { FaBellSlash } from 'react-icons/fa6';
+import { FaBellSlash, FaThumbtack } from 'react-icons/fa6';
 import { Avatar, SearchInput } from './ui';
 
 interface ConversationListProps {
@@ -13,6 +13,7 @@ interface ConversationListProps {
   currentUserId: string;
   presence: Record<string, 'online' | 'offline'>;
   onSelect: (id: string) => void;
+  onTogglePin: (id: string, pinned: boolean) => void;
 }
 
 export function ConversationList({
@@ -21,6 +22,7 @@ export function ConversationList({
   currentUserId,
   presence,
   onSelect,
+  onTogglePin,
 }: ConversationListProps) {
   const [search, setSearch] = useState('');
 
@@ -71,7 +73,7 @@ export function ConversationList({
             <li key={conversation.id}>
               <button
                 onClick={() => onSelect(conversation.id)}
-                className="w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors"
+                className="group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors"
                 style={{
                   background: isActive ? 'var(--accent-wash)' : 'transparent',
                 }}
@@ -85,6 +87,9 @@ export function ConversationList({
                     <span className="truncate">{title}</span>
                     {/* Said out loud, or a conversation that never makes a sound looks broken
                         rather than muted. */}
+                    {conversation.is_pinned && (
+                      <FaThumbtack size={9} className="flex-shrink-0" style={{ color: 'var(--text-dim)' }} title="Pinned" />
+                    )}
                     {conversation.is_muted && (
                       <FaBellSlash size={10} className="flex-shrink-0" style={{ color: 'var(--text-dim)' }} title="Muted" />
                     )}
@@ -112,6 +117,28 @@ export function ConversationList({
                     {unread > 99 ? '99+' : unread}
                   </span>
                 )}
+
+                {/* A span with a role rather than a button: the row is itself a button, and one
+                    cannot be nested inside another. */}
+                <span
+                  role="button"
+                  tabIndex={0}
+                  title={conversation.is_pinned ? 'Unpin' : 'Pin to top'}
+                  aria-label={conversation.is_pinned ? `Unpin ${title}` : `Pin ${title} to top`}
+                  onClick={(e) => { e.stopPropagation(); onTogglePin(conversation.id, !conversation.is_pinned); }}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter' && e.key !== ' ') return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    onTogglePin(conversation.id, !conversation.is_pinned);
+                  }}
+                  className={`flex-shrink-0 p-1 rounded-md cursor-pointer transition-opacity hover-panel-alt ${
+                    conversation.is_pinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'
+                  }`}
+                  style={{ color: conversation.is_pinned ? 'var(--accent)' : 'var(--text-dim)' }}
+                >
+                  <FaThumbtack size={11} />
+                </span>
               </button>
             </li>
           );

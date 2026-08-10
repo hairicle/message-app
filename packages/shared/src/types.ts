@@ -72,6 +72,8 @@ export interface Conversation {
   updated_at: string;
   unread_count?: number;
   is_muted?: boolean;
+  /** Pinned by the requesting member; pinned conversations sort above the rest. */
+  is_pinned?: boolean;
   last_message?: {
     sender_username: string;
     sender_display_name: string;

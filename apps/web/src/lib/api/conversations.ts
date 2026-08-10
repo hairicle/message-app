@@ -51,6 +51,14 @@ export function setConversationMuted(id: string, until: Date | null) {
   );
 }
 
+/** Pin to the top of your own list, or unpin. Per member, like muting. */
+export function setConversationPinned(id: string, pinned: boolean) {
+  return apiFetch<{ conversationId: string; pinned: boolean }>(
+    `/api/conversations/${id}/pin`,
+    { method: 'POST', body: JSON.stringify({ pinned }) },
+  );
+}
+
 /** Group picture. The server re-checks that the caller is an owner or admin. */
 export function uploadConversationAvatar(id: string, file: Blob, fileName = 'avatar.png') {
   const fd = new FormData();

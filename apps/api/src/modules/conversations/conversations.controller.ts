@@ -53,6 +53,15 @@ export class ConversationsController {
     return this.conversationsService.setMuted(id, user.id, until);
   }
 
+  @Post(':id/pin')
+  async setPinned(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthPayload,
+    @Body() body: { pinned?: boolean },
+  ) {
+    return this.conversationsService.setPinned(id, user.id, body.pinned !== false);
+  }
+
   @Patch(':id')
   async updateDetails(
     @Param('id') id: string,
