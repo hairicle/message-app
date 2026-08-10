@@ -1,5 +1,5 @@
 import {
-  Controller, Get, Post, Delete, Put, Body, Param, Query, UseGuards, HttpCode, HttpStatus,
+  Controller, Get, Post, Delete, Patch, Put, Body, Param, Query, UseGuards, HttpCode, HttpStatus,
   UseInterceptors, UploadedFile, ParseFilePipe, MaxFileSizeValidator,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
@@ -37,6 +37,36 @@ export class ConversationsController {
   ) {
     const conversation = await this.conversationsService.updateAvatar(id, user.id, file);
     return { conversation };
+  }
+
+  @Patch(':id')
+  async updateDetails(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthPayload,
+    @Body() body: { name?: string; description?: string },
+  ) {
+    const conversation = await this.conversationsService.updateDetails(id, user.id, body);
+    return { conversation };
+  }
+
+  @Post(':id/members')
+  async addMembers(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthPayload,
+    @Body() body: { userIds: string[] },
+  ) {
+    const conversation = await this.conversationsService.addMembers(id, user.id, body.userIds ?? []);
+    return { conversation };
+  }
+
+  /** Removing yourself is leaving; removing someone else needs owner or admin. */
+  @Delete(':id/members/:userId')
+  async removeMember(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @CurrentUser() user: AuthPayload,
+  ) {
+    return this.conversationsService.removeMember(id, user.id, userId);
   }
 
   @Get(':id')

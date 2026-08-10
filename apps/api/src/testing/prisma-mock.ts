@@ -19,6 +19,7 @@ const METHODS = [
   'findFirst',
   'findMany',
   'create',
+  'createMany',
   'update',
   'updateMany',
   'upsert',

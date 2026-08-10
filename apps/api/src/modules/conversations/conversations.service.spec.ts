@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { ConversationsService } from './conversations.service';
 import type { AvatarStorageService } from '../../common/avatar-storage.service';
 import type { AvatarUrlService } from '../../common/avatar-url.service';
@@ -76,6 +76,115 @@ describe('ConversationsService', () => {
     it('404s on a conversation that does not exist', async () => {
       prisma.conversations.findUnique.mockResolvedValue(null);
       await expect(service.updateAvatar(CONV, USER, FILE)).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('group management', () => {
+    const asGroup = () => prisma.conversations.findUnique.mockResolvedValue({ type: 'group' });
+    const roleIs = (...roles: (string | null)[]) => {
+      let call = 0;
+      prisma.conversation_members.findUnique.mockImplementation(() => {
+        const r = roles[Math.min(call++, roles.length - 1)];
+        return Promise.resolve(r ? { role: r } : null);
+      });
+    };
+
+    describe('updateDetails', () => {
+      it('lets an owner rename the group', async () => {
+        asGroup();
+        roleIs('owner');
+        prisma.conversations.update.mockResolvedValue({});
+        prisma.conversations.findUnique
+          .mockResolvedValueOnce({ type: 'group' })
+          .mockResolvedValueOnce({ id: CONV, conversation_members: [] });
+        await service.updateDetails(CONV, USER, { name: '  New name  ' });
+        expect(prisma.conversations.update.mock.calls[0][0].data.name).toBe('New name');
+      });
+
+      it('refuses a plain member', async () => {
+        asGroup();
+        roleIs('member');
+        await expect(service.updateDetails(CONV, USER, { name: 'x' })).rejects.toBeInstanceOf(ForbiddenException);
+        expect(prisma.conversations.update).not.toHaveBeenCalled();
+      });
+
+      it('refuses a blank name rather than storing one', async () => {
+        asGroup();
+        roleIs('admin');
+        await expect(service.updateDetails(CONV, USER, { name: '   ' })).rejects.toBeInstanceOf(BadRequestException);
+      });
+
+      it('refuses on a direct conversation', async () => {
+        prisma.conversations.findUnique.mockResolvedValue({ type: 'direct' });
+        await expect(service.updateDetails(CONV, USER, { name: 'x' })).rejects.toBeInstanceOf(ForbiddenException);
+      });
+    });
+
+    describe('addMembers', () => {
+      it('refuses a plain member, and adds nobody', async () => {
+        asGroup();
+        roleIs('member');
+        await expect(service.addMembers(CONV, USER, [OTHER])).rejects.toBeInstanceOf(ForbiddenException);
+        expect(prisma.conversation_members.createMany).not.toHaveBeenCalled();
+      });
+
+      it('skips ids that are not active users', async () => {
+        asGroup();
+        roleIs('admin');
+        prisma.users.findMany.mockResolvedValue([]);
+        await expect(service.addMembers(CONV, USER, ['ghost'])).rejects.toBeInstanceOf(BadRequestException);
+      });
+    });
+
+    describe('removeMember', () => {
+      it('lets anyone remove themselves — that is leaving', async () => {
+        asGroup();
+        roleIs('member', 'member');
+        prisma.conversation_members.delete.mockResolvedValue({});
+        await service.removeMember(CONV, USER, USER);
+        expect(prisma.conversation_members.delete).toHaveBeenCalled();
+      });
+
+      it('refuses a plain member removing someone else', async () => {
+        asGroup();
+        roleIs('member');
+        await expect(service.removeMember(CONV, USER, OTHER)).rejects.toBeInstanceOf(ForbiddenException);
+        expect(prisma.conversation_members.delete).not.toHaveBeenCalled();
+      });
+
+      // Otherwise an admin could remove the owner and take the group.
+      it('refuses an admin removing the owner', async () => {
+        asGroup();
+        roleIs('admin', 'owner');
+        await expect(service.removeMember(CONV, USER, OTHER)).rejects.toBeInstanceOf(ForbiddenException);
+        expect(prisma.conversation_members.delete).not.toHaveBeenCalled();
+      });
+
+      it('hands ownership on when the owner leaves', async () => {
+        asGroup();
+        roleIs('owner', 'owner');
+        prisma.conversation_members.delete.mockResolvedValue({});
+        prisma.conversation_members.findFirst.mockResolvedValue({ user_id: OTHER });
+        await service.removeMember(CONV, USER, USER);
+        expect(prisma.conversation_members.update).toHaveBeenCalledWith(
+          expect.objectContaining({ data: { role: 'owner' } }),
+        );
+      });
+
+      it('does not promote anyone when the last member leaves', async () => {
+        asGroup();
+        roleIs('owner', 'owner');
+        prisma.conversation_members.delete.mockResolvedValue({});
+        prisma.conversation_members.findFirst.mockResolvedValue(null);
+        await service.removeMember(CONV, USER, USER);
+        expect(prisma.conversation_members.update).not.toHaveBeenCalled();
+      });
+
+      it('404s on someone who is not in the conversation', async () => {
+        asGroup();
+        roleIs('owner', null);
+        await expect(service.removeMember(CONV, USER, OTHER)).rejects.toBeInstanceOf(NotFoundException);
+      });
     });
   });
 

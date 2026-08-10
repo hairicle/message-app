@@ -77,6 +77,29 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
         this.io?.to(memberIds.map((id) => `user:${id}`)).emit('conversation:new', { conversationId });
       },
     );
+
+    // Added to a group while already online — same problem as being in a brand new one.
+    this.conversations.events.on(
+      'conversation:members-added',
+      ({ conversationId, memberIds }: { conversationId: string; memberIds: string[] }) => {
+        for (const id of memberIds) {
+          this.io?.in(`user:${id}`).socketsJoin(`conversation:${conversationId}`);
+        }
+        this.io?.to(memberIds.map((id) => `user:${id}`)).emit('conversation:new', { conversationId });
+        this.io?.to(`conversation:${conversationId}`).emit('conversation:members-changed', { conversationId });
+      },
+    );
+
+    // Leaving the room matters more than joining it: a removed member whose socket stayed in it
+    // would keep receiving the conversation's messages until they happened to reconnect.
+    this.conversations.events.on(
+      'conversation:member-removed',
+      ({ conversationId, memberId }: { conversationId: string; memberId: string }) => {
+        this.io?.in(`user:${memberId}`).socketsLeave(`conversation:${conversationId}`);
+        this.io?.to(`user:${memberId}`).emit('conversation:removed', { conversationId });
+        this.io?.to(`conversation:${conversationId}`).emit('conversation:members-changed', { conversationId });
+      },
+    );
   }
 
   async handleConnection(socket: AuthedSocket) {

@@ -1,4 +1,4 @@
-import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { Injectable, ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { Prisma, conversation_type, member_role, message_type } from '@prisma/client';
 import { EventEmitter } from 'node:events';
 import { PrismaService } from '../../database/prisma.service';
@@ -82,6 +82,139 @@ export class ConversationsService {
     });
     this.avatars.invalidate(conversation.avatar_url);
     return updated;
+  }
+
+  /** The caller's role, or null if they are not in the conversation. */
+  private async roleOf(conversationId: string, userId: string): Promise<member_role | null> {
+    const member = await this.prisma.conversation_members.findUnique({
+      where: { conversation_id_user_id: { conversation_id: conversationId, user_id: userId } },
+      select: { role: true },
+    });
+    return member?.role ?? null;
+  }
+
+  /**
+   * Assert the caller may administer this group.
+   *
+   * Direct conversations are rejected outright rather than checked: they have no name to change
+   * and no membership to manage, so every one of these operations is meaningless there.
+   */
+  private async assertGroupAdmin(conversationId: string, userId: string) {
+    const conversation = await this.prisma.conversations.findUnique({
+      where: { id: conversationId },
+      select: { type: true },
+    });
+    if (!conversation) throw new NotFoundException('Conversation not found');
+    if (conversation.type === 'direct') {
+      throw new ForbiddenException('A direct conversation has no settings to change');
+    }
+
+    const role = await this.roleOf(conversationId, userId);
+    if (!role) throw new ForbiddenException('Not a member of this conversation');
+    if (role !== 'owner' && role !== 'admin') {
+      throw new ForbiddenException('Only an owner or admin can change this');
+    }
+  }
+
+  /** Rename a group, or change what it says it is for. */
+  async updateDetails(conversationId: string, userId: string, data: { name?: string; description?: string }) {
+    await this.assertGroupAdmin(conversationId, userId);
+
+    const patch: Prisma.conversationsUpdateInput = { updated_at: new Date() };
+    if (data.name !== undefined) {
+      const name = data.name.trim();
+      // A group with a blank name renders as an empty header, so it is refused rather than
+      // silently stored.
+      if (!name) throw new BadRequestException('A group needs a name');
+      patch.name = name;
+    }
+    if (data.description !== undefined) {
+      patch.description = data.description.trim() || null;
+    }
+
+    await this.prisma.conversations.update({ where: { id: conversationId }, data: patch });
+    return this.getConversation(conversationId, userId);
+  }
+
+  /** Add people to a group. Already-members are left as they are rather than treated as an error. */
+  async addMembers(conversationId: string, userId: string, userIds: string[]) {
+    await this.assertGroupAdmin(conversationId, userId);
+    const toAdd = [...new Set(userIds)].filter(Boolean);
+    if (toAdd.length === 0) throw new BadRequestException('No one to add');
+
+    const existing = await this.prisma.users.findMany({
+      where: { id: { in: toAdd }, status: 'active' },
+      select: { id: true },
+    });
+    if (existing.length === 0) throw new BadRequestException('No such active users');
+
+    await this.prisma.conversation_members.createMany({
+      data: existing.map((u) => ({ conversation_id: conversationId, user_id: u.id, role: 'member' as member_role })),
+      skipDuplicates: true,
+    });
+
+    this.events.emit('conversation:members-added', {
+      conversationId,
+      memberIds: existing.map((u) => u.id),
+    });
+    return this.getConversation(conversationId, userId);
+  }
+
+  /**
+   * Remove someone, or leave.
+   *
+   * The same operation either way — the difference is only whether you are the subject — so
+   * anyone may remove themselves and an owner or admin may remove anyone else.
+   *
+   * An owner leaving hands ownership to the longest-standing member rather than being refused.
+   * Refusing would trap them, and leaving the group ownerless would make it unadministrable by
+   * anyone.
+   */
+  async removeMember(conversationId: string, actorId: string, targetId: string) {
+    const conversation = await this.prisma.conversations.findUnique({
+      where: { id: conversationId },
+      select: { type: true },
+    });
+    if (!conversation) throw new NotFoundException('Conversation not found');
+    if (conversation.type === 'direct') {
+      throw new ForbiddenException('A direct conversation has no members to remove');
+    }
+
+    const actorRole = await this.roleOf(conversationId, actorId);
+    if (!actorRole) throw new ForbiddenException('Not a member of this conversation');
+
+    const leaving = actorId === targetId;
+    if (!leaving && actorRole !== 'owner' && actorRole !== 'admin') {
+      throw new ForbiddenException('Only an owner or admin can remove someone');
+    }
+
+    const targetRole = await this.roleOf(conversationId, targetId);
+    if (!targetRole) throw new NotFoundException('That person is not in this conversation');
+    // Otherwise an admin could remove the owner and take the group.
+    if (!leaving && targetRole === 'owner') {
+      throw new ForbiddenException('The owner cannot be removed');
+    }
+
+    await this.prisma.conversation_members.delete({
+      where: { conversation_id_user_id: { conversation_id: conversationId, user_id: targetId } },
+    });
+
+    if (targetRole === 'owner') {
+      const successor = await this.prisma.conversation_members.findFirst({
+        where: { conversation_id: conversationId },
+        orderBy: [{ joined_at: 'asc' }, { user_id: 'asc' }],
+        select: { user_id: true },
+      });
+      if (successor) {
+        await this.prisma.conversation_members.update({
+          where: { conversation_id_user_id: { conversation_id: conversationId, user_id: successor.user_id } },
+          data: { role: 'owner' },
+        });
+      }
+    }
+
+    this.events.emit('conversation:member-removed', { conversationId, memberId: targetId });
+    return { conversationId, removed: targetId };
   }
 
   /**
