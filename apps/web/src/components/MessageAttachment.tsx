@@ -18,6 +18,14 @@ interface MessageAttachmentProps {
 const WAVE_BARS = 34;
 
 /**
+ * Speeds offered, cycled by tapping the control.
+ *
+ * A cycle rather than a menu: there are three of them, and a voice note is short enough that
+ * opening a menu to change speed costs more than listening at the wrong one.
+ */
+const PLAYBACK_RATES = [1, 1.5, 2] as const;
+
+/**
  * One visual treatment for every attachment variant.
  *
  * These used to be set per branch and had drifted apart: images capped at 220px, video and file
@@ -59,7 +67,16 @@ export function VoicePlayer({ url, isMine, fileName, durationSecs }: { url: stri
   const [progress, setProgress] = useState(0);
   const [currentSecs, setCurrentSecs] = useState(0);
   const [duration, setDuration] = useState(durationSecs ?? 0);
+  const [rate, setRate] = useState<number>(1);
   const { peaks } = useWaveform(url, WAVE_BARS);
+
+  function cycleRate() {
+    const next = PLAYBACK_RATES[(PLAYBACK_RATES.indexOf(rate as typeof PLAYBACK_RATES[number]) + 1) % PLAYBACK_RATES.length];
+    setRate(next);
+    // Applied to the element straight away, not only recorded in state, so a change made while
+    // it is playing is heard now rather than at the next load.
+    if (audioRef.current) audioRef.current.playbackRate = next;
+  }
 
   function toggle() {
     const a = audioRef.current;
@@ -119,7 +136,13 @@ export function VoicePlayer({ url, isMine, fileName, durationSecs }: { url: stri
         onPlay={() => setPlaying(true)}
         onPause={() => setPlaying(false)}
         onEnded={() => { setPlaying(false); setProgress(0); setCurrentSecs(0); }}
-        onLoadedMetadata={(e) => { if (!durationSecs) setDuration((e.target as HTMLAudioElement).duration); }}
+        onLoadedMetadata={(e) => {
+          const el = e.target as HTMLAudioElement;
+          if (!durationSecs) setDuration(el.duration);
+          // playbackRate resets whenever a source loads, so a chosen speed has to be re-applied
+          // or it silently reverts to 1× the first time the note is played.
+          el.playbackRate = rate;
+        }}
         onTimeUpdate={(e) => {
           const a = e.target as HTMLAudioElement;
           setCurrentSecs(a.currentTime);
@@ -171,6 +194,25 @@ export function VoicePlayer({ url, isMine, fileName, durationSecs }: { url: stri
       >
         {duration > 0 ? fmt(playing || currentSecs > 0 ? currentSecs : duration) : '--:--'}
       </span>
+
+      {/* Speed — only worth offering once there is something to play */}
+      <button
+        type="button"
+        onClick={cycleRate}
+        title={`Playback speed ${rate}×`}
+        aria-label={`Playback speed ${rate} times. Tap to change.`}
+        className="flex-shrink-0 rounded-full tabular-nums transition-opacity hover:opacity-80"
+        style={{
+          fontSize: 10.5,
+          fontFamily: 'var(--font-mono)',
+          padding: '2px 6px',
+          color: rate === 1 ? dim : (isMine ? 'var(--accent)' : '#fff'),
+          background: rate === 1 ? 'transparent' : (isMine ? 'rgba(255,255,255,0.9)' : 'var(--accent)'),
+          border: `1px solid ${rate === 1 ? track : 'transparent'}`,
+        }}
+      >
+        {rate}×
+      </button>
 
       {/* Play/pause button */}
       <button type="button" onClick={toggle}
