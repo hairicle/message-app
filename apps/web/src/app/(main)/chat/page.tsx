@@ -57,16 +57,6 @@ const COMING_SOON: Partial<Record<Section, ComingSoonProps>> = {
       'Unread badges separate from chat',
     ],
   },
-  dashboard: {
-    icon: FaGauge,
-    title: 'Admin Dashboard',
-    description: 'User, department and audit-log management for administrators.',
-    highlights: [
-      'Create, disable and remove accounts',
-      'Manage departments and bulk-import users',
-      'Review the audit log',
-    ],
-  },
 };
 
 export default function ChatPage() {
@@ -300,6 +290,8 @@ export default function ChatPage() {
 
   if (!user) return null;
 
+  const isAdmin = user.role === 'admin';
+
   // ── Nav item helper ──────────────────────────────────────────────────
   function NavItem({ id, label, icon, badge, bottom }: { id: Section; label: string; icon: React.ReactNode; badge?: number; bottom?: boolean }) {
     const active = section === id;
@@ -359,7 +351,9 @@ export default function ChatPage() {
         <NavItem id="chat" label="Chat" badge={chatUnread} icon={<FaMessage size={18} />} />
         <NavItem id="teams" label="Teams" badge={teamUnread} icon={<FaUsers size={18} />} />
         <NavItem id="announcements" label="Announce" badge={announceUnread} icon={<FaBullhorn size={18} />} />
-        {user.role === 'admin' && (
+        {/* Already admin-only, and stays that way: every endpoint behind this screen is
+            @Roles('admin'), so anyone else would meet a wall of 403s. */}
+        {isAdmin && (
           <NavItem id="dashboard" label="Dashboard" icon={<FaGauge size={18} />} />
         )}
 
@@ -433,7 +427,16 @@ export default function ChatPage() {
         ) : section === 'announcements' ? (
           <AnnounceWorkspace onMobileDetailChange={setMobileDetailOpen} />
         ) : section === 'dashboard' ? (
-          <AdminDashboard />
+          // Guarded as well as hidden: the section can be reached from state restored after a
+          // demotion, and a wall of failed requests is a poor way to learn you no longer have
+          // access to something.
+          isAdmin ? <AdminDashboard /> : (
+            <div className="flex-1 flex items-center justify-center px-6 text-center">
+              <p className="text-[13px]" style={{ color: 'var(--text-dim)' }}>
+                The dashboard is available to administrators.
+              </p>
+            </div>
+          )
         ) : selectedId ? (
           <MessageThread
             key={selectedId}
@@ -466,7 +469,7 @@ export default function ChatPage() {
         <NavItem bottom id="chat" label="Chat" badge={chatUnread} icon={<FaMessage size={18} />} />
         <NavItem bottom id="teams" label="Teams" badge={teamUnread} icon={<FaUsers size={18} />} />
         <NavItem bottom id="announcements" label="Announce" badge={announceUnread} icon={<FaBullhorn size={18} />} />
-        {user.role === 'admin' && (
+        {isAdmin && (
           <NavItem bottom id="dashboard" label="Dashboard" icon={<FaGauge size={18} />} />
         )}
         <button
