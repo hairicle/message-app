@@ -11,6 +11,7 @@ older docs disagree, the code wins and the difference is called out.
 | 3 | [How it works](03-flow.md) | You need to know what talks to what, so you know what to provision and what breaks when it's missing |
 | 4 | [API reference](04-api-reference.md) | You're writing smoke tests, a gateway config, or a WAF rule |
 | 5 | [Production deployment](05-deployment.md) | You're doing the deploy |
+| 6 | [Gaps register](06-gaps.md) | **Read before sign-off.** Everything missing, stubbed, dead or broken — 18 entries, one of them blocking |
 
 Staging is already running and documented separately in
 [../staging-deploy.md](../staging-deploy.md). Production follows the same shape; document 5 covers

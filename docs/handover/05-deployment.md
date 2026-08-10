@@ -8,8 +8,12 @@ before going live.
 
 ## Known gaps — read before going live
 
-Four things found while writing this handover. None of them are hypothetical; each was confirmed by
-reading the code.
+The four below are the ones that change how you configure the deploy. The **complete** register —
+18 entries, including a blocking one — is [06-gaps.md](06-gaps.md). In particular
+[G1](06-gaps.md#g1-the-audio-and-video-call-buttons-do-not-work-and-leave-the-camera-on): the call
+buttons are live, broken, and leave the user's camera on. Hide them before production.
+
+None of these are hypothetical; each was confirmed by reading the code.
 
 ### 1. CORS is open to every origin
 

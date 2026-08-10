@@ -171,10 +171,14 @@ until their features ship.
 
 **Meetings** — `GET /api/meetings`, `POST /api/meetings`, `DELETE /api/meetings/:id`
 
-**Calls** — `GET /api/calls`, `POST /api/calls`, `DELETE /api/calls/:id`. Signalling is over the
-socket (`call:offer`, `call:answer`, `call:ice-candidate`, `call:reject`); these REST routes only
-record call history. **There is no TURN/STUN server configured**, so WebRTC would not traverse NAT
-even once a UI exists.
+**Calls** — `GET /api/calls`, `POST /api/calls`, `DELETE /api/calls/:id`. These record call history
+only; signalling is over the socket.
+
+> **The call UI exists and is broken.** Buttons are visible in every conversation header, the client
+> speaks a different socket protocol from the gateway, and pressing one turns the microphone and
+> camera on without ever releasing them. No `RTCPeerConnection` is ever created and no TURN/STUN
+> server is configured. See [G1 in the gaps register](06-gaps.md#g1-the-audio-and-video-call-buttons-do-not-work-and-leave-the-camera-on)
+> — these buttons should be hidden before production.
 
 ---
 

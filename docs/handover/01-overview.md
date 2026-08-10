@@ -68,9 +68,16 @@ Everything below is implemented and covered by tests or live verification.
 - Typing indicators
 - Light and dark theme
 
+**Broken, not missing:** the audio and video **call buttons are live in every conversation and do
+not work** — and they leave the microphone and camera running. Hide them before production. See
+[G1](06-gaps.md#g1-the-audio-and-video-call-buttons-do-not-work-and-leave-the-camera-on).
+
 **Not built yet:** end-to-end encryption (the schema has Signal Protocol tables, unused), link
-previews, mobile apps, push notifications (Firebase is a dependency but no delivery path is wired),
-LDAP sign-in (the dependency and config exist, no code path uses them).
+previews (rendered, never generated), mobile apps, push notifications to a closed tab (in-browser
+notifications do work), LDAP sign-in, bulk user import.
+
+The full register of what is missing, stubbed, dead or broken is
+[06-gaps.md](06-gaps.md) — 18 entries.
 
 ## Technology
 
