@@ -78,6 +78,7 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   const [activePicker, setActivePicker] = useState<{ id: string; dir: 'up' | 'down' } | null>(null);
   const longPressRef = useRef<number | null>(null);
   const hoverOpenRef = useRef<number | null>(null);
+  const hoverCloseRef = useRef<number | null>(null);
   // The quick reactions are opened deliberately, from the smiley — they are no longer the
   // resting state of a hovered message.
   const [emojiBarFor, setEmojiBarFor] = useState<string | null>(null);
@@ -578,6 +579,25 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   function cancelScheduledPicker() {
     if (hoverOpenRef.current) window.clearTimeout(hoverOpenRef.current);
     hoverOpenRef.current = null;
+  }
+
+  /**
+   * Closing is delayed too, and any re-entry cancels it.
+   *
+   * The controls sit outside the bubble's own box, so travelling to them crosses a boundary. A
+   * close that fires on the way unmounts the button under the pointer just before it is
+   * clicked — the controls appear, and cannot be used.
+   */
+  function closePickerSoon(id: string) {
+    if (hoverCloseRef.current) window.clearTimeout(hoverCloseRef.current);
+    hoverCloseRef.current = window.setTimeout(() => {
+      setActivePicker((p) => (p?.id === id ? null : p));
+    }, 220);
+  }
+
+  function keepPickerOpen() {
+    if (hoverCloseRef.current) window.clearTimeout(hoverCloseRef.current);
+    hoverCloseRef.current = null;
   }
 
   // Compute toolbar open direction for a given element freshly each call
@@ -1175,13 +1195,13 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
                   style={{ alignItems: mine ? 'flex-end' : 'flex-start' }}
                   // Anchored to the bubble, not the row: the row spans the full width, so
                   // hovering empty space far from the message used to summon its picker.
-                  onMouseEnter={(e) => { calcToolbarDir(e.currentTarget, message.id); schedulePicker(e.currentTarget, message.id); }}
+                  onMouseEnter={(e) => { keepPickerOpen(); calcToolbarDir(e.currentTarget, message.id); schedulePicker(e.currentTarget, message.id); }}
                   // Leaving only dismisses it when the menu is closed, so the menu does not
                   // vanish the moment the pointer travels toward it.
                   onMouseLeave={() => {
                     cancelScheduledPicker();
                     if (openMenuId !== message.id && emojiBarFor !== message.id) {
-                      setActivePicker((p) => (p?.id === message.id ? null : p));
+                      closePickerSoon(message.id);
                     }
                   }}
                   // Touch has no hover, so a long press stands in for it.
@@ -1283,7 +1303,13 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
                   used to sit open next to every hovered message, which is a lot of colour for
                   something you mostly scroll past; they now live behind the smiley. */}
               {activePicker?.id === message.id && !isEditing && !message.deletedAt && (
-                <div className={`absolute z-30 flex items-center gap-0.5 top-1/2 -translate-y-1/2 ${mine ? 'right-full mr-1' : 'left-full ml-1'}`}>
+                <div
+                  className={`absolute z-30 flex items-center gap-0.5 top-1/2 -translate-y-1/2 ${mine ? 'right-full pr-1' : 'left-full pl-1'}`}
+                  // Entering the controls cancels the pending close; they are a DOM child of the
+                  // bubble wrapper, and their box touches it, so there is no gap to fall through.
+                  onMouseEnter={keepPickerOpen}
+                  onMouseLeave={() => { if (openMenuId !== message.id && emojiBarFor !== message.id) closePickerSoon(message.id); }}
+                >
                   <div className="relative">
                     <button type="button" title="React" aria-label="React"
                       onClick={(e) => { e.stopPropagation(); setOpenMenuId(null); setEmojiBarFor(emojiBarFor === message.id ? null : message.id); }}
