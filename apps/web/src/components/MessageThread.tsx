@@ -25,7 +25,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { getConversationTitle, getOtherMember } from '../utils/conversation';
 import { decodeMessageText, encodeMessageText } from '../utils/text';
-import { FaBookmark, FaCheck, FaChevronDown, FaChevronLeft, FaImage, FaMagnifyingGlass, FaMicrophone, FaPaperPlane, FaPaperclip, FaPen, FaPhone, FaRegBookmark, FaRegCopy, FaReply, FaShare, FaThumbtack, FaTrash, FaVideo, FaXmark } from 'react-icons/fa6';
+import { FaBookmark, FaCheck, FaEllipsisVertical, FaRegFaceSmile, FaChevronDown, FaChevronLeft, FaImage, FaMagnifyingGlass, FaMicrophone, FaPaperPlane, FaPaperclip, FaPen, FaPhone, FaRegBookmark, FaRegCopy, FaReply, FaShare, FaThumbtack, FaTrash, FaVideo, FaXmark } from 'react-icons/fa6';
 import { attachmentNoun } from '../utils/messagePreview';
 import { groupingFor } from '../utils/messageGrouping';
 import { ReplyPreview } from './ReplyPreview';
@@ -78,6 +78,9 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   const [activePicker, setActivePicker] = useState<{ id: string; dir: 'up' | 'down' } | null>(null);
   const longPressRef = useRef<number | null>(null);
   const hoverOpenRef = useRef<number | null>(null);
+  // The quick reactions are opened deliberately, from the smiley — they are no longer the
+  // resting state of a hovered message.
+  const [emojiBarFor, setEmojiBarFor] = useState<string | null>(null);
   const [pinnedMessages, setPinnedMessages] = useState<PinnedMessage[]>([]);
   const [pinnedIds, setPinnedIds] = useState<Set<string>>(new Set());
   const [bookmarks, setBookmarks] = useState<BookmarkedMessage[]>([]);
@@ -856,7 +859,7 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
       })()}
 
       {/* Backdrop to close dropdown */}
-      {openMenuId && <div className="fixed inset-0 z-10" onClick={() => { setOpenMenuId(null); setActivePicker(null); }} />}
+      {(openMenuId || emojiBarFor) && <div className="fixed inset-0 z-10" onClick={() => { setOpenMenuId(null); setEmojiBarFor(null); setActivePicker(null); }} />}
 
       {/* Forward picker modal */}
       {/* ── Forward picker (Telegram-style) ── */}
@@ -1177,7 +1180,9 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
                   // vanish the moment the pointer travels toward it.
                   onMouseLeave={() => {
                     cancelScheduledPicker();
-                    if (openMenuId !== message.id) setActivePicker((p) => (p?.id === message.id ? null : p));
+                    if (openMenuId !== message.id && emojiBarFor !== message.id) {
+                      setActivePicker((p) => (p?.id === message.id ? null : p));
+                    }
                   }}
                   // Touch has no hover, so a long press stands in for it.
                   onTouchStart={(e) => {
@@ -1274,22 +1279,34 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
                     ))}
                   </div>
                 )}
-              {/* Reaction popover — mounted only for the message that owns it, so exactly one
-                  exists in the DOM, and anchored to the top of that message's bubble. */}
+              {/* Hover controls — two small icons beside the bubble. The five quick reactions
+                  used to sit open next to every hovered message, which is a lot of colour for
+                  something you mostly scroll past; they now live behind the smiley. */}
               {activePicker?.id === message.id && !isEditing && !message.deletedAt && (
-                <div
-                  className={`absolute z-30 ${activePicker.dir === 'up' ? 'bottom-full mb-1' : 'top-full mt-1'}`}
-                  style={{ [mine ? 'right' : 'left']: 0 }}
-                >
-                  <div className="flex items-center rounded-2xl overflow-visible" style={{ background: 'var(--panel)', border: '1px solid var(--border)', boxShadow: '0 4px 14px rgba(0,0,0,0.28)' }}>
-                    {QUICK_EMOJIS.map((e) => (
-                      <button key={e} onClick={() => toggleReaction(message.id, e)} className="flex w-8 h-8 text-[16px] items-center justify-center transition-colors first:rounded-l-2xl hover-panel-alt">{e}</button>
-                    ))}
-                    <div className="w-px h-5 mx-0.5 flex-shrink-0" style={{ background: 'var(--border)' }} />
-                    <div className="relative">
-                      <button onClick={(e) => { e.stopPropagation(); calcToolbarDir(e.currentTarget, message.id); setOpenMenuId(openMenuId === message.id ? null : message.id); }}
-                        className="w-8 h-8 flex items-center justify-center transition-colors rounded-r-2xl hover-panel-alt" style={{ color: 'var(--text-dim)' }}>
-                        <FaChevronDown size={14} />
+                <div className={`absolute z-30 flex items-center gap-0.5 top-1/2 -translate-y-1/2 ${mine ? 'right-full mr-1' : 'left-full ml-1'}`}>
+                  <div className="relative">
+                    <button type="button" title="React" aria-label="React"
+                      onClick={(e) => { e.stopPropagation(); setOpenMenuId(null); setEmojiBarFor(emojiBarFor === message.id ? null : message.id); }}
+                      className="w-[26px] h-[26px] rounded-full flex items-center justify-center transition-colors hover-panel-alt"
+                      style={{ color: 'var(--text-dim)' }}>
+                      <FaRegFaceSmile size={14} />
+                    </button>
+                    {emojiBarFor === message.id && (
+                      <div className={`absolute z-40 ${activePicker.dir === 'up' ? 'bottom-full mb-1' : 'top-full mt-1'} ${mine ? 'right-0' : 'left-0'}`}>
+                        <div className="flex items-center rounded-2xl" style={{ background: 'var(--panel)', border: '1px solid var(--border)', boxShadow: '0 4px 14px rgba(0,0,0,0.28)' }}>
+                          {QUICK_EMOJIS.map((e) => (
+                            <button key={e} onClick={() => { toggleReaction(message.id, e); setEmojiBarFor(null); }}
+                              className="flex w-8 h-8 text-[16px] items-center justify-center transition-colors first:rounded-l-2xl last:rounded-r-2xl hover-panel-alt">{e}</button>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                  <div className="relative">
+                      <button type="button" title="More actions" aria-label="More actions"
+                        onClick={(e) => { e.stopPropagation(); calcToolbarDir(e.currentTarget, message.id); setEmojiBarFor(null); setOpenMenuId(openMenuId === message.id ? null : message.id); }}
+                        className="w-[26px] h-[26px] rounded-full flex items-center justify-center transition-colors hover-panel-alt" style={{ color: 'var(--text-dim)' }}>
+                        <FaEllipsisVertical size={14} />
                       </button>
                       {openMenuId === message.id && (
                         <div className={`absolute z-30 w-52 rounded-xl overflow-hidden py-1 ${mine ? 'right-0' : 'left-0'} ${(msgDirs[message.id] ?? 'up') === 'up' ? 'bottom-full mb-1' : 'top-full mt-1'}`}
@@ -1367,7 +1384,6 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
                           )}
                         </div>
                       )}
-                    </div>
                   </div>
                 </div>
               )}
