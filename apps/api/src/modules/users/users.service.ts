@@ -39,6 +39,7 @@ export class UsersService {
       select: {
         id: true, username: true, display_name: true,
         avatar_url: true, department: true, role: true, status: true,
+        last_seen_at: true,
       },
     });
     if (!row || row.status !== 'active') return null;
@@ -49,6 +50,7 @@ export class UsersService {
       avatarUrl: row.avatar_url,
       department: row.department,
       role: row.role,
+      lastSeenAt: row.last_seen_at,
     };
   }
 

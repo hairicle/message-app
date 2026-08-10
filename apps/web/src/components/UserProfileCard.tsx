@@ -5,6 +5,7 @@ import { apiFetch } from '../lib/api/client';
 import * as conversationsApi from '../lib/api/conversations';
 import { FaPen, FaRegPaperPlane } from 'react-icons/fa6';
 import { useAuth } from '../context/AuthContext';
+import { formatLastSeen } from '../utils/lastSeen';
 import { Badge } from './ui';
 
 /**
@@ -25,6 +26,7 @@ export interface PublicProfile {
   avatarUrl: string | null;
   department: string | null;
   role: string;
+  lastSeenAt?: string | null;
 }
 
 interface UserProfileCardProps {
@@ -138,6 +140,13 @@ export function UserProfileCard({
           <h3 className="text-[17px] font-bold text-center leading-snug" style={{ color: 'var(--text)' }}>{name}</h3>
           {profile && (
             <p className="font-mono text-[12.5px] mt-0.5" style={{ color: 'var(--text-dim)' }}>@{profile.username}</p>
+          )}
+
+          {/* Only when they are away: "last seen" about someone who is here reads as a mistake. */}
+          {profile && online === false && formatLastSeen(profile.lastSeenAt) && (
+            <p className="text-[11.5px] font-mono mt-1.5" style={{ color: 'var(--text-dim)' }}>
+              Last seen {formatLastSeen(profile.lastSeenAt)}
+            </p>
           )}
 
           {profile && (

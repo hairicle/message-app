@@ -362,6 +362,7 @@ model users {
   avatar_url                                  String?
   department                                  String?
   role                                        String                    @default("staff")
+  last_seen_at                                DateTime?                 @db.Timestamptz(6)
   ldap_dn                                     String?                   @unique
   password_hash                               String?
   status                                      user_status               @default(active)

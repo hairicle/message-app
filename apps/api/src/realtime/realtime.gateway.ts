@@ -145,6 +145,12 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 
     const sockets = await this.io.in(`user:${user.id}`).fetchSockets();
     if (sockets.length === 0) {
+      // Only when the last one goes: closing one of three tabs is not leaving, and recording it
+      // as such would make someone who is plainly here look like they left a moment ago.
+      await this.prisma.users.update({
+        where: { id: user.id },
+        data: { last_seen_at: new Date() },
+      }).catch(() => {});
       await this.markOffline(user.id);
       await this.broadcastPresence(user.id, 'offline');
     }
