@@ -15,6 +15,7 @@ import { NewConversationDialog } from '@/components/NewConversationDialog';
 import { AdminDashboard } from '@/components/AdminDashboard';
 import { AnnounceWorkspace } from '@/components/AnnounceWorkspace';
 import { ProfilePanel } from '@/components/ProfilePanel';
+import { OPEN_CONVERSATION_EVENT, OPEN_OWN_PROFILE_EVENT } from '@/components/UserProfileCard';
 import { useConfirm } from '@/components/ConfirmDialog';
 import { BrandLogo } from '@/components/BrandLogo';
 import { ComingSoon, type ComingSoonProps } from '@/components/ComingSoon';
@@ -232,6 +233,34 @@ export default function ChatPage() {
     document.title = totalUnread > 0 ? `(${totalUnread > 99 ? '99+' : totalUnread}) Internal Messenger` : 'Internal Messenger';
     return () => { document.title = 'Internal Messenger'; };
   }, [totalUnread]);
+
+  // Requests from the profile card, which is rendered too deep to reach this state directly.
+  useEffect(() => {
+    const openConversation = (e: Event) => {
+      const id = (e as CustomEvent<{ conversationId: string }>).detail?.conversationId;
+      if (!id) return;
+      setSection('chat');
+      setSelectedId(id);
+      // The row may be brand new. The socket announces it too, but not before this runs, and a
+      // selected conversation missing from the list would show an empty sidebar selection.
+      setConversations((prev) => {
+        if (prev.some((c) => c.id === id)) return prev;
+        conversationsApi.getConversation(id)
+          .then(({ conversation }) => setConversations((cur) =>
+            cur.some((c) => c.id === conversation.id) ? cur : [conversation, ...cur]))
+          .catch(() => {});
+        return prev;
+      });
+    };
+    const openOwnProfile = () => setShowProfile(true);
+
+    window.addEventListener(OPEN_CONVERSATION_EVENT, openConversation);
+    window.addEventListener(OPEN_OWN_PROFILE_EVENT, openOwnProfile);
+    return () => {
+      window.removeEventListener(OPEN_CONVERSATION_EVENT, openConversation);
+      window.removeEventListener(OPEN_OWN_PROFILE_EVENT, openOwnProfile);
+    };
+  }, []);
 
   // Reset unread for a conversation when user navigates to it
   const clearConvUnread = useCallback((convId: string) => {

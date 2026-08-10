@@ -310,6 +310,25 @@ export class ConversationsService {
   }) {
     const memberIds = [...new Set([userId, ...(body.memberIds ?? [])])];
 
+    // A direct conversation between two people is the pair, not an event — asking for one twice
+    // should return the one that exists rather than a second, empty copy. Without this, messaging
+    // the same colleague from two places splits the history between two chats, and neither shows
+    // the whole thing.
+    if (body.type === 'direct' && memberIds.length === 2) {
+      const candidates = await this.prisma.conversations.findMany({
+        where: {
+          type: 'direct',
+          AND: memberIds.map((id) => ({ conversation_members: { some: { user_id: id } } })),
+        },
+        select: { id: true, _count: { select: { conversation_members: true } } },
+        orderBy: { created_at: 'asc' },
+      });
+      // Both present is not enough — a group could contain them too, and an older direct
+      // conversation may have had someone removed from it.
+      const existing = candidates.find((c) => c._count.conversation_members === 2);
+      if (existing) return this.getConversation(existing.id, userId);
+    }
+
     // One statement rather than the previous per-member loop, so a failure part-way cannot leave
     // a conversation with only some of its members.
     const conversation = await this.prisma.conversations.create({

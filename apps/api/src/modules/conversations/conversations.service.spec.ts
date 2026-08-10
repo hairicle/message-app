@@ -79,6 +79,59 @@ describe('ConversationsService', () => {
     });
   });
 
+  describe('createConversation', () => {
+    const found = (rows: { id: string; count: number }[]) =>
+      prisma.conversations.findMany.mockResolvedValue(
+        rows.map((r) => ({ id: r.id, _count: { conversation_members: r.count } })),
+      );
+
+    // The bug: messaging the same colleague twice split the history across two chats.
+    it('returns the existing direct conversation instead of a second one', async () => {
+      found([{ id: 'existing', count: 2 }]);
+      prisma.conversation_members.findUnique.mockResolvedValue(MEMBER);
+      prisma.conversations.findUnique.mockResolvedValue({ id: 'existing', conversation_members: [] });
+
+      await service.createConversation(USER, { type: 'direct', memberIds: [OTHER] });
+
+      expect(prisma.conversations.create).not.toHaveBeenCalled();
+    });
+
+    // A group containing both people also matches "both are members".
+    it('ignores a conversation that has other people in it', async () => {
+      found([{ id: 'a-group', count: 5 }]);
+      prisma.conversations.create.mockResolvedValue({ id: 'new' });
+      prisma.conversation_members.findUnique.mockResolvedValue(MEMBER);
+      prisma.conversations.findUnique.mockResolvedValue({ id: 'new', conversation_members: [] });
+
+      await service.createConversation(USER, { type: 'direct', memberIds: [OTHER] });
+
+      expect(prisma.conversations.create).toHaveBeenCalled();
+    });
+
+    it('creates one when the pair has never spoken', async () => {
+      found([]);
+      prisma.conversations.create.mockResolvedValue({ id: 'new' });
+      prisma.conversation_members.findUnique.mockResolvedValue(MEMBER);
+      prisma.conversations.findUnique.mockResolvedValue({ id: 'new', conversation_members: [] });
+
+      await service.createConversation(USER, { type: 'direct', memberIds: [OTHER] });
+
+      expect(prisma.conversations.create).toHaveBeenCalled();
+    });
+
+    // Two groups with the same people are two legitimately different groups.
+    it('never reuses anything for a group', async () => {
+      prisma.conversations.create.mockResolvedValue({ id: 'new' });
+      prisma.conversation_members.findUnique.mockResolvedValue(MEMBER);
+      prisma.conversations.findUnique.mockResolvedValue({ id: 'new', conversation_members: [] });
+
+      await service.createConversation(USER, { type: 'group', name: 'g', memberIds: [OTHER] });
+
+      expect(prisma.conversations.findMany).not.toHaveBeenCalled();
+      expect(prisma.conversations.create).toHaveBeenCalled();
+    });
+  });
+
   describe('group management', () => {
     const asGroup = () => prisma.conversations.findUnique.mockResolvedValue({ type: 'group' });
     const roleIs = (...roles: (string | null)[]) => {

@@ -2,7 +2,21 @@
 
 import { useEffect, useState } from 'react';
 import { apiFetch } from '../lib/api/client';
+import * as conversationsApi from '../lib/api/conversations';
+import { FaPen, FaRegPaperPlane } from 'react-icons/fa6';
+import { useAuth } from '../context/AuthContext';
 import { Badge } from './ui';
+
+/**
+ * How the card asks the app to do something it cannot reach itself.
+ *
+ * It is rendered from inside Avatar, which appears in message rows, member lists and headers
+ * alike — none of which know about conversation selection. Threading a callback through every one
+ * of those call sites to serve a single button would be a lot of prop for very little, so the
+ * card announces the intent and the chat page acts on it.
+ */
+export const OPEN_CONVERSATION_EVENT = 'messenger:open-conversation';
+export const OPEN_OWN_PROFILE_EVENT = 'messenger:open-own-profile';
 
 export interface PublicProfile {
   id: string;
@@ -51,6 +65,33 @@ export function UserProfileCard({
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose, photoOpen]);
+
+  const { user } = useAuth();
+  const isSelf = user?.id === userId;
+  const [opening, setOpening] = useState(false);
+  const [openError, setOpenError] = useState<string | null>(null);
+
+  /**
+   * Open a direct conversation with this person.
+   *
+   * The server returns the existing one when there is already a pair, so pressing this twice does
+   * not leave two chats each holding half the history.
+   */
+  async function startConversation() {
+    setOpening(true);
+    setOpenError(null);
+    try {
+      const { conversation } = await conversationsApi.createConversation({
+        type: 'direct',
+        memberIds: [userId],
+      });
+      window.dispatchEvent(new CustomEvent(OPEN_CONVERSATION_EVENT, { detail: { conversationId: conversation.id } }));
+      onClose();
+    } catch (err) {
+      setOpenError((err as Error).message || 'Could not open a conversation');
+      setOpening(false);
+    }
+  }
 
   const name = profile?.displayName ?? fallbackName;
   const avatar = profile?.avatarUrl ?? fallbackAvatarUrl ?? null;
@@ -117,6 +158,30 @@ export function UserProfileCard({
             <p className="text-[14px]" style={{ color: profile.department ? 'var(--text)' : 'var(--text-dim)' }}>
               {profile.department ?? 'Not assigned'}
             </p>
+          </div>
+        )}
+
+        {profile && (
+          <div className="px-6 pb-5 pt-4">
+            {isSelf ? (
+              <button
+                type="button"
+                onClick={() => { window.dispatchEvent(new CustomEvent(OPEN_OWN_PROFILE_EVENT)); onClose(); }}
+                className="btn-ghost w-full justify-center"
+              >
+                <FaPen size={12} /> Edit profile
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={startConversation}
+                disabled={opening}
+                className="btn-primary w-full justify-center disabled:opacity-40"
+              >
+                <FaRegPaperPlane size={12} /> {opening ? 'Opening…' : 'Message'}
+              </button>
+            )}
+            {openError && <p className="mt-2 text-[11px] text-center" style={{ color: 'var(--danger)' }}>{openError}</p>}
           </div>
         )}
 
