@@ -359,6 +359,9 @@ export class MessagesService {
       messageId,
       conversationId: message.conversation_id,
       userId,
+      // The cutoff this moves them to. Sent alongside so a client can update its record without
+      // needing that message to be one it has loaded.
+      readAt: message.created_at,
     });
   }
 

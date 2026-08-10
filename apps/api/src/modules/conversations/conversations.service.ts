@@ -325,6 +325,7 @@ export class ConversationsService {
           select: {
             role: true,
             joined_at: true,
+            last_read_message_id: true,
             users: { select: { id: true, username: true, display_name: true, avatar_url: true } },
           },
         },
@@ -333,6 +334,20 @@ export class ConversationsService {
     if (!conversation) throw new NotFoundException('Conversation not found');
 
     const { conversation_members, ...rest } = conversation;
+
+    // Resolved in one query rather than a relation: last_read_message_id has no foreign key to
+    // messages, and reading each member's cutoff separately would be a round-trip per person.
+    const cutoffIds = conversation_members
+      .map((m) => m.last_read_message_id)
+      .filter((id): id is string => !!id);
+    const cutoffTimes = cutoffIds.length
+      ? await this.prisma.messages.findMany({
+          where: { id: { in: cutoffIds } },
+          select: { id: true, created_at: true },
+        })
+      : [];
+    const readAtById = new Map(cutoffTimes.map((m) => [m.id, m.created_at]));
+
     return {
       ...rest,
       // Same snake_case member shape the json_build_object produced — the web app reads
@@ -344,6 +359,7 @@ export class ConversationsService {
         avatar_url: m.users.avatar_url,
         role: m.role,
         joined_at: m.joined_at,
+        last_read_at: m.last_read_message_id ? readAtById.get(m.last_read_message_id) ?? null : null,
       })),
     };
   }

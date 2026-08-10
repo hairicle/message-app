@@ -58,6 +58,13 @@ export interface ConversationMember {
   username: string;
   display_name: string;
   avatar_url: string | null;
+  /**
+   * When this member last read up to, as the timestamp of their last-read message.
+   *
+   * Read state is one cutoff per member, so "has this person seen that message?" is a comparison
+   * of times rather than a per-message record. Null means they have read nothing yet.
+   */
+  last_read_at?: string | null;
 }
 
 export interface Conversation {

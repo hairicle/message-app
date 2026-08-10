@@ -343,7 +343,7 @@ describe('ConversationsService', () => {
       const out = await service.getConversation(CONV, USER);
       expect(out.members[0]).toEqual({
         user_id: USER, username: 'a', display_name: 'Ann', avatar_url: null,
-        role: 'owner', joined_at: new Date('2026-07-01T00:00:00Z'),
+        role: 'owner', joined_at: new Date('2026-07-01T00:00:00Z'), last_read_at: null,
       });
       // The json_agg this replaced had no ORDER BY, so order varied between identical calls.
       expect(prisma.conversations.findUnique.mock.calls[0][0].include.conversation_members.orderBy)

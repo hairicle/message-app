@@ -102,7 +102,14 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
-  const [readReceipts, setReadReceipts] = useState<Record<string, Set<string>>>({});
+  /**
+   * How far each member has read, as an ISO timestamp.
+   *
+   * A cutoff per person rather than a set of ids per message: that is how the server stores it,
+   * and it is the only shape that can answer "has this person seen that message?" for messages
+   * that were already read before this session began.
+   */
+  const [readCutoffs, setReadCutoffs] = useState<Record<string, string>>({});
   const [uploading, setUploading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [lightbox, setLightbox] = useState<{ items: LightboxItem[]; index: number } | null>(null);
@@ -192,11 +199,18 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
     });
     setMessages([]);
     setConversation(null);
-    setReadReceipts({});
+    setReadCutoffs({});
     setTypingUsers(new Set());
 
     conversationsApi.getConversation(conversationId).then(({ conversation }) => {
-      if (!cancelled) setConversation(conversation);
+      if (cancelled) return;
+      setConversation(conversation);
+      // Seeded from the server, or nothing read before this session would ever show as read.
+      const seeded: Record<string, string> = {};
+      for (const m of conversation.members ?? []) {
+        if (m.last_read_at) seeded[m.user_id] = new Date(m.last_read_at).toISOString();
+      }
+      setReadCutoffs(seeded);
     }).catch(() => {});
 
     setHasOlder(false);
@@ -240,11 +254,15 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
       if (payload.conversationId !== conversationId) return;
       setTypingUsers((prev) => { const next = new Set(prev); next.delete(payload.userId); return next; });
     };
-    const handleMessageRead = (payload: { messageId: string; userId: string }) => {
-      setReadReceipts((prev) => {
-        const set = new Set(prev[payload.messageId] ?? []);
-        set.add(payload.userId);
-        return { ...prev, [payload.messageId]: set };
+    const handleMessageRead = (payload: { messageId: string; userId: string; readAt?: string }) => {
+      // Falls back to the message's own time when the event predates readAt being sent.
+      const at = payload.readAt ?? messages.find((m) => m.id === payload.messageId)?.createdAt;
+      if (!at) return;
+      setReadCutoffs((prev) => {
+        const current = prev[payload.userId];
+        // Only ever forward, matching the server: an out-of-order receipt must not un-read.
+        if (current && new Date(current) >= new Date(at)) return prev;
+        return { ...prev, [payload.userId]: new Date(at).toISOString() };
       });
     };
     const handleMessageEdited = (payload: MessageEditResult) => {
@@ -1482,7 +1500,15 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
           if (absorbed.has(message.id)) return null;
           const album = albums.get(message.id) ?? null;
           const mine = message.senderId === user!.id;
-          const read = other ? readReceipts[message.id]?.has(other.user_id) : false;
+          // Everyone who has read this far, excluding its sender: whether the author has read
+          // their own message is not a question anyone asks.
+          const readers = mine
+            ? (conversation.members ?? []).filter((m) =>
+                m.user_id !== user!.id
+                && readCutoffs[m.user_id]
+                && new Date(readCutoffs[m.user_id]) >= new Date(message.createdAt))
+            : [];
+          const read = readers.length > 0;
           const text = decodeMessageText(message.ciphertext);
           const sender = membersById.get(message.senderId ?? '');
           const isEditing = editingMessageId === message.id;
@@ -1657,7 +1683,17 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
                     </span>
                     <span className="font-mono text-[10px]" style={{ color: 'var(--text-dim)' }}>
                       {msgDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      {mine && read && ' · ✓✓'}
+                      {mine && read && (
+                        <span
+                          title={readers.map((r) => r.display_name).join(', ')}
+                          className="cursor-default"
+                        >
+                          {' · ✓✓'}
+                          {/* In a direct conversation "read" is unambiguous; in a group the
+                              useful part is how many of them, and by whom. */}
+                          {isGroup && ` ${readers.length}`}
+                        </span>
+                      )}
                     </span>
                     {bookmarkIds.has(message.id) && (
                       <FaBookmark size={12} className="flex-shrink-0" style={{ color: 'var(--warning)' }} />

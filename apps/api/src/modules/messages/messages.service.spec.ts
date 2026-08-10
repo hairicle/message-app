@@ -527,7 +527,7 @@ describe('MessagesService', () => {
       expect(prisma.conversation_members.update).toHaveBeenCalledWith(
         expect.objectContaining({ data: { last_read_message_id: MSG } }),
       );
-      expect(seen).toEqual([{ messageId: MSG, conversationId: CONV, userId: USER }]);
+      expect(seen).toEqual([{ messageId: MSG, conversationId: CONV, userId: USER, readAt: NEWER }]);
     });
 
     // The client marks what it can see and those arrive in no order; a blind write would move the
