@@ -5,6 +5,14 @@ import { PrismaService } from '../../database/prisma.service';
 import { AvatarStorageService } from '../../common/avatar-storage.service';
 import { AvatarUrlService } from '../../common/avatar-url.service';
 
+/**
+ * The smallest group worth calling one — the creator plus two others.
+ *
+ * Mirrored by MIN_GROUP_MEMBERS in apps/web/src/components/NewConversationDialog.tsx, which uses it
+ * to disable the button rather than let the request travel and come back rejected.
+ */
+const MIN_GROUP_MEMBERS = 3;
+
 /** ciphertext is bytea; the SQL form decoded it with convert_from(…, 'UTF8'). */
 const decode = (bytes: Uint8Array) => Buffer.from(bytes).toString('utf8');
 
@@ -368,6 +376,18 @@ export class ConversationsService {
     type: string; name?: string; description?: string; memberIds?: string[]; teamId?: string;
   }) {
     const memberIds = [...new Set([userId, ...(body.memberIds ?? [])])];
+    const name = body.name?.trim() || null;
+
+    // A group of two is a direct conversation wearing a name, and it behaves worse than one: the
+    // pair-reuse above does not apply to groups, so the same two people end up with a group and a
+    // direct chat holding half a conversation each. The dialog disables the button below three,
+    // but a disabled button is a suggestion — the rule has to hold here, where the row is written.
+    if (body.type === 'group') {
+      if (!name) throw new BadRequestException('A group needs a name');
+      if (memberIds.length < MIN_GROUP_MEMBERS) {
+        throw new BadRequestException(`A group needs at least ${MIN_GROUP_MEMBERS} people, including you`);
+      }
+    }
 
     // A direct conversation between two people is the pair, not an event — asking for one twice
     // should return the one that exists rather than a second, empty copy. Without this, messaging
@@ -393,7 +413,7 @@ export class ConversationsService {
     const conversation = await this.prisma.conversations.create({
       data: {
         type: body.type as conversation_type,
-        name: body.name ?? null,
+        name,
         description: body.description ?? null,
         team_id: body.teamId ?? null,
         created_by: userId,

@@ -8,6 +8,7 @@ import { createPrismaMock, MEMBER, type PrismaMock } from '../../testing/prisma-
 const CONV = 'conv-1';
 const USER = 'user-1';
 const OTHER = 'user-2';
+const THIRD = 'user-3';
 
 describe('ConversationsService', () => {
   let prisma: PrismaMock;
@@ -156,10 +157,63 @@ describe('ConversationsService', () => {
       prisma.conversation_members.findUnique.mockResolvedValue(MEMBER);
       prisma.conversations.findUnique.mockResolvedValue({ id: 'new', conversation_members: [] });
 
-      await service.createConversation(USER, { type: 'group', name: 'g', memberIds: [OTHER] });
+      await service.createConversation(USER, { type: 'group', name: 'g', memberIds: [OTHER, THIRD] });
 
       expect(prisma.conversations.findMany).not.toHaveBeenCalled();
       expect(prisma.conversations.create).toHaveBeenCalled();
+    });
+
+    // The dialog will not offer the button below three, but a disabled button is a suggestion.
+    describe('a group that is really a direct conversation', () => {
+      it('is refused when only one other person is in it', async () => {
+        await expect(
+          service.createConversation(USER, { type: 'group', name: 'g', memberIds: [OTHER] }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(prisma.conversations.create).not.toHaveBeenCalled();
+      });
+
+      // Repeating an id is how you would pad the count past the check without adding anyone.
+      it('is refused when the list is padded with duplicates', async () => {
+        await expect(
+          service.createConversation(USER, { type: 'group', name: 'g', memberIds: [OTHER, OTHER, USER] }),
+        ).rejects.toBeInstanceOf(BadRequestException);
+        expect(prisma.conversations.create).not.toHaveBeenCalled();
+      });
+
+      it('leaves direct conversations alone', async () => {
+        found([]);
+        prisma.conversations.create.mockResolvedValue({ id: 'new' });
+        prisma.conversation_members.findUnique.mockResolvedValue(MEMBER);
+        prisma.conversations.findUnique.mockResolvedValue({ id: 'new', conversation_members: [] });
+
+        await service.createConversation(USER, { type: 'direct', memberIds: [OTHER] });
+
+        expect(prisma.conversations.create).toHaveBeenCalled();
+      });
+    });
+
+    describe('the group name', () => {
+      const create = (name?: string) =>
+        service.createConversation(USER, { type: 'group', name, memberIds: [OTHER, THIRD] });
+
+      it('is required', async () => {
+        await expect(create(undefined)).rejects.toBeInstanceOf(BadRequestException);
+      });
+
+      // Whitespace passed the old `if (!name)` and produced a group whose title rendered blank.
+      it('cannot be only whitespace', async () => {
+        await expect(create('   ')).rejects.toBeInstanceOf(BadRequestException);
+      });
+
+      it('is trimmed before it is stored', async () => {
+        prisma.conversations.create.mockResolvedValue({ id: 'new' });
+        prisma.conversation_members.findUnique.mockResolvedValue(MEMBER);
+        prisma.conversations.findUnique.mockResolvedValue({ id: 'new', conversation_members: [] });
+
+        await create('  Standup  ');
+
+        expect(prisma.conversations.create.mock.calls[0][0].data.name).toBe('Standup');
+      });
     });
   });
 
@@ -394,12 +448,13 @@ describe('ConversationsService', () => {
       asMember();
       prisma.conversations.findUnique.mockResolvedValue({ id: CONV, conversation_members: [] });
 
-      await service.createConversation(USER, { type: 'group', memberIds: [OTHER] });
+      await service.createConversation(USER, { type: 'group', name: 'g', memberIds: [OTHER, THIRD] });
 
       const rows = prisma.conversations.create.mock.calls[0][0].data.conversation_members.createMany.data;
       expect(rows).toEqual([
         { user_id: USER, role: 'owner' },
         { user_id: OTHER, role: 'member' },
+        { user_id: THIRD, role: 'member' },
       ]);
     });
 
@@ -408,7 +463,7 @@ describe('ConversationsService', () => {
       asMember();
       prisma.conversations.findUnique.mockResolvedValue({ id: CONV, conversation_members: [] });
 
-      await service.createConversation(USER, { type: 'group', memberIds: [USER, OTHER] });
+      await service.createConversation(USER, { type: 'group', name: 'g', memberIds: [USER, OTHER, THIRD] });
 
       const rows = prisma.conversations.create.mock.calls[0][0].data.conversation_members.createMany.data;
       expect(rows.filter((r: { user_id: string }) => r.user_id === USER)).toHaveLength(1);
