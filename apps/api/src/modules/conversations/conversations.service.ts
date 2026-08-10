@@ -1,5 +1,6 @@
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { Prisma, conversation_type, member_role, message_type } from '@prisma/client';
+import { EventEmitter } from 'node:events';
 import { PrismaService } from '../../database/prisma.service';
 import { AvatarStorageService } from '../../common/avatar-storage.service';
 import { AvatarUrlService } from '../../common/avatar-url.service';
@@ -23,6 +24,15 @@ const fileDto = (f: {
 
 @Injectable()
 export class ConversationsService {
+  /**
+   * Emits 'conversation:created' with the members' ids.
+   *
+   * Sockets join their conversation rooms once, at connect. Anyone already online when a
+   * conversation is created therefore never joined its room, and received nothing from it until
+   * they reloaded — so the realtime layer has to be told the moment one appears.
+   */
+  readonly events = new EventEmitter();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly avatarStorage: AvatarStorageService,
@@ -189,6 +199,7 @@ export class ConversationsService {
       select: { id: true },
     });
 
+    this.events.emit('conversation:created', { conversationId: conversation.id, memberIds });
     return this.getConversation(conversation.id, userId);
   }
 

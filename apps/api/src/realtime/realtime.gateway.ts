@@ -14,6 +14,7 @@ import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../database/prisma.service';
 import { RedisService } from '../redis/redis.service';
 import { MessagesService } from '../modules/messages/messages.service';
+import { ConversationsService } from '../modules/conversations/conversations.service';
 import type { AuthPayload } from '@messenger/shared';
 import { AccountStatusService } from '../common/account-status.service';
 
@@ -32,6 +33,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     private readonly prisma: PrismaService,
     private readonly redis: RedisService,
     private readonly messages: MessagesService,
+    private readonly conversations: ConversationsService,
     private readonly accountStatus: AccountStatusService,
   ) {}
 
@@ -60,6 +62,21 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.messages.events.on('message:read', (payload: { conversationId: string }) => {
       this.io?.to(`conversation:${payload.conversationId}`).emit('message:read', payload);
     });
+
+    // Rooms are joined once, at connect. Without this, anyone already online when a conversation
+    // was created never joined its room and saw nothing from it until they reloaded — a brand new
+    // chat looked silent to the person who did not open it.
+    this.conversations.events.on(
+      'conversation:created',
+      ({ conversationId, memberIds }: { conversationId: string; memberIds: string[] }) => {
+        for (const id of memberIds) {
+          this.io?.in(`user:${id}`).socketsJoin(`conversation:${conversationId}`);
+        }
+        // Their conversation list does not know this exists yet, so tell it rather than leaving
+        // the first message to arrive for a conversation the client would discard.
+        this.io?.to(memberIds.map((id) => `user:${id}`)).emit('conversation:new', { conversationId });
+      },
+    );
   }
 
   async handleConnection(socket: AuthedSocket) {

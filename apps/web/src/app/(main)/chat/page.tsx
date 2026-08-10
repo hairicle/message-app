@@ -181,16 +181,31 @@ export default function ChatPage() {
         });
         return next;
       });
+    // Someone started a conversation with us while we were online. onMsg discards messages for
+    // a conversation it does not know, so without this the first message of a brand new chat
+    // would arrive and be dropped, and the chat itself would not appear until a reload.
+    const onNewConversation = ({ conversationId }: { conversationId: string }) => {
+      setConversations((prev) => {
+        if (prev.some((c) => c.id === conversationId)) return prev;
+        conversationsApi.getConversation(conversationId)
+          .then(({ conversation }) => setConversations((cur) =>
+            cur.some((c) => c.id === conversation.id) ? cur : [conversation, ...cur]))
+          .catch(() => {});
+        return prev;
+      });
+    };
     const reqPresence = () => socket.emit('presence:get');
     socket.on('presence:init', onInit);
     socket.on('presence:update', onUpdate);
     socket.on('message:new', onMsg);
+    socket.on('conversation:new', onNewConversation);
     socket.on('connect', reqPresence);
     if (socket.connected) reqPresence();
     return () => {
       socket.off('presence:init', onInit);
       socket.off('presence:update', onUpdate);
       socket.off('message:new', onMsg);
+      socket.off('conversation:new', onNewConversation);
       socket.off('connect', reqPresence);
     };
   }, [socket]);
