@@ -1,4 +1,6 @@
 import { Controller, Get, Post, Patch, Delete, Param, Body, Query, UseGuards } from '@nestjs/common';
+import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import type { AuthPayload } from '@messenger/shared';
 import { AdminService } from './admin.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -16,31 +18,32 @@ export class AdminController {
   }
 
   @Post('users/:id/disable')
-  disableUser(@Param('id') id: string) {
-    return this.adminService.disableUser(id);
+  disableUser(@Param('id') id: string, @CurrentUser() user: AuthPayload) {
+    return this.adminService.disableUser(id, user.id);
   }
 
   @Post('users/:id/enable')
-  enableUser(@Param('id') id: string) {
-    return this.adminService.enableUser(id);
+  enableUser(@Param('id') id: string, @CurrentUser() user: AuthPayload) {
+    return this.adminService.enableUser(id, user.id);
   }
 
   @Patch('users/:id')
   updateUser(
     @Param('id') id: string,
     @Body() body: { displayName?: string; username?: string; email?: string; role?: string; department?: string | null; status?: string },
+    @CurrentUser() user: AuthPayload,
   ) {
-    return this.adminService.updateUser(id, body);
+    return this.adminService.updateUser(id, body, user.id);
   }
 
   @Delete('users/:id')
-  deleteUser(@Param('id') id: string) {
-    return this.adminService.deleteUser(id);
+  deleteUser(@Param('id') id: string, @CurrentUser() user: AuthPayload) {
+    return this.adminService.deleteUser(id, user.id);
   }
 
   @Post('users/:id/role')
-  changeRole(@Param('id') id: string, @Body() body: { role: string }) {
-    return this.adminService.changeUserRole(id, body.role);
+  changeRole(@Param('id') id: string, @Body() body: { role: string }, @CurrentUser() user: AuthPayload) {
+    return this.adminService.changeUserRole(id, body.role, user.id);
   }
 
   @Post('users/import')
@@ -49,8 +52,8 @@ export class AdminController {
   }
 
   @Post('sync-department-teams')
-  syncDepartmentTeams() {
-    return this.adminService.syncDepartmentTeams();
+  syncDepartmentTeams(@CurrentUser() user: AuthPayload) {
+    return this.adminService.syncDepartmentTeams(user.id);
   }
 
   @Get('audit-logs')
