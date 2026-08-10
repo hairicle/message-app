@@ -11,6 +11,7 @@ const MODELS = [
   'user_bookmarks',
   'files',
   'users',
+  'audit_logs',
 ] as const;
 
 const METHODS = [

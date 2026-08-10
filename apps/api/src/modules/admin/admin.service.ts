@@ -51,6 +51,58 @@ export class AdminService {
   }
 
   /**
+   * Refuse changes that would lock the system, or the person making them, out.
+   *
+   * Three rules, and they are not the same rule:
+   *
+   * Deleting or disabling your own account is refused outright. Both take effect immediately and
+   * neither can be undone from inside the product — a disabled admin cannot re-enable themselves,
+   * because every request they make is now refused. There is always another way to do it: ask
+   * someone else. Stepping down by changing your own role is allowed, because that is a normal
+   * thing to want and it leaves you able to sign in.
+   *
+   * Separately, no action may leave the system with no active administrator. That holds whoever
+   * is being changed — removing the last admin is the same problem whether it is yourself or a
+   * colleague — and it is the only thing standing between a routine tidy-up and a database that
+   * can only be recovered with SQL.
+   */
+  private async assertNotLockout(
+    actorId: string | null,
+    targetId: string,
+    change: { role?: string; status?: string; deleting?: boolean },
+  ) {
+    const isSelf = !!actorId && actorId === targetId;
+    if (isSelf && change.deleting) {
+      throw new BadRequestException('You cannot delete your own account. Ask another administrator to do it.');
+    }
+    if (isSelf && change.status === 'disabled') {
+      throw new BadRequestException('You cannot disable your own account. Ask another administrator to do it.');
+    }
+
+    const target = await this.prisma.users.findUnique({
+      where: { id: targetId },
+      select: { role: true, status: true },
+    });
+    // Only an active admin can be the last one; anyone else leaves the count unchanged.
+    if (!target || target.role !== 'admin' || target.status !== 'active') return;
+
+    const losesAdmin =
+      change.deleting
+      || (change.role !== undefined && change.role !== 'admin')
+      || (change.status !== undefined && change.status !== 'active');
+    if (!losesAdmin) return;
+
+    const remaining = await this.prisma.users.count({
+      where: { role: 'admin', status: 'active', id: { not: targetId } },
+    });
+    if (remaining === 0) {
+      throw new BadRequestException(
+        'This is the only administrator. Make someone else an administrator first.',
+      );
+    }
+  }
+
+  /**
    * Record an administrative action.
    *
    * Audit writing was lost in the NestJS refactor: the table and the screen that reads it both
@@ -93,6 +145,7 @@ export class AdminService {
   // an unknown id, whereas Prisma's update throws P2025. Keeping the no-op preserves the
   // controllers' current responses.
   async disableUser(targetId: string, actorId: string | null = null) {
+    await this.assertNotLockout(actorId, targetId, { status: 'disabled' });
     await this.prisma.users.updateMany({ where: { id: targetId }, data: { status: 'disabled' } });
     await this.authService.blockUser(targetId);
     await this.record(actorId, 'admin.user.disabled', targetId);
@@ -119,6 +172,12 @@ export class AdminService {
     if ('department' in fields) data.department = fields.department ?? null;
     if (fields.status !== undefined) data.status = this.normaliseStatus(fields.status);
 
+    // After normalising, so the check sees the value that would actually be stored.
+    await this.assertNotLockout(actorId, targetId, {
+      role: data.role as string | undefined,
+      status: data.status as string | undefined,
+    });
+
     if (Object.keys(data).length > 0) {
       data.updated_at = new Date();
       await this.prisma.users.updateMany({ where: { id: targetId }, data });
@@ -134,6 +193,7 @@ export class AdminService {
   }
 
   async deleteUser(targetId: string, actorId: string | null = null) {
+    await this.assertNotLockout(actorId, targetId, { deleting: true });
     // Read first: once the row is gone there is nothing left to say who was removed, and an audit
     // entry naming only a uuid is of little use to whoever reads it later.
     const target = await this.prisma.users.findUnique({
@@ -150,6 +210,7 @@ export class AdminService {
 
   async changeUserRole(targetId: string, role: string, actorId: string | null = null) {
     const normalised = this.normaliseRole(role);
+    await this.assertNotLockout(actorId, targetId, { role: normalised });
     const before = await this.prisma.users.findUnique({ where: { id: targetId }, select: { role: true } });
     await this.prisma.users.updateMany({ where: { id: targetId }, data: { role: normalised } });
     // Both ends recorded: a role change is the one admin action where what it was matters as much
