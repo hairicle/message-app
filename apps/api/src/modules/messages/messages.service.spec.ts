@@ -448,16 +448,89 @@ describe('MessagesService', () => {
 
   // ── search ────────────────────────────────────────────────────────────────────
   describe('searchMessages', () => {
-    it('escapes LIKE wildcards so they cannot widen the match', async () => {
-      await service.searchMessages('100%_off', USER);
-      const params = prisma.$queryRaw.mock.calls[0].slice(1);
-      const pattern = params.find((p: unknown) => typeof p === 'string' && p.includes('off'));
-      expect(pattern).toBe('%100!%!_off%');
+    /** A row as the current client writes it: base64 of UTF-8, stored as bytes. */
+    const encoded = (text: string, over: Record<string, unknown> = {}) => ({
+      id: MSG, conversation_id: CONV, sender_id: USER, type: 'text',
+      ciphertext: Buffer.from(Buffer.from(text, 'utf8').toString('base64'), 'utf8'),
+      created_at: new Date(), edited_at: null, deleted_at: null, ...over,
+    });
+    /** A row from before the client encoded anything. */
+    const plain = (text: string) => encoded('', { ciphertext: Buffer.from(text, 'utf8') });
+
+    // The bug this replaces: matching ran against the stored base64, so the words a person
+    // typed could never hit.
+    it('finds a message by the text the user typed, not its encoding', async () => {
+      prisma.messages.findMany.mockResolvedValue([encoded('zebracrossing at dawn')]);
+      const results = await service.searchMessages('zebracrossing', USER);
+      expect(results).toHaveLength(1);
     });
 
-    it('passes the user id so the join restricts results to their conversations', async () => {
+    it('still finds messages stored as plain text from before encoding', async () => {
+      prisma.messages.findMany.mockResolvedValue([plain('legacy plaintext row')]);
+      expect(await service.searchMessages('plaintext', USER)).toHaveLength(1);
+    });
+
+    it('matches case-insensitively', async () => {
+      prisma.messages.findMany.mockResolvedValue([encoded('Quarterly Report')]);
+      expect(await service.searchMessages('quarterly', USER)).toHaveLength(1);
+    });
+
+    it('matches non-ASCII text', async () => {
+      prisma.messages.findMany.mockResolvedValue([encoded('អក្សរខ្មែរ and مرحبا')]);
+      expect(await service.searchMessages('مرحبا', USER)).toHaveLength(1);
+    });
+
+    it('excludes messages that do not contain the query', async () => {
+      prisma.messages.findMany.mockResolvedValue([encoded('nothing relevant here')]);
+      expect(await service.searchMessages('zebracrossing', USER)).toEqual([]);
+    });
+
+    // Matching the encoding as well as the text would let a short query hit arbitrary
+    // alphanumeric runs inside the base64 of messages that do not contain the word.
+    it('does not match against the base64 the text is stored as', async () => {
+      prisma.messages.findMany.mockResolvedValue([encoded('zebracrossing at dawn')]);
+      const b64 = Buffer.from('zebracrossing at dawn', 'utf8').toString('base64').slice(0, 10);
+      expect(await service.searchMessages(b64, USER)).toEqual([]);
+    });
+
+    it('returns ciphertext in its stored form, since the client decodes it', async () => {
+      prisma.messages.findMany.mockResolvedValue([encoded('hello there')]);
+      const [hit] = await service.searchMessages('hello', USER) as { ciphertext: string }[];
+      expect(hit.ciphertext).toBe(Buffer.from('hello there', 'utf8').toString('base64'));
+    });
+
+    it('restricts the scan to conversations the caller belongs to', async () => {
+      prisma.messages.findMany.mockResolvedValue([]);
       await service.searchMessages('hello', USER);
-      expect(prisma.$queryRaw.mock.calls[0].slice(1)).toContain(USER);
+      const where = prisma.messages.findMany.mock.calls[0][0].where;
+      expect(where.conversations.conversation_members.some.user_id).toBe(USER);
+      expect(where.deleted_at).toBeNull();
+    });
+
+    it('scopes to one conversation when asked', async () => {
+      prisma.messages.findMany.mockResolvedValue([]);
+      await service.searchMessages('hello', USER, CONV);
+      expect(prisma.messages.findMany.mock.calls[0][0].where.conversation_id).toBe(CONV);
+    });
+
+    it('does not query at all for an empty search', async () => {
+      expect(await service.searchMessages('   ', USER)).toEqual([]);
+      expect(prisma.messages.findMany).not.toHaveBeenCalled();
+    });
+
+    it('caps the number of results returned', async () => {
+      prisma.messages.findMany.mockResolvedValue(
+        Array.from({ length: 80 }, () => encoded('repeated match')),
+      );
+      expect(await service.searchMessages('repeated', USER)).toHaveLength(50);
+    });
+
+    // A query containing % or _ was previously escaped for LIKE; a substring test needs no
+    // escaping, and these must now be treated as ordinary characters.
+    it('treats LIKE wildcards as literal characters', async () => {
+      prisma.messages.findMany.mockResolvedValue([encoded('100% off_today'), encoded('unrelated')]);
+      expect(await service.searchMessages('100%_off', USER)).toEqual([]);
+      expect(await service.searchMessages('100% off_today', USER)).toHaveLength(1);
     });
   });
 

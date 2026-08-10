@@ -6,6 +6,42 @@ import { PrismaService } from '../../database/prisma.service';
 /** ciphertext is bytea; the SQL form decoded it with convert_from(…, 'UTF8'). */
 const decode = (bytes: Uint8Array) => Buffer.from(bytes).toString('utf8');
 
+/**
+ * How many recent messages a search reads before giving up.
+ *
+ * Matching cannot happen in SQL (see searchMessages), so the scan is bounded rather than
+ * unlimited. Well beyond any conversation in this deployment, and small enough that a search
+ * cannot pull the table into memory.
+ */
+const SEARCH_SCAN_LIMIT = 4000;
+const SEARCH_RESULT_LIMIT = 50;
+
+const BASE64_SHAPE = /^[A-Za-z0-9+/]+={0,2}$/;
+
+/**
+ * The text a person actually typed, from what the column holds.
+ *
+ * The web client base64-encodes message bodies before sending, so the stored bytes are the
+ * base64 *string*, not the words. Messages predating that still hold plain UTF-8, and the client
+ * has always fallen back for them — this mirrors that, and returns both readings so a caller can
+ * match either without having to guess which era a row came from.
+ */
+export function searchableText(bytes: Uint8Array): string {
+  const raw = Buffer.from(bytes).toString('utf8');
+  if (raw.length === 0 || raw.length % 4 !== 0 || !BASE64_SHAPE.test(raw)) return raw;
+
+  const decoded = Buffer.from(raw, 'base64').toString('utf8');
+  // A plain word can look like base64 — "test" is four valid characters. Decoding one produces
+  // bytes that are not valid UTF-8, which surfaces as replacement characters; that row was never
+  // encoded, so match its text as written.
+  if (decoded.includes('�')) return raw;
+
+  // Only the decoded text. Searching the base64 as well would let a short query match arbitrary
+  // alphanumeric runs inside the encoding — "the" appears in plenty of base64 that does not
+  // contain the word — and every hit would be one the reader cannot see in the message.
+  return decoded;
+}
+
 type FileRow = {
   id: string; file_name: string; mime_type: string; size_bytes: bigint;
   has_thumbnail: boolean; duration_secs: number | null; created_at: Date;
@@ -267,24 +303,55 @@ export class MessagesService {
    * bytea column. Prisma's filters operate on the stored bytes, so there is no builder equivalent
    * — and decoding every message in the process to filter in JS is not an option at this size.
    */
+  /**
+   * Find messages containing `q`.
+   *
+   * This cannot be an ILIKE in SQL. Bodies are stored base64-encoded, so the column holds
+   * "emVicmFjcm9zc2luZw==" where the person typed "zebracrossing" — comparing the query against
+   * it matched the encoding rather than the words, and searching for anything a user would type
+   * returned nothing at all.
+   *
+   * So the rows are decoded here and matched in memory, bounded by SEARCH_SCAN_LIMIT. Membership
+   * is still enforced by the query, not by the filter, so the scan can only ever see
+   * conversations the caller belongs to.
+   *
+   * `ciphertext` is returned in its stored form, exactly as before — the client decodes it, and
+   * handing back plaintext would leave it decoding text that was never encoded.
+   */
   async searchMessages(q: string, userId: string, conversationId?: string) {
-    const pattern = `%${q.replace(/[!%_]/g, '!$&')}%`;
-    return this.prisma.$queryRaw<unknown[]>`
-      SELECT m.id,
-             m.conversation_id AS "conversationId",
-             m.sender_id       AS "senderId",
-             m.type,
-             convert_from(m.ciphertext, 'UTF8') AS ciphertext,
-             m.created_at AS "createdAt",
-             m.edited_at  AS "editedAt",
-             m.deleted_at AS "deletedAt"
-      FROM messages m
-      JOIN conversation_members cm ON cm.conversation_id = m.conversation_id AND cm.user_id = ${userId}::uuid
-      WHERE m.deleted_at IS NULL
-        AND convert_from(m.ciphertext, 'UTF8') ILIKE ${pattern} ESCAPE '!'
-        AND (${conversationId ?? null}::uuid IS NULL OR m.conversation_id = ${conversationId ?? null}::uuid)
-      ORDER BY m.created_at DESC
-      LIMIT 50`;
+    const needle = q.trim().toLowerCase();
+    if (!needle) return [];
+
+    const rows = await this.prisma.messages.findMany({
+      where: {
+        deleted_at: null,
+        ...(conversationId ? { conversation_id: conversationId } : {}),
+        conversations: { conversation_members: { some: { user_id: userId } } },
+      },
+      orderBy: { created_at: 'desc' },
+      take: SEARCH_SCAN_LIMIT,
+      select: {
+        id: true, conversation_id: true, sender_id: true, type: true,
+        ciphertext: true, created_at: true, edited_at: true, deleted_at: true,
+      },
+    });
+
+    const hits: unknown[] = [];
+    for (const m of rows) {
+      if (!searchableText(m.ciphertext).toLowerCase().includes(needle)) continue;
+      hits.push({
+        id: m.id,
+        conversationId: m.conversation_id,
+        senderId: m.sender_id,
+        type: m.type,
+        ciphertext: decode(m.ciphertext),
+        createdAt: m.created_at,
+        editedAt: m.edited_at,
+        deletedAt: m.deleted_at,
+      });
+      if (hits.length >= SEARCH_RESULT_LIMIT) break;
+    }
+    return hits;
   }
 
   async listPinned(conversationId: string, userId: string) {
