@@ -168,7 +168,16 @@ export default function ChatPage() {
             // no longer produces "Sent a image".
             const body = messagePreview({ type: m.type, ciphertext: m.ciphertext });
             try {
-              new Notification(senderName, { body, tag: c.id });
+              const note = new Notification(senderName, { body, tag: c.id });
+              // Clicking it had no effect at all, so the notification told you a message existed
+              // and then left you to find it. It now brings the window forward and opens the
+              // conversation it came from.
+              note.onclick = () => {
+                window.focus();
+                setSection('chat');
+                setSelectedId(c.id);
+                note.close();
+              };
             } catch (err) {
               console.warn('Desktop notification failed to display:', err);
             }
