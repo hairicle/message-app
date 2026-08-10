@@ -201,6 +201,14 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   /** Picking several messages at once, to forward or delete them together. */
   const [selectMode, setSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  /**
+   * Whether the first page has come back yet.
+   *
+   * An empty list means two different things — nothing has been said, or nothing has arrived yet
+   * — and telling someone to start a conversation that already has a hundred messages in it,
+   * because the request is still in flight, would be worse than the blank it replaces.
+   */
+  const [messagesLoaded, setMessagesLoaded] = useState(false);
   const [jumping, setJumping] = useState(false);
   const jumpingRef = useRef(false);
   const [staged, setStaged] = useState<StagedFile[]>([]);
@@ -237,13 +245,15 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
     }).catch(() => {});
 
     setHasOlder(false);
+    setMessagesLoaded(false);
     messagesApi.listMessages(conversationId).then(({ messages }) => {
       // Backend already returns oldest → newest (ORDER BY created_at DESC, then reversed server-side)
       if (cancelled) return;
       setMessages(messages);
+      setMessagesLoaded(true);
       // A short page means this is the whole conversation; a full one means there may be more.
       setHasOlder(messages.length >= MESSAGE_PAGE_SIZE);
-    }).catch(() => {});
+    }).catch(() => { if (!cancelled) setMessagesLoaded(true); });
 
     messagesApi.getPinnedMessages(conversationId).then(({ pinned }) => {
       if (!cancelled) {
@@ -1606,6 +1616,20 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
             )}
           </div>
         )}
+        {/* Nothing said yet. Only once the first page is back, and only when the outbox is empty
+            too — a message waiting to send is not nothing, and inviting someone to start a
+            conversation they have just written in would read as though it had been lost. */}
+        {messagesLoaded && messages.length === 0 && outbox.length === 0 && (
+          <div className="flex-1 flex flex-col items-center justify-center px-8 text-center gap-1">
+            <p className="text-[14px]" style={{ color: 'var(--text-muted)' }}>
+              {other ? `This is the start of your conversation with ${other.display_name}.` : 'No messages here yet.'}
+            </p>
+            <p className="text-[12.5px]" style={{ color: 'var(--text-dim)' }}>
+              {other ? 'Say hello.' : 'Send the first message to get things going.'}
+            </p>
+          </div>
+        )}
+
         {messages.map((message, index) => {
           // Already drawn as a tile in the album its first message opened.
           if (absorbed.has(message.id)) return null;
