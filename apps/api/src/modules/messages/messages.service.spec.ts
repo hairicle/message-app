@@ -488,6 +488,30 @@ describe('MessagesService', () => {
     });
   });
 
+  describe('sendMessage broadcast', () => {
+    // The bug: only forwardMessage emitted, so a message sent over HTTP — the fallback whenever
+    // the socket is down — was stored and delivered to nobody.
+    it('announces the message it created', async () => {
+      prisma.conversation_members.findUnique.mockResolvedValue(MEMBER);
+      prisma.messages.create.mockResolvedValue({ id: MSG });
+      prisma.conversations.update.mockResolvedValue({});
+      prisma.messages.findUniqueOrThrow.mockResolvedValue({
+        id: MSG, conversation_id: CONV, sender_id: USER, type: 'text',
+        ciphertext: Buffer.from('hi', 'utf8'), reply_to_message_id: null,
+        created_at: new Date(), edited_at: null, deleted_at: null, files: [],
+      });
+
+      const seen: { id: string; conversationId: string }[] = [];
+      service.events.on('message:new', (m) => seen.push(m));
+      const returned = await service.sendMessage(CONV, USER, { ciphertext: 'hi' });
+
+      expect(seen).toHaveLength(1);
+      // The listener must receive the same shape the caller does, or a message renders
+      // differently depending on which route delivered it.
+      expect(seen[0]).toEqual(returned);
+    });
+  });
+
   describe('markRead', () => {
     const OLDER = new Date('2026-08-01T10:00:00Z');
     const NEWER = new Date('2026-08-01T11:00:00Z');

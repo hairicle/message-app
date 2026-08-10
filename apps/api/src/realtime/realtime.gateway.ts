@@ -42,9 +42,9 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       this.io?.in(`user:${userId}`).disconnectSockets(true);
     });
 
-    // Messages created over HTTP rather than through message:send — forwarding is the one that
-    // matters today. Without this they land in the database but nobody in the conversation sees
-    // them until a reload.
+    // Every created message, whichever transport made it — a send over the socket, a send over
+    // HTTP, or a forward. Relaying in one place is what keeps the two routes from diverging;
+    // this previously fired only for forwards, so an HTTP send reached nobody.
     this.messages.events.on('message:new', (message: { conversationId: string }) => {
       this.io?.to(`conversation:${message.conversationId}`).emit('message:new', message);
     });
@@ -209,8 +209,9 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     @MessageBody() payload: { conversationId: string; type?: string; ciphertext?: string; replyToMessageId?: string; fileId?: string },
   ) {
     try {
+      // No broadcast here — sendMessage emits and the subscription above relays it, so a socket
+      // send is delivered once rather than twice.
       const message = await this.messages.sendMessage(payload.conversationId, socket.data.user.id, payload);
-      this.io.to(`conversation:${payload.conversationId}`).emit('message:new', message);
       return { ok: true, message };
     } catch (err: unknown) {
       return { ok: false, error: err instanceof Error ? err.message : 'Failed to send message' };

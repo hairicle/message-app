@@ -192,7 +192,7 @@ export class MessagesService {
       },
     });
 
-    return {
+    const message = {
       id: m.id,
       conversationId: m.conversation_id,
       senderId: m.sender_id,
@@ -204,6 +204,12 @@ export class MessagesService {
       deletedAt: m.deleted_at,
       file: fileDto(m.files),
     };
+
+    // Announced here rather than by whichever transport carried the send. Only forwarding used
+    // to emit, so a message posted over HTTP — which is what the web client falls back to
+    // whenever its socket is down — was stored and delivered to nobody.
+    this.events.emit('message:new', message);
+    return message;
   }
 
   async editMessage(messageId: string, userId: string, ciphertext: string) {
