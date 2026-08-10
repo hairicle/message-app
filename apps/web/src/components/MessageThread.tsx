@@ -30,6 +30,7 @@ import { FaArrowRotateRight, FaBookmark, FaCheck, FaEllipsisVertical, FaRegFaceS
 import { attachmentNoun } from '../utils/messagePreview';
 import { groupingFor } from '../utils/messageGrouping';
 import { groupReactions } from '../utils/reactionSummary';
+import { compressImage } from '../utils/imageCompression';
 import { ReplyPreview } from './ReplyPreview';
 import { MessageAlbum } from './MessageAlbum';
 import { buildAlbums } from '../utils/messageAlbums';
@@ -89,6 +90,11 @@ interface StagedFile {
   file: File;
   /** Object URL for images and video, so the strip shows the picture rather than a filename. */
   previewUrl?: string;
+  /**
+   * How it should be sent. "media" renders as a photo or a clip and is resized on the way out;
+   * "file" keeps the original bytes and arrives as a download.
+   */
+  mode: 'media' | 'file';
   /** 0–1 while uploading. */
   progress: number;
   status: 'staged' | 'uploading' | 'failed';
@@ -763,6 +769,8 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
         previewUrl: file.type.startsWith('image/') || file.type.startsWith('video/')
           ? URL.createObjectURL(file)
           : undefined,
+        // Media defaults to being shown; everything else can only be a file anyway.
+        mode: (file.type.startsWith('image/') || file.type.startsWith('video/')) ? 'media' as const : 'file' as const,
         progress: 0,
         status: 'staged' as const,
       })),
@@ -787,13 +795,18 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   async function sendStaged(item: StagedFile, replyToId: string | undefined): Promise<boolean> {
     setStaged((prev) => prev.map((f) => (f.id === item.id ? { ...f, status: 'uploading', progress: 0, error: undefined } : f)));
     try {
-      const { file: meta } = await filesApi.uploadFile(item.file, item.file.name, {
+      // Only resized when it is going to be shown. Sending as a file means the original, which is
+      // the entire reason for offering the choice.
+      const payload = item.mode === 'media' ? await compressImage(item.file) : item.file;
+      const { file: meta } = await filesApi.uploadFile(payload, payload.name, {
         onProgress: (fraction) =>
           setStaged((prev) => prev.map((f) => (f.id === item.id ? { ...f, progress: fraction } : f))),
       });
       await dispatchMessage({
         conversationId,
-        type: attachmentTypeForMime(item.file.type),
+        // Sent as a file, it is a file — that is what makes it arrive as a download with its name
+        // and size rather than as a picture.
+        type: item.mode === 'file' ? 'file' : attachmentTypeForMime(item.file.type),
         fileId: meta.id,
         replyToMessageId: replyToId,
       });
@@ -2313,6 +2326,28 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
                 >
                   <FaXmark size={10} />
                 </button>
+              )}
+              {/* Only for media: everything else can only be sent as a file, so a choice would
+                  be a control with one option. */}
+              {(f.file.type.startsWith('image/') || f.file.type.startsWith('video/')) && f.status !== 'uploading' && (
+                <div className="mt-1 flex rounded-md overflow-hidden" style={{ border: '1px solid var(--border)' }}>
+                  {(['media', 'file'] as const).map((mode) => (
+                    <button
+                      key={mode}
+                      type="button"
+                      onClick={() => setStaged((prev) => prev.map((x) => (x.id === f.id ? { ...x, mode } : x)))}
+                      title={mode === 'media'
+                        ? 'Shown in the conversation, resized a little'
+                        : 'Sent as a download, at its original size'}
+                      className="flex-1 text-[9.5px] font-mono py-0.5 transition-colors"
+                      style={f.mode === mode
+                        ? { background: 'var(--accent)', color: '#fff' }
+                        : { background: 'transparent', color: 'var(--text-dim)' }}
+                    >
+                      {mode === 'media' ? (f.file.type.startsWith('video/') ? 'Video' : 'Photo') : 'File'}
+                    </button>
+                  ))}
+                </div>
               )}
               <p className="mt-1 text-[10px] truncate" style={{ color: 'var(--text-dim)' }} title={f.file.name}>{f.file.name}</p>
             </div>
