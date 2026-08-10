@@ -1,6 +1,6 @@
 import {
   Controller, Get, Post, Delete, Patch, Put, Body, Param, Query, UseGuards, HttpCode, HttpStatus,
-  UseInterceptors, UploadedFile, ParseFilePipe, MaxFileSizeValidator,
+  UseInterceptors, UploadedFile, ParseFilePipe, MaxFileSizeValidator, BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { ConversationsService } from './conversations.service';
@@ -37,6 +37,20 @@ export class ConversationsController {
   ) {
     const conversation = await this.conversationsService.updateAvatar(id, user.id, file);
     return { conversation };
+  }
+
+  /** `until` is an ISO timestamp, or null to unmute. */
+  @Post(':id/mute')
+  async setMuted(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthPayload,
+    @Body() body: { until?: string | null },
+  ) {
+    const until = body.until ? new Date(body.until) : null;
+    if (until && Number.isNaN(until.getTime())) {
+      throw new BadRequestException('until must be an ISO timestamp, or null');
+    }
+    return this.conversationsService.setMuted(id, user.id, until);
   }
 
   @Patch(':id')

@@ -39,6 +39,18 @@ export function removeConversationMember(id: string, userId: string) {
   );
 }
 
+/**
+ * Silence a conversation for yourself until `until`, or pass null to unmute.
+ *
+ * Per member, so quieting a busy group does not quieten it for everyone else in it.
+ */
+export function setConversationMuted(id: string, until: Date | null) {
+  return apiFetch<{ conversationId: string; mutedUntil: string | null }>(
+    `/api/conversations/${id}/mute`,
+    { method: 'POST', body: JSON.stringify({ until: until ? until.toISOString() : null }) },
+  );
+}
+
 /** Group picture. The server re-checks that the caller is an owner or admin. */
 export function uploadConversationAvatar(id: string, file: Blob, fileName = 'avatar.png') {
   const fd = new FormData();

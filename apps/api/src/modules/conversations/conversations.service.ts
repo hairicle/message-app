@@ -116,6 +116,29 @@ export class ConversationsService {
     }
   }
 
+  /**
+   * Silence a conversation for this member, or let it speak again.
+   *
+   * Stored as the moment it stops being muted rather than a flag, so "for eight hours" needs no
+   * scheduled job to undo it — the row simply stops being in the future. Muting indefinitely is
+   * the same shape with a date far enough out to never arrive.
+   *
+   * Per member, not per conversation: muting is a preference of the person, not a property of
+   * the group, and one person quieting a busy channel must not quieten it for everyone.
+   */
+  async setMuted(conversationId: string, userId: string, until: Date | null) {
+    await this.assertMember(conversationId, userId);
+    if (until && until.getTime() <= Date.now()) {
+      throw new BadRequestException('A mute has to end in the future');
+    }
+
+    await this.prisma.conversation_members.update({
+      where: { conversation_id_user_id: { conversation_id: conversationId, user_id: userId } },
+      data: { muted_until: until },
+    });
+    return { conversationId, mutedUntil: until };
+  }
+
   /** Rename a group, or change what it says it is for. */
   async updateDetails(conversationId: string, userId: string, data: { name?: string; description?: string }) {
     await this.assertGroupAdmin(conversationId, userId);

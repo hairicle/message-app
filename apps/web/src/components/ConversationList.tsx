@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { Conversation } from '@messenger/shared';
 import { getConversationTitle, getOtherMember } from '../utils/conversation';
 import { messagePreview } from '../utils/messagePreview';
+import { FaBellSlash } from 'react-icons/fa6';
 import { Avatar, SearchInput } from './ui';
 
 interface ConversationListProps {
@@ -80,8 +81,13 @@ export function ConversationList({
 
                 {/* Name + subtitle */}
                 <div className="flex-1 min-w-0">
-                  <p className="text-[14px] font-medium truncate" style={{ color: isActive ? 'var(--text)' : 'var(--text-muted)' }}>
-                    {title}
+                  <p className="text-[14px] font-medium truncate flex items-center gap-1.5" style={{ color: isActive ? 'var(--text)' : 'var(--text-muted)' }}>
+                    <span className="truncate">{title}</span>
+                    {/* Said out loud, or a conversation that never makes a sound looks broken
+                        rather than muted. */}
+                    {conversation.is_muted && (
+                      <FaBellSlash size={10} className="flex-shrink-0" style={{ color: 'var(--text-dim)' }} title="Muted" />
+                    )}
                   </p>
                   <p
                     className="text-[12px] truncate font-mono"

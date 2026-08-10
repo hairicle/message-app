@@ -79,6 +79,37 @@ describe('ConversationsService', () => {
     });
   });
 
+  describe('setMuted', () => {
+    it('stores the moment the mute ends', async () => {
+      asMember();
+      const until = new Date(Date.now() + 3600_000);
+      await service.setMuted(CONV, USER, until);
+      expect(prisma.conversation_members.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { muted_until: until } }),
+      );
+    });
+
+    it('clears it when unmuting', async () => {
+      asMember();
+      await service.setMuted(CONV, USER, null);
+      expect(prisma.conversation_members.update.mock.calls[0][0].data.muted_until).toBeNull();
+    });
+
+    // A past date would store a mute that is already over, which reads as muted and is not.
+    it('refuses an end time that has already passed', async () => {
+      asMember();
+      await expect(service.setMuted(CONV, USER, new Date(Date.now() - 1000)))
+        .rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.conversation_members.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses someone who is not a member', async () => {
+      asNonMember();
+      await expect(service.setMuted(CONV, OTHER, null)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.conversation_members.update).not.toHaveBeenCalled();
+    });
+  });
+
   describe('createConversation', () => {
     const found = (rows: { id: string; count: number }[]) =>
       prisma.conversations.findMany.mockResolvedValue(
@@ -323,6 +354,37 @@ describe('ConversationsService', () => {
       asMember();
       prisma.conversations.findUnique.mockResolvedValue(null);
       await expect(service.getConversation(CONV, USER)).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('setMuted', () => {
+    it('stores the moment the mute ends', async () => {
+      asMember();
+      const until = new Date(Date.now() + 3600_000);
+      await service.setMuted(CONV, USER, until);
+      expect(prisma.conversation_members.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { muted_until: until } }),
+      );
+    });
+
+    it('clears it when unmuting', async () => {
+      asMember();
+      await service.setMuted(CONV, USER, null);
+      expect(prisma.conversation_members.update.mock.calls[0][0].data.muted_until).toBeNull();
+    });
+
+    // A past date would store a mute that is already over, which reads as muted and is not.
+    it('refuses an end time that has already passed', async () => {
+      asMember();
+      await expect(service.setMuted(CONV, USER, new Date(Date.now() - 1000)))
+        .rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.conversation_members.update).not.toHaveBeenCalled();
+    });
+
+    it('refuses someone who is not a member', async () => {
+      asNonMember();
+      await expect(service.setMuted(CONV, OTHER, null)).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.conversation_members.update).not.toHaveBeenCalled();
     });
   });
 

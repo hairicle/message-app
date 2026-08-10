@@ -13,7 +13,7 @@ import type {
 import { useFileBlobUrl } from '../hooks/useFileBlobUrl';
 import { getConversationTitle, getOtherMember } from '../utils/conversation';
 import { formatFileSize } from '../utils/format';
-import { FaCamera, FaCheck, FaEye, FaPen, FaPlus, FaRightFromBracket, FaShare, FaTrash, FaXmark } from 'react-icons/fa6';
+import { FaBell, FaBellSlash, FaCamera, FaCheck, FaEye, FaPen, FaPlus, FaRightFromBracket, FaShare, FaTrash, FaXmark } from 'react-icons/fa6';
 import { Avatar, Badge } from './ui';
 import { AvatarCropDialog } from './AvatarCropDialog';
 import { useConfirm } from './ConfirmDialog';
@@ -98,6 +98,8 @@ export function ConversationInfoPanel({
   const [addSearch, setAddSearch] = useState('');
   const [addSelected, setAddSelected] = useState<Set<string>>(new Set());
   const [busyMemberId, setBusyMemberId] = useState<string | null>(null);
+  const [muteMenuOpen, setMuteMenuOpen] = useState(false);
+  const [savingMute, setSavingMute] = useState(false);
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [avatarError, setAvatarError] = useState<string | null>(null);
   const avatarInputRef = useRef<HTMLInputElement>(null);
@@ -223,6 +225,45 @@ export function ConversationInfoPanel({
       window.alert((err as Error).message);
     } finally {
       setBusyMemberId(null);
+    }
+  }
+
+  /** Durations offered, and what "indefinitely" means in a column that stores a date. */
+  const MUTE_OPTIONS: { label: string; hours: number | null }[] = [
+    { label: 'For 1 hour', hours: 1 },
+    { label: 'For 8 hours', hours: 8 },
+    { label: 'For 1 week', hours: 24 * 7 },
+    { label: 'Until I turn it back on', hours: null },
+  ];
+
+  async function applyMute(hours: number | null) {
+    setSavingMute(true);
+    setMuteMenuOpen(false);
+    try {
+      // A hundred years reads the same as forever to anyone using this, and keeps the column a
+      // date rather than needing a separate "muted indefinitely" flag alongside it.
+      const until = hours === null
+        ? new Date(Date.now() + 100 * 365 * 24 * 3600_000)
+        : new Date(Date.now() + hours * 3600_000);
+      await conversationsApi.setConversationMuted(conversation.id, until);
+      onConversationUpdated({ ...conversation, is_muted: true });
+    } catch (err) {
+      window.alert((err as Error).message);
+    } finally {
+      setSavingMute(false);
+    }
+  }
+
+  async function unmute() {
+    setSavingMute(true);
+    setMuteMenuOpen(false);
+    try {
+      await conversationsApi.setConversationMuted(conversation.id, null);
+      onConversationUpdated({ ...conversation, is_muted: false });
+    } catch (err) {
+      window.alert((err as Error).message);
+    } finally {
+      setSavingMute(false);
     }
   }
 
@@ -417,12 +458,42 @@ export function ConversationInfoPanel({
             </div>
           )}
 
+          {/* Muting is per person, so it is offered on direct conversations too. */}
+          <div className="relative w-full mt-4">
+            <button
+              type="button"
+              onClick={() => (conversation.is_muted ? unmute() : setMuteMenuOpen((v) => !v))}
+              disabled={savingMute}
+              className="w-full flex items-center justify-center gap-2 py-2 rounded-lg text-[13px] font-mono transition-colors disabled:opacity-40 hover-panel-alt"
+              style={{ color: conversation.is_muted ? 'var(--accent)' : 'var(--text-muted)', border: '1px solid var(--border)' }}
+            >
+              {conversation.is_muted ? <FaBellSlash size={12} /> : <FaBell size={12} />}
+              {conversation.is_muted ? 'Muted — turn back on' : 'Mute notifications'}
+            </button>
+
+            {muteMenuOpen && (
+              <>
+                <div className="fixed inset-0 z-30" onClick={() => setMuteMenuOpen(false)} />
+                <div className="absolute z-40 left-0 right-0 mt-1 rounded-xl overflow-hidden py-1"
+                  style={{ background: 'var(--panel)', border: '1px solid var(--border)', boxShadow: '0 12px 32px rgba(0,0,0,0.4)' }}>
+                  {MUTE_OPTIONS.map((o) => (
+                    <button key={o.label} type="button" onClick={() => applyMute(o.hours)}
+                      className="w-full text-left px-4 py-2 text-[13px] transition-colors hover-panel-alt"
+                      style={{ color: 'var(--text-muted)' }}>
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
           {isGroup && (
             <button
               type="button"
               onClick={() => removeMember(currentUserId, 'you')}
               disabled={busyMemberId === currentUserId}
-              className="w-full mt-4 flex items-center justify-center gap-2 py-2 rounded-lg text-[13px] font-mono transition-colors disabled:opacity-40"
+              className="w-full mt-2 flex items-center justify-center gap-2 py-2 rounded-lg text-[13px] font-mono transition-colors disabled:opacity-40"
               style={{ color: 'var(--danger)', border: '1px solid var(--danger-border)' }}
             >
               <FaRightFromBracket size={12} />

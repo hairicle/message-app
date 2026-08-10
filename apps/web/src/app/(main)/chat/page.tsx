@@ -157,7 +157,9 @@ export default function ChatPage() {
         const isTeamChannelActive = sectionRef.current === 'teams' && !!c.team_id;
         const shouldIncrement = !isMyMessage && !isActive && !isTeamChannelActive;
 
-        if (shouldIncrement) {
+        // Muted conversations still count as unread — muting silences the interruption, it does
+        // not mark things read — but they make no sound and raise no notification.
+        if (shouldIncrement && !c.is_muted) {
           const prefs = notifyPrefsRef.current;
           if (prefs.soundEnabled) playNotificationSound();
           // Fires whenever this conversation isn't the one you're looking at — not gated on the
