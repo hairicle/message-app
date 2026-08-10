@@ -232,12 +232,17 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
 
   useEffect(() => {
     if (!socket || !user) return;
+    // Read state on the server is a single cutoff per member, so marking the newest message from
+    // someone else covers everything before it. This used to emit once per unread message, which
+    // meant opening a busy conversation fired a burst of events that all recorded the same fact.
+    let newest: Message | null = null;
     for (const message of messages) {
-      if (message.senderId !== user.id && !markedReadRef.current.has(message.id)) {
-        markedReadRef.current.add(message.id);
-        socket.emit('message:read', { messageId: message.id });
-      }
+      if (message.senderId && message.senderId !== user.id) newest = message;
     }
+    if (!newest || markedReadRef.current.has(newest.id)) return;
+
+    markedReadRef.current.add(newest.id);
+    socket.emit('message:read', { messageId: newest.id });
   }, [socket, user, messages]);
 
   function handleInputChange(value: string) {

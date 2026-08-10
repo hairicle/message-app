@@ -57,6 +57,9 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     this.messages.events.on('reaction:removed', (payload: { conversationId: string }) => {
       this.io?.to(`conversation:${payload.conversationId}`).emit('reaction:removed', payload);
     });
+    this.messages.events.on('message:read', (payload: { conversationId: string }) => {
+      this.io?.to(`conversation:${payload.conversationId}`).emit('message:read', payload);
+    });
   }
 
   async handleConnection(socket: AuthedSocket) {
@@ -239,6 +242,23 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       return { ok: true };
     } catch (err: unknown) {
       return { ok: false, error: err instanceof Error ? err.message : 'Failed to delete message' };
+    }
+  }
+
+  /**
+   * The client has always emitted this and nothing listened, so a message could be read and the
+   * sender never told — the tick never appeared for anyone.
+   */
+  @SubscribeMessage('message:read')
+  async handleMessageRead(
+    @ConnectedSocket() socket: AuthedSocket,
+    @MessageBody() payload: { messageId: string },
+  ) {
+    try {
+      await this.messages.markRead(payload.messageId, socket.data.user.id);
+      return { ok: true };
+    } catch (err: unknown) {
+      return { ok: false, error: err instanceof Error ? err.message : 'Failed to mark as read' };
     }
   }
 

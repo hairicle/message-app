@@ -340,11 +340,11 @@ describe('MessagesService', () => {
   // ── markRead ──────────────────────────────────────────────────────────────────
   describe('markRead', () => {
     it('updates only this user\'s membership row', async () => {
-      prisma.messages.findUnique.mockResolvedValue({ conversation_id: CONV });
-      prisma.conversation_members.updateMany.mockResolvedValue({ count: 1 });
+      prisma.messages.findUnique.mockResolvedValue({ conversation_id: CONV, created_at: new Date() });
+      prisma.conversation_members.findUnique.mockResolvedValue({ last_read_message_id: null });
       await service.markRead(MSG, USER);
-      expect(prisma.conversation_members.updateMany).toHaveBeenCalledWith({
-        where: { conversation_id: CONV, user_id: USER },
+      expect(prisma.conversation_members.update).toHaveBeenCalledWith({
+        where: { conversation_id_user_id: { conversation_id: CONV, user_id: USER } },
         data: { last_read_message_id: MSG },
       });
     });
@@ -352,7 +352,7 @@ describe('MessagesService', () => {
     it('is a no-op for an unknown message, as the SQL subquery was', async () => {
       prisma.messages.findUnique.mockResolvedValue(null);
       await expect(service.markRead('nope', USER)).resolves.toBeUndefined();
-      expect(prisma.conversation_members.updateMany).not.toHaveBeenCalled();
+      expect(prisma.conversation_members.update).not.toHaveBeenCalled();
     });
   });
 
@@ -485,6 +485,69 @@ describe('MessagesService', () => {
     it('reports a missing source message as not found', async () => {
       prisma.messages.findUnique.mockResolvedValue(null);
       await expect(service.forwardMessage(MSG, USER, 'target-conv')).rejects.toBeInstanceOf(NotFoundException);
+    });
+  });
+
+  describe('markRead', () => {
+    const OLDER = new Date('2026-08-01T10:00:00Z');
+    const NEWER = new Date('2026-08-01T11:00:00Z');
+    const listen = () => { const seen: unknown[] = []; service.events.on('message:read', (p) => seen.push(p)); return seen; };
+
+    it('advances the cutoff and announces it', async () => {
+      prisma.messages.findUnique.mockResolvedValue({ conversation_id: CONV, created_at: NEWER });
+      prisma.conversation_members.findUnique.mockResolvedValue({ last_read_message_id: null });
+      const seen = listen();
+
+      await service.markRead(MSG, USER);
+
+      expect(prisma.conversation_members.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: { last_read_message_id: MSG } }),
+      );
+      expect(seen).toEqual([{ messageId: MSG, conversationId: CONV, userId: USER }]);
+    });
+
+    // The client marks what it can see and those arrive in no order; a blind write would move the
+    // cutoff backwards and make already-read messages unread again.
+    it('never moves the cutoff backwards', async () => {
+      prisma.messages.findUnique
+        .mockResolvedValueOnce({ conversation_id: CONV, created_at: OLDER })
+        .mockResolvedValueOnce({ created_at: NEWER });
+      prisma.conversation_members.findUnique.mockResolvedValue({ last_read_message_id: 'newer-msg' });
+      const seen = listen();
+
+      await service.markRead(MSG, USER);
+
+      expect(prisma.conversation_members.update).not.toHaveBeenCalled();
+      expect(seen).toEqual([]);
+    });
+
+    it('is silent when the cutoff is already this message', async () => {
+      prisma.messages.findUnique.mockResolvedValue({ conversation_id: CONV, created_at: NEWER });
+      prisma.conversation_members.findUnique.mockResolvedValue({ last_read_message_id: MSG });
+      const seen = listen();
+
+      await service.markRead(MSG, USER);
+
+      expect(prisma.conversation_members.update).not.toHaveBeenCalled();
+      expect(seen).toEqual([]);
+    });
+
+    it('ignores a non-member', async () => {
+      prisma.messages.findUnique.mockResolvedValue({ conversation_id: CONV, created_at: NEWER });
+      prisma.conversation_members.findUnique.mockResolvedValue(null);
+      const seen = listen();
+
+      await service.markRead(MSG, OTHER);
+
+      expect(prisma.conversation_members.update).not.toHaveBeenCalled();
+      expect(seen).toEqual([]);
+    });
+
+    it('ignores an unknown message', async () => {
+      prisma.messages.findUnique.mockResolvedValue(null);
+      const seen = listen();
+      await service.markRead(MSG, USER);
+      expect(seen).toEqual([]);
     });
   });
 

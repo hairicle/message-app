@@ -312,17 +312,47 @@ export class MessagesService {
     this.events.emit('reaction:removed', { messageId, conversationId, userId, emoji });
   }
 
+  /**
+   * Record how far a member has read, and tell the conversation.
+   *
+   * Read state is one cutoff per member rather than a row per message, so this only ever moves
+   * forward: the client marks what it can see, those arrive in no particular order, and a blind
+   * write would drag the cutoff backwards and resurface messages as unread.
+   */
   async markRead(messageId: string, userId: string) {
     const message = await this.prisma.messages.findUnique({
       where: { id: messageId },
-      select: { conversation_id: true },
+      select: { conversation_id: true, created_at: true },
     });
     // The SQL's subquery returned NULL for an unknown message, so the UPDATE matched nothing.
     if (!message) return;
 
-    await this.prisma.conversation_members.updateMany({
-      where: { conversation_id: message.conversation_id, user_id: userId },
+    const member = await this.prisma.conversation_members.findUnique({
+      where: { conversation_id_user_id: { conversation_id: message.conversation_id, user_id: userId } },
+      select: { last_read_message_id: true },
+    });
+    if (!member) return;
+
+    if (member.last_read_message_id) {
+      if (member.last_read_message_id === messageId) return;
+      const current = await this.prisma.messages.findUnique({
+        where: { id: member.last_read_message_id },
+        select: { created_at: true },
+      });
+      if (current && current.created_at >= message.created_at) return;
+    }
+
+    await this.prisma.conversation_members.update({
+      where: { conversation_id_user_id: { conversation_id: message.conversation_id, user_id: userId } },
       data: { last_read_message_id: messageId },
+    });
+
+    // Announced only when the cutoff actually advanced, so re-opening a conversation that is
+    // already read is silent rather than a burst of events saying nothing new.
+    this.events.emit('message:read', {
+      messageId,
+      conversationId: message.conversation_id,
+      userId,
     });
   }
 
