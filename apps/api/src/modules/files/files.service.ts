@@ -11,6 +11,13 @@ interface FileRow {
   storage_key: string;
 }
 
+/**
+ * Longest edge of the preview the thread renders. Not a thumbnail in the usual sense — nothing
+ * else is shown for an image message, so this is the picture people actually look at.
+ */
+const THUMBNAIL_EDGE = 1280;
+const THUMBNAIL_QUALITY = 82;
+
 const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 
 // Long enough to cover the redirect plus a slow transfer of a 50 MB attachment; short enough that
@@ -88,11 +95,23 @@ export class FilesService {
     let mimeType = file.mimetype;
     let hasThumbnail = false;
 
-    // Generate thumbnail for images
+    // A preview for images.
+    //
+    // Called a thumbnail, but it is what the thread actually shows: a message bubble renders this
+    // rather than the original, so 400px at quality 75 was every photo in every conversation
+    // looking soft — a bubble is up to 280 CSS pixels, which is 560 real ones on a retina screen
+    // and 840 on a phone, so a 400px source was being enlarged before anyone saw it.
+    //
+    // 1280 at quality 82 is sharp at any of those sizes and still a fraction of a twelve-megapixel
+    // original, which is the point of not sending the original to a list of bubbles.
     if (file.mimetype.startsWith('image/')) {
       try {
         const sharp = (await import('sharp')).default;
-        const thumb = await sharp(buffer).resize(400, 400, { fit: 'inside', withoutEnlargement: true }).jpeg({ quality: 75 }).toBuffer();
+        const thumb = await sharp(buffer)
+          .rotate()
+          .resize(THUMBNAIL_EDGE, THUMBNAIL_EDGE, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: THUMBNAIL_QUALITY, mozjpeg: true })
+          .toBuffer();
         const thumbKey = `thumbnails/${storageKey}`;
         const thumbUrl = `${base}/storage/v1/object/${bucket}/${thumbKey}`;
         const uploadThumb = await fetch(thumbUrl, {

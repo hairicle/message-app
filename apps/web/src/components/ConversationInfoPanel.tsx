@@ -11,6 +11,7 @@ import type {
   MessageType,
 } from '@messenger/shared';
 import { useFileBlobUrl } from '../hooks/useFileBlobUrl';
+import { previewVariant } from '../utils/previewVariant';
 import { getConversationTitle, getOtherMember } from '../utils/conversation';
 import { formatFileSize } from '../utils/format';
 import { FaBell, FaBellSlash, FaCamera, FaCheck, FaEye, FaPen, FaPlus, FaRightFromBracket, FaShare, FaTrash, FaXmark } from 'react-icons/fa6';
@@ -744,7 +745,8 @@ function MediaThumb({
   onOpen: (file: FileMeta, type: MessageType) => void;
   ui: ItemInteraction;
 }) {
-  const variant = item.type === 'image' && item.file.hasThumbnail ? 'thumbnail' : 'original';
+  // Grid tiles are small, so the preview is the right choice whenever there is one.
+  const variant = item.type === 'image' ? previewVariant(item.file) : 'original';
   const url = useFileBlobUrl(item.file.id, variant);
 
   return (

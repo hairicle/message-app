@@ -2,6 +2,7 @@
 
 import type { FileMeta, Message, MessageType } from '@messenger/shared';
 import { useFileBlobUrl } from '../hooks/useFileBlobUrl';
+import { previewVariant } from '../utils/previewVariant';
 import { ATTACHMENT } from './MessageAttachment';
 import { albumSpans } from '../utils/messageAlbums';
 
@@ -53,7 +54,7 @@ function AlbumTile({
   onOpen: (file: FileMeta, type: MessageType) => void;
 }) {
   const file = message.file!;
-  const url = useFileBlobUrl(file.id, file.hasThumbnail ? 'thumbnail' : 'original');
+  const url = useFileBlobUrl(file.id, previewVariant(file));
   const ready = url && url !== 'error';
 
   return (

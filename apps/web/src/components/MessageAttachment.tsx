@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import type { FileMeta, MessageType } from '@messenger/shared';
 import { useFileBlobUrl } from '../hooks/useFileBlobUrl';
+import { previewVariant } from '../utils/previewVariant';
 import { formatFileSize } from '../utils/format';
 import { useWaveform } from '../hooks/useWaveform';
 
@@ -234,7 +235,7 @@ export function VoicePlayer({ url, isMine, fileName, durationSecs }: { url: stri
 }
 
 export function MessageAttachment({ type, file, isMine, compact, onOpen }: MessageAttachmentProps) {
-  const previewUrl = useFileBlobUrl(file?.id, file?.hasThumbnail ? 'thumbnail' : 'original');
+  const previewUrl = useFileBlobUrl(file?.id, previewVariant(file));
   const loadingStyle = { color: isMine ? 'var(--bg-deep)' : 'var(--text-dim)', opacity: 0.7 };
 
   // A message typed as an attachment whose file row is missing. Forwards made before the

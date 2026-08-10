@@ -3,6 +3,7 @@
 import type { FileMeta, MessageType } from '@messenger/shared';
 import { FaMicrophone, FaPaperclip } from 'react-icons/fa6';
 import { useFileBlobUrl } from '../hooks/useFileBlobUrl';
+import { previewVariant } from '../utils/previewVariant';
 import { decodeMessageText } from '../utils/text';
 import { attachmentNoun } from '../utils/messagePreview';
 import { formatFileSize } from '../utils/format';
@@ -32,7 +33,7 @@ export function ReplyPreview({ type, file, ciphertext, deleted, color, iconColor
   // short-circuits on that, and hooks cannot be called behind a branch.
   const thumbUrl = useFileBlobUrl(
     isMedia && file ? file.id : undefined,
-    file?.hasThumbnail ? 'thumbnail' : 'original',
+    previewVariant(file),
   );
 
   if (deleted) {
