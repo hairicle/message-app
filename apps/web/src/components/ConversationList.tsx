@@ -1,10 +1,10 @@
 'use client';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import type { Conversation } from '@messenger/shared';
 import { getConversationTitle, getOtherMember } from '../utils/conversation';
 import { messagePreview } from '../utils/messagePreview';
-import { FaBellSlash, FaThumbtack } from 'react-icons/fa6';
+import { FaBell, FaBellSlash, FaThumbtack } from 'react-icons/fa6';
 import { Avatar, SearchInput } from './ui';
 
 interface ConversationListProps {
@@ -14,6 +14,7 @@ interface ConversationListProps {
   presence: Record<string, 'online' | 'offline'>;
   onSelect: (id: string) => void;
   onTogglePin: (id: string, pinned: boolean) => void;
+  onToggleMute: (id: string, muted: boolean) => void;
 }
 
 export function ConversationList({
@@ -23,8 +24,14 @@ export function ConversationList({
   presence,
   onSelect,
   onTogglePin,
+  onToggleMute,
 }: ConversationListProps) {
   const [search, setSearch] = useState('');
+  /** The row whose menu is open, and where to draw it. */
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const longPressRef = useRef<number | null>(null);
+
+  const menuFor = menu ? conversations.find((c) => c.id === menu.id) ?? null : null;
 
   const filtered = conversations.filter((c) => {
     if (!search.trim()) return true;
@@ -73,6 +80,16 @@ export function ConversationList({
             <li key={conversation.id}>
               <button
                 onClick={() => onSelect(conversation.id)}
+                // Right-click here rather than a row of hover buttons: pinning and muting are
+                // occasional, and a control that is always visible costs every row width it
+                // could have given the name.
+                onContextMenu={(e) => { e.preventDefault(); setMenu({ id: conversation.id, x: e.clientX, y: e.clientY }); }}
+                onTouchStart={(e) => {
+                  const { clientX, clientY } = e.touches[0];
+                  longPressRef.current = window.setTimeout(() => setMenu({ id: conversation.id, x: clientX, y: clientY }), 450);
+                }}
+                onTouchEnd={() => { if (longPressRef.current) window.clearTimeout(longPressRef.current); }}
+                onTouchMove={() => { if (longPressRef.current) window.clearTimeout(longPressRef.current); }}
                 className="group w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-left transition-colors"
                 style={{
                   background: isActive ? 'var(--accent-wash)' : 'transparent',
@@ -118,32 +135,52 @@ export function ConversationList({
                   </span>
                 )}
 
-                {/* A span with a role rather than a button: the row is itself a button, and one
-                    cannot be nested inside another. */}
-                <span
-                  role="button"
-                  tabIndex={0}
-                  title={conversation.is_pinned ? 'Unpin' : 'Pin to top'}
-                  aria-label={conversation.is_pinned ? `Unpin ${title}` : `Pin ${title} to top`}
-                  onClick={(e) => { e.stopPropagation(); onTogglePin(conversation.id, !conversation.is_pinned); }}
-                  onKeyDown={(e) => {
-                    if (e.key !== 'Enter' && e.key !== ' ') return;
-                    e.preventDefault();
-                    e.stopPropagation();
-                    onTogglePin(conversation.id, !conversation.is_pinned);
-                  }}
-                  className={`flex-shrink-0 p-1 rounded-md cursor-pointer transition-opacity hover-panel-alt ${
-                    conversation.is_pinned ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-visible:opacity-100'
-                  }`}
-                  style={{ color: conversation.is_pinned ? 'var(--accent)' : 'var(--text-dim)' }}
-                >
-                  <FaThumbtack size={11} />
-                </span>
               </button>
             </li>
           );
         })}
       </ul>
+
+      {/* One menu for the whole list, drawn where the pointer was and clamped so it cannot open
+          off-screen. */}
+      {menu && menuFor && (
+        <>
+          <div
+            className="fixed inset-0 z-40"
+            onClick={() => setMenu(null)}
+            onContextMenu={(e) => { e.preventDefault(); setMenu(null); }}
+          />
+          <div
+            className="fixed z-50 w-52 rounded-xl overflow-hidden py-1"
+            style={{
+              top: Math.min(menu.y, typeof window !== 'undefined' ? window.innerHeight - 130 : menu.y),
+              left: Math.min(menu.x, typeof window !== 'undefined' ? window.innerWidth - 220 : menu.x),
+              background: 'var(--panel)',
+              border: '1px solid var(--border)',
+              boxShadow: '0 12px 32px rgba(0,0,0,0.4)',
+            }}
+          >
+            <button
+              type="button"
+              onClick={() => { onTogglePin(menuFor.id, !menuFor.is_pinned); setMenu(null); }}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover-panel-alt"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              <FaThumbtack size={12} style={{ color: 'var(--text-dim)' }} />
+              {menuFor.is_pinned ? 'Unpin' : 'Pin to top'}
+            </button>
+            <button
+              type="button"
+              onClick={() => { onToggleMute(menuFor.id, !menuFor.is_muted); setMenu(null); }}
+              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors hover-panel-alt"
+              style={{ color: 'var(--text-muted)' }}
+            >
+              {menuFor.is_muted ? <FaBell size={12} style={{ color: 'var(--text-dim)' }} /> : <FaBellSlash size={12} style={{ color: 'var(--text-dim)' }} />}
+              {menuFor.is_muted ? 'Unmute' : 'Mute notifications'}
+            </button>
+          </div>
+        </>
+      )}
     </div>
   );
 }

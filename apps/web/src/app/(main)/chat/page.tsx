@@ -281,6 +281,18 @@ export default function ChatPage() {
     }
   }, []);
 
+  const toggleMute = useCallback(async (id: string, muted: boolean) => {
+    setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, is_muted: muted } : c)));
+    try {
+      // From the list, muting has no duration attached — a date far enough out never to arrive,
+      // matching what "until I turn it back on" means in the info panel. The panel is where the
+      // timed options live, since choosing one is a deliberate act rather than a quick toggle.
+      await conversationsApi.setConversationMuted(id, muted ? new Date(Date.now() + 100 * 365 * 24 * 3600_000) : null);
+    } catch {
+      setConversations((prev) => prev.map((c) => (c.id === id ? { ...c, is_muted: !muted } : c)));
+    }
+  }, []);
+
   // Reset unread for a conversation when user navigates to it
   const clearConvUnread = useCallback((convId: string) => {
     setConversations((prev) =>
@@ -399,6 +411,7 @@ export default function ChatPage() {
               presence={presence}
               onSelect={(id) => { setSelectedId(id); clearConvUnread(id); }}
               onTogglePin={togglePin}
+              onToggleMute={toggleMute}
             />
             <div className="p-3 flex-shrink-0" style={{ borderTop: '1px solid var(--border)' }}>
               <NewConversationDialog onCreated={handleConversationCreated} />
