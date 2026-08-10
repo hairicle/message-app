@@ -158,16 +158,21 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
 
   @SubscribeMessage('presence:get')
   async handlePresenceGet(@ConnectedSocket() socket: AuthedSocket) {
-    const keys = await this.redis.scanKeys(`${PRESENCE_PREFIX}*`);
     const snapshot: Record<string, string> = {};
-    if (keys.length) {
-      const pipeline = this.redis.pipeline();
-      for (const k of keys) pipeline.get(k);
-      const results = await pipeline.exec();
-      keys.forEach((k, i) => {
-        const uid = k.slice(PRESENCE_PREFIX.length);
-        snapshot[uid] = (results?.[i]?.[1] as string) ?? 'offline';
-      });
+    try {
+      const keys = await this.redis.scanKeys(`${PRESENCE_PREFIX}*`);
+      if (keys.length) {
+        const pipeline = this.redis.pipeline();
+        for (const k of keys) pipeline.get(k);
+        const results = await pipeline.exec();
+        keys.forEach((k, i) => {
+          const uid = k.slice(PRESENCE_PREFIX.length);
+          snapshot[uid] = (results?.[i]?.[1] as string) ?? 'offline';
+        });
+      }
+    } catch {
+      // Everyone reads as offline until Redis returns, which is wrong but harmless — and far
+      // better than the request rejecting inside a socket handler.
     }
     socket.emit('presence:snapshot', snapshot);
   }
@@ -363,12 +368,20 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     return member !== null;
   }
 
+  /**
+   * Presence is written on a best-effort basis.
+   *
+   * A dot next to a name is not worth a failed connection, and these run inside socket lifecycle
+   * handlers — a rejection here becomes an unhandled rejection, which is how a brief Redis outage
+   * used to take the whole API down. The block list deliberately does not do this: a write that
+   * quietly fails there would leave a disabled account working.
+   */
   private async markOnline(userId: string) {
-    await this.redis.set(`${PRESENCE_PREFIX}${userId}`, 'online', 'EX', 86400);
+    await this.redis.set(`${PRESENCE_PREFIX}${userId}`, 'online', 'EX', 86400).catch(() => undefined);
   }
 
   private async markOffline(userId: string) {
-    await this.redis.del(`${PRESENCE_PREFIX}${userId}`);
+    await this.redis.del(`${PRESENCE_PREFIX}${userId}`).catch(() => undefined);
   }
 
   private async broadcastPresence(userId: string, status: 'online' | 'offline') {

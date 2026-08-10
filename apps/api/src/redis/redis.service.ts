@@ -1,10 +1,13 @@
-import { Injectable, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
+import { Injectable, Logger, OnModuleInit, OnModuleDestroy } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 
 @Injectable()
 export class RedisService implements OnModuleInit, OnModuleDestroy {
   private client!: Redis;
+  private readonly logger = new Logger(RedisService.name);
+  /** Stops a long outage writing one line per retry, several times a second. */
+  private lastErrorLoggedAt = 0;
 
   constructor(private config: ConfigService) {}
 
@@ -15,14 +18,34 @@ export class RedisService implements OnModuleInit, OnModuleDestroy {
       // left the session block list open to tampering by anyone on the network path.
       tls: { rejectUnauthorized: true },
       lazyConnect: true,
+      // Keeps trying, with a ceiling, so the API rejoins Redis by itself once it comes back
+      // rather than needing a restart.
+      retryStrategy: (attempt) => Math.min(attempt * 500, 10_000),
     });
+
+    /**
+     * Without a listener here, ioredis emits 'error' on an EventEmitter that has none — which
+     * Node treats as fatal. A DNS failure lasting a few seconds took the whole API down, and it
+     * stayed down after the network returned.
+     */
+    this.client.on('error', (err: Error) => {
+      const now = Date.now();
+      if (now - this.lastErrorLoggedAt < 30_000) return;
+      this.lastErrorLoggedAt = now;
+      this.logger.warn(`Redis unavailable: ${err.message}. Retrying; account checks fall back to the database.`);
+    });
+
+    this.client.on('ready', () => this.logger.log('Redis connected'));
+
     this.client.ping().catch((err: Error) => {
-      console.warn('[redis] ping failed on startup:', err.message);
+      this.logger.warn(`Redis ping failed on startup: ${err.message}`);
     });
   }
 
   async onModuleDestroy() {
-    await this.client.quit();
+    // quit() rejects if the connection is already gone, which would fail shutdown for a reason
+    // that does not matter at shutdown.
+    await this.client.quit().catch(() => undefined);
   }
 
   get(key: string) {
