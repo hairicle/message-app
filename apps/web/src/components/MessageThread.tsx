@@ -29,6 +29,8 @@ import { FaBookmark, FaCheck, FaEllipsisVertical, FaRegFaceSmile, FaChevronDown,
 import { attachmentNoun } from '../utils/messagePreview';
 import { groupingFor } from '../utils/messageGrouping';
 import { ReplyPreview } from './ReplyPreview';
+import { MessageAlbum } from './MessageAlbum';
+import { buildAlbums } from '../utils/messageAlbums';
 
 function attachmentTypeForMime(mimeType: string): MessageType {
   if (mimeType.startsWith('image/')) return 'image';
@@ -810,6 +812,8 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   const isGroup = conversation.type !== 'direct';
   const membersById = new Map((conversation.members ?? []).map((m) => [m.user_id, m]));
   const messagesById = new Map(messages.map((m) => [m.id, m]));
+  // Media sent as a batch is drawn as one grid; the members after the first render nothing.
+  const { albums, absorbed } = buildAlbums(messages);
 
   return (
     // Row, so the info panel can sit beside the thread on wide screens and the conversation
@@ -1250,6 +1254,9 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
           </div>
         )}
         {messages.map((message, index) => {
+          // Already drawn as a tile in the album its first message opened.
+          if (absorbed.has(message.id)) return null;
+          const album = albums.get(message.id) ?? null;
           const mine = message.senderId === user!.id;
           const read = other ? readReceipts[message.id]?.has(other.user_id) : false;
           const text = decodeMessageText(message.ciphertext);
@@ -1262,7 +1269,11 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
           // startsGroup carries the avatar and the name/time header; endsGroup closes the block.
           const msgDate = new Date(message.createdAt);
           const msgDay = msgDate.toDateString();
-          const { startsGroup, endsGroup, startsDay: showDivider } = groupingFor(messages, index);
+          const { startsGroup, startsDay: showDivider } = groupingFor(messages, index);
+          // An album stands for every message it absorbed, so whether it closes a block depends on
+          // what follows its *last* tile — measuring from the first would look at a member the
+          // reader cannot see and leave the bubble permanently mid-block.
+          const { endsGroup } = groupingFor(messages, album ? index + album.length - 1 : index);
 
           let dividerLabel = '';
           if (showDivider) {
@@ -1463,7 +1474,9 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
                         <ReplyQuote replyId={message.replyToMessageId} />
                       </div>
                     )}
-                    <MessageAttachment type={message.type} file={message.file!} isMine={mine} compact onOpen={(file, type) => setLightboxItem({ file, type })} />
+                    {album
+                      ? <MessageAlbum messages={album} onOpen={(file, type) => setLightboxItem({ file, type })} />
+                      : <MessageAttachment type={message.type} file={message.file} isMine={mine} compact onOpen={(file, type) => setLightboxItem({ file, type })} />}
                     {/* Same rule as a text bubble: the time recedes to hover, because the block
                         header above already states it. It stays put only when the pill also
                         carries state — edited, or read — which nothing else on a media bubble
