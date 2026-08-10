@@ -54,6 +54,15 @@ interface MessageThreadProps {
 /** Matches the API's default page size, which is what tells us whether more history exists. */
 const MESSAGE_PAGE_SIZE = 50;
 
+/**
+ * How far back a jump will page looking for its target before giving up.
+ *
+ * Bounded so a link to something from last year cannot walk the entire conversation into memory
+ * one request at a time; ten pages is deep enough for anything reachable from search or the
+ * shared-media tabs in practice.
+ */
+const MAX_JUMP_PAGES = 10;
+
 /** Roughly six lines. Past this the composer scrolls rather than eating the conversation. */
 const COMPOSER_MAX_HEIGHT = 132;
 
@@ -156,6 +165,8 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   /** Distance from the bottom, kept across a prepend so the view does not jump. */
   const anchorFromBottomRef = useRef<number | null>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const [jumping, setJumping] = useState(false);
+  const jumpingRef = useRef(false);
   const [staged, setStaged] = useState<StagedFile[]>([]);
   const [sending, setSending] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -806,11 +817,66 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
    * window — so unlike a reply quote, a miss here is expected rather than exceptional, and has to
    * say so instead of silently doing nothing.
    */
-  function jumpToMessage(messageId: string) {
+  /**
+   * Scroll to a message, loading older history until it is there to scroll to.
+   *
+   * Search and the shared-media tabs both list things from the whole conversation while the
+   * thread holds only the pages read so far, so a target is routinely absent. Telling the reader
+   * to scroll up themselves was an instruction to do by hand what this can do.
+   */
+  async function jumpToMessage(messageId: string) {
     if (msgRefs.current.has(messageId)) {
       scrollToMessage(messageId);
-    } else {
-      showToast('That message is older than what is loaded — scroll up to load more');
+      return;
+    }
+
+    const el = scrollContainerRef.current;
+    if (!el || jumpingRef.current) return;
+    jumpingRef.current = true;
+    setJumping(true);
+
+    try {
+      let collected: Message[] = [];
+      let cursor = messages[0]?.id;
+      let reachedStart = false;
+
+      for (let page = 0; page < MAX_JUMP_PAGES; page++) {
+        const { messages: older } = await messagesApi.listMessages(conversationId, cursor);
+        if (older.length === 0) { reachedStart = true; break; }
+        collected = [...older, ...collected];
+        cursor = older[0].id;
+        if (older.some((m) => m.id === messageId)) break;
+        if (older.length < MESSAGE_PAGE_SIZE) { reachedStart = true; break; }
+      }
+
+      if (collected.length > 0) {
+        // Anchored like an ordinary prepend, so the thread does not lurch to the bottom before
+        // the scroll below moves it deliberately.
+        anchorFromBottomRef.current = el.scrollHeight - el.scrollTop;
+        setMessages((prev) => {
+          const known = new Set(prev.map((m) => m.id));
+          const fresh = collected.filter((m) => !known.has(m.id));
+          return fresh.length ? [...fresh, ...prev] : prev;
+        });
+        if (reachedStart) setHasOlder(false);
+      }
+
+      // Two frames: one for React to commit the new messages, one for the browser to lay them
+      // out, so the target has a position to scroll to.
+      await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+
+      if (msgRefs.current.has(messageId)) {
+        scrollToMessage(messageId);
+      } else {
+        showToast(reachedStart
+          ? 'That message is no longer in this conversation'
+          : 'That message is too far back to jump to');
+      }
+    } catch {
+      showToast('Could not load that part of the conversation');
+    } finally {
+      jumpingRef.current = false;
+      setJumping(false);
     }
   }
 
@@ -1001,10 +1067,16 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
             ) : searchResults.map((m) => {
               const sndr = (conversation.members ?? []).find((mb) => mb.user_id === m.senderId);
               return (
-                <div key={m.id} className="px-4 py-3 hover-panel-alt" style={{ borderBottom: '1px solid var(--border)' }}>
+                <button
+                  key={m.id}
+                  type="button"
+                  onClick={() => { setSearchResults(null); setSearchOpen(false); jumpToMessage(m.id); }}
+                  className="w-full text-left px-4 py-3 hover-panel-alt transition-colors"
+                  style={{ borderBottom: '1px solid var(--border)' }}
+                >
                   <p className="text-xs mb-1 font-mono" style={{ color: 'var(--text-dim)' }}>{sndr?.display_name ?? 'Unknown'} · {new Date(m.createdAt).toLocaleString()}</p>
                   <p className="text-sm" style={{ color: 'var(--text-muted)' }}>{decodeMessageText(m.ciphertext)}</p>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -1862,6 +1934,18 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
           <FaPaperPlane size={14} />
         </button>
       </form>
+
+      {/* Jumping can take several requests when the target is far back, so it says so rather
+          than appearing to have ignored the click. */}
+      {jumping && (
+        <div className="absolute top-20 left-1/2 -translate-x-1/2 z-50 pointer-events-none">
+          <span className="flex items-center gap-2 px-3 py-1.5 rounded-full text-[12px] font-mono"
+            style={{ background: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text-muted)', boxShadow: '0 4px 14px rgba(0,0,0,0.28)' }}>
+            <span className="w-3 h-3 rounded-full animate-spin" style={{ border: '2px solid var(--border)', borderTopColor: 'var(--accent)' }} />
+            Finding that message…
+          </span>
+        </div>
+      )}
 
       {/* ── Toast notification — inside the thread column so it stays centred over the
            conversation when the info panel takes its share of the width ── */}
