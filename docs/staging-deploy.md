@@ -68,13 +68,18 @@ Check the URL before running. Nothing here distinguishes staging from production
 
 ## Step 4 — Create the first admin
 
-There is no seed script; the NestJS refactor dropped the old `seed-admin`, so a fresh database has
-no way to log in. Generate a bcrypt hash (cost 12) and insert one row:
+A fresh database has no accounts, so nothing can sign in yet.
 
-```sql
-INSERT INTO users (email, username, display_name, password_hash, role, status)
-VALUES ('admin@company.local', 'admin', 'Admin', '<bcrypt hash>', 'admin', 'active');
+```bash
+cd apps/api
+SEED_ADMIN_EMAIL=you@company.com npm run seed:admin
 ```
+
+It prints a generated password once — sign in and change it. Pass `SEED_ADMIN_PASSWORD` instead if
+you would rather choose one, and `SEED_ADMIN_USERNAME` / `SEED_ADMIN_NAME` to set those.
+
+Re-running it never overwrites an existing account, so it is safe if you are unsure whether it has
+already been done.
 
 ## Step 5 — Deploy the API on Render
 

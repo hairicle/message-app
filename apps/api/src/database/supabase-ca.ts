@@ -17,9 +17,12 @@ import { join } from 'node:path';
 const CA_FILENAME = 'supabase-prod-ca-2021.crt';
 
 // Resolved relative to this file so it works from src/ under ts-node and from dist/ after a build,
-// where nest copies assets alongside the compiled output.
+// where nest copies assets alongside the compiled output. __dirname is guarded because a script
+// run as an ES module has no such binding, and referencing it there throws rather than being
+// undefined — which would take the whole helper down instead of falling through to the paths
+// below, which cover that case.
 const CANDIDATES = [
-  join(__dirname, '..', '..', 'certs', CA_FILENAME),
+  ...(typeof __dirname !== 'undefined' ? [join(__dirname, '..', '..', 'certs', CA_FILENAME)] : []),
   join(process.cwd(), 'certs', CA_FILENAME),
   join(process.cwd(), 'apps', 'api', 'certs', CA_FILENAME),
 ];
