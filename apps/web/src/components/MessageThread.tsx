@@ -16,7 +16,7 @@ import type {
   Reaction,
 } from '@messenger/shared';
 import { ConversationInfoPanel } from './ConversationInfoPanel';
-import { Lightbox } from './Lightbox';
+import { Lightbox, type LightboxItem } from './Lightbox';
 import { MessageAttachment } from './MessageAttachment';
 import { Linkify } from './Linkify';
 import { useConfirm } from './ConfirmDialog';
@@ -90,7 +90,7 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   const [readReceipts, setReadReceipts] = useState<Record<string, Set<string>>>({});
   const [uploading, setUploading] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
-  const [lightboxItem, setLightboxItem] = useState<{ file: FileMeta; type: MessageType } | null>(null);
+  const [lightbox, setLightbox] = useState<{ items: LightboxItem[]; index: number } | null>(null);
   const [showInfoPanel, setShowInfoPanel] = useState(false);
   const [editingMessageId, setEditingMessageId] = useState<string | null>(null);
   const [editingText, setEditingText] = useState('');
@@ -374,6 +374,21 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
     if (e.clipboardData.getData('text/plain').trim()) return;
     e.preventDefault();
     stageFiles(files);
+  }
+
+  /**
+   * Open the viewer on one file, with the rest of the conversation's media behind it so the
+   * arrows have somewhere to go.
+   *
+   * A file opened from the shared-media tabs can be older than the loaded thread, in which case
+   * there is nothing to page through and it opens on its own.
+   */
+  function openLightbox(file: FileMeta, type: MessageType) {
+    const items: LightboxItem[] = messages
+      .filter((m) => (m.type === 'image' || m.type === 'video') && m.file && !m.deletedAt)
+      .map((m) => ({ file: m.file!, type: m.type as MessageType }));
+    const index = items.findIndex((i) => i.file.id === file.id);
+    setLightbox(index === -1 ? { items: [{ file, type }], index: 0 } : { items, index });
   }
 
   function handleInputChange(value: string) {
@@ -1526,8 +1541,8 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
                       </div>
                     )}
                     {album
-                      ? <MessageAlbum messages={album} onOpen={(file, type) => setLightboxItem({ file, type })} />
-                      : <MessageAttachment type={message.type} file={message.file} isMine={mine} compact onOpen={(file, type) => setLightboxItem({ file, type })} />}
+                      ? <MessageAlbum messages={album} onOpen={openLightbox} />
+                      : <MessageAttachment type={message.type} file={message.file} isMine={mine} compact onOpen={openLightbox} />}
                     {/* Same rule as a text bubble: the time recedes to hover, because the block
                         header above already states it. It stays put only when the pill also
                         carries state — edited, or read — which nothing else on a media bubble
@@ -1546,7 +1561,7 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
                     {deleted ? (
                       <p className="text-sm italic">This message was deleted</p>
                     ) : (<>
-                      {message.type !== 'text' && <MessageAttachment type={message.type} file={message.file} isMine={mine} onOpen={(file, type) => setLightboxItem({ file, type })} />}
+                      {message.type !== 'text' && <MessageAttachment type={message.type} file={message.file} isMine={mine} onOpen={openLightbox} />}
                       {isEditing ? (
                         <form className="flex flex-col gap-2" onSubmit={(e) => { e.preventDefault(); submitEdit(message.id); }}>
                           <input value={editingText} onChange={(e) => setEditingText(e.target.value)} autoFocus className="w-full rounded-lg px-3 py-1.5 text-sm focus:outline-none"
@@ -1868,7 +1883,7 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
                        lg:relative lg:inset-auto lg:w-80 lg:flex-shrink-0 lg:z-auto lg:shadow-none"
             style={{ background: 'var(--bg)' }}
           >
-            <ConversationInfoPanel conversation={conversation} currentUserId={user!.id} presence={presence} onClose={() => setShowInfoPanel(false)} onOpenLightbox={(file, type) => setLightboxItem({ file, type })} onJumpToMessage={jumpToMessage}
+            <ConversationInfoPanel conversation={conversation} currentUserId={user!.id} presence={presence} onClose={() => setShowInfoPanel(false)} onOpenLightbox={openLightbox} onJumpToMessage={jumpToMessage}
               onAvatarUpdated={(avatarUrl) => {
                 // Repaint the header and panel from local state, then tell the page so the
                 // conversation list picks it up too — all three read the same field.
@@ -1883,7 +1898,7 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
         </>
       )}
 
-      {lightboxItem && <Lightbox file={lightboxItem.file} type={lightboxItem.type} onClose={() => setLightboxItem(null)} />}
+      {lightbox && <Lightbox items={lightbox.items} startIndex={lightbox.index} onClose={() => setLightbox(null)} />}
 
       {confirmDialog}
 
