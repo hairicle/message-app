@@ -236,6 +236,31 @@ Nothing changed state and nothing was bypassed, but each was logged as a *server
 bodies with Zod, and all five cases answer 400. Detail in
 [07-security-test.md](07-security-test.md#s3--unhandled-type-errors-return-500--fixed).
 
+A follow-up sweep found seven more endpoints of the same kind, and one worse thing: the socket
+transport bypassed every schema on the HTTP controllers, so validation had to move into the service
+both transports share. All fixed —
+[08-file-and-input-test.md](08-file-and-input-test.md#findings--all-fixed).
+
+### G20. The upload size limit protects storage, not memory
+
+`FileInterceptor` is mounted with no `limits`, so multer buffers the whole request body in memory
+before the 50 MB check runs. Measured live: 55 MB refused in 229 ms, 150 MB in 768 ms — the time
+scales with the payload, so the whole thing is read before it is rejected. A caller can make the
+API allocate as much as they care to send.
+
+One line fixes it — `FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } })` — but it
+changes the error an oversized upload produces, and the web client's message for that case should
+change with it. Worth doing before production: it is a denial-of-service vector on a small instance.
+[Detail](08-file-and-input-test.md#o1--the-upload-size-limit-protects-storage-not-memory).
+
+### G21. Nothing validates an uploaded file's declared content type
+
+Whatever MIME type a client claims is stored and served back. An SVG carrying a script and an HTML
+file are both accepted. Both are inert on download — but because Supabase serves the SVG as an
+attachment and the HTML as `text/plain`, not because of anything this code does. Change provider or
+a bucket setting and that moves silently.
+[Detail](08-file-and-input-test.md#o2--nothing-validates-the-declared-content-type).
+
 ---
 
 ## Summary
@@ -248,7 +273,8 @@ bodies with Zod, and all five cases answer 400. Detail in
 | Stubs and unbuilt features | 6 (G7–G12) | — |
 | Data issues | 2 (G13–G14) | — |
 | Repository and process | 4 (G15–G18) | — |
-| Error handling | — | 1 (G19) |
+| Error handling | — | 1 (G19), plus 8 more found by the input sweep |
+| File handling | 2 (G20, G21) | — |
 
 The smallest set that makes production defensible was **G1**, **G2**, **G3**, **G13** and **G16**.
 Three are now closed and verified live. **What remains of that set:**

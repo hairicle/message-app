@@ -9,16 +9,37 @@ import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthPayload } from '@messenger/shared';
 
 /**
- * `system` is deliberately absent: those are written by the server to narrate events like someone
- * joining, and letting a client post one would let anyone forge that narration.
+ * Query strings arrive as text or not at all, so each of these coerces rather than asserts. A
+ * missing `conversationId` used to reach Prisma as `undefined` and a `limit` of "abc" as `NaN`,
+ * and both came back as 500 — the caller's mistake logged as a server fault.
  */
-const sendMessageSchema = z.object({
-  conversationId: z.string().uuid(),
-  type: z.enum(['text', 'image', 'video', 'audio', 'file']).optional(),
-  ciphertext: z.string().optional(),
-  replyToMessageId: z.string().uuid().optional(),
-  fileId: z.string().uuid().optional(),
+const conversationQuery = z.object({ conversationId: z.string().uuid() });
+
+const listQuery = conversationQuery.extend({
+  before: z.string().uuid().optional(),
+  // Capped as well as validated. The page size decides how much is read and serialised, so an
+  // unbounded one is a request to read the whole conversation into memory.
+  limit: z.coerce.number().int().min(1).max(100).optional(),
 });
+
+const searchQuery = z.object({
+  q: z.string().min(1, 'A search needs something to look for'),
+  conversationId: z.string().uuid().optional(),
+});
+
+const optionalConversationQuery = z.object({ conversationId: z.string().uuid().optional() });
+
+/**
+ * An emoji is a handful of code points, not a paragraph.
+ *
+ * The column is part of the reactions table's composite primary key, so an oversized value does
+ * not merely store badly — it exceeds the index row limit and the insert fails, which surfaced as
+ * a 500 for a 10,000-character "emoji".
+ */
+const reactionSchema = z.object({ emoji: z.string().min(1).max(32) });
+
+const forwardSchema = z.object({ targetConversationId: z.string().uuid() });
+const editSchema = z.object({ ciphertext: z.string() });
 
 @Controller('messages')
 @UseGuards(JwtAuthGuard)
@@ -27,29 +48,22 @@ export class MessagesController {
 
   // Static sub-routes must come before /:id to avoid shadowing
   @Get('search')
-  async search(
-    @Query('q') q: string,
-    @Query('conversationId') conversationId: string | undefined,
-    @CurrentUser() user: AuthPayload,
-  ) {
+  async search(@Query() query: unknown, @CurrentUser() user: AuthPayload) {
+    const { q, conversationId } = searchQuery.parse(query);
     const results = await this.messagesService.searchMessages(q, user.id, conversationId);
     return { results, total: results.length, query: q };
   }
 
   @Get('pinned')
-  async pinned(
-    @Query('conversationId') conversationId: string,
-    @CurrentUser() user: AuthPayload,
-  ) {
+  async pinned(@Query() query: unknown, @CurrentUser() user: AuthPayload) {
+    const { conversationId } = conversationQuery.parse(query);
     const pinned = await this.messagesService.listPinned(conversationId, user.id);
     return { pinned };
   }
 
   @Get('bookmarks')
-  async bookmarks(
-    @Query('conversationId') conversationId: string | undefined,
-    @CurrentUser() user: AuthPayload,
-  ) {
+  async bookmarks(@Query() query: unknown, @CurrentUser() user: AuthPayload) {
+    const { conversationId } = optionalConversationQuery.parse(query);
     const bookmarks = await this.messagesService.listBookmarks(user.id, conversationId);
     return { bookmarks };
   }
@@ -62,15 +76,9 @@ export class MessagesController {
 
   // List messages — GET /api/messages?conversationId=xxx&before=xxx
   @Get()
-  async list(
-    @Query('conversationId') conversationId: string,
-    @Query('before') before: string | undefined,
-    @Query('limit') limit: string | undefined,
-    @CurrentUser() user: AuthPayload,
-  ) {
-    const messages = await this.messagesService.listMessages(
-      conversationId, user.id, before, limit ? Number(limit) : 50,
-    );
+  async list(@Query() query: unknown, @CurrentUser() user: AuthPayload) {
+    const { conversationId, before, limit } = listQuery.parse(query);
+    const messages = await this.messagesService.listMessages(conversationId, user.id, before, limit ?? 50);
     return { messages };
   }
 
@@ -82,8 +90,10 @@ export class MessagesController {
     // which the filter answered with 500 — a caller's malformed body logged as our fault. An array
     // was worse, because Buffer.from accepts one, so it was stored. The filter already turns a
     // ZodError into a 400 naming the field.
-    const parsed = sendMessageSchema.parse(body);
-    const message = await this.messagesService.sendMessage(parsed.conversationId, user.id, parsed);
+    // The full schema lives with the service, because the socket gateway calls it directly and a
+    // schema here alone would leave `message:send` unguarded. Only the id is needed at this level.
+    const { conversationId } = conversationQuery.parse(body);
+    const message = await this.messagesService.sendMessage(conversationId, user.id, body);
     return { message };
   }
 
@@ -97,9 +107,10 @@ export class MessagesController {
   async addReaction(
     @Param('id') id: string,
     @CurrentUser() user: AuthPayload,
-    @Body() body: { emoji: string },
+    @Body() body: unknown,
   ) {
-    await this.messagesService.addReaction(id, user.id, body.emoji);
+    const { emoji } = reactionSchema.parse(body);
+    await this.messagesService.addReaction(id, user.id, emoji);
     return {};
   }
 
@@ -109,7 +120,10 @@ export class MessagesController {
     @Param('emoji') emoji: string,
     @CurrentUser() user: AuthPayload,
   ) {
-    await this.messagesService.removeReaction(id, user.id, decodeURIComponent(emoji));
+    // Same bound as adding one, applied to the path segment. Removing a reaction that cannot exist
+    // is harmless, but the oversized value would still travel into the query that looks for it.
+    const { emoji: parsed } = reactionSchema.parse({ emoji: decodeURIComponent(emoji) });
+    await this.messagesService.removeReaction(id, user.id, parsed);
     return {};
   }
 
@@ -137,9 +151,10 @@ export class MessagesController {
   async forward(
     @Param('id') id: string,
     @CurrentUser() user: AuthPayload,
-    @Body() body: { targetConversationId: string },
+    @Body() body: unknown,
   ) {
-    const message = await this.messagesService.forwardMessage(id, user.id, body.targetConversationId);
+    const { targetConversationId } = forwardSchema.parse(body);
+    const message = await this.messagesService.forwardMessage(id, user.id, targetConversationId);
     return { message };
   }
 
@@ -147,9 +162,10 @@ export class MessagesController {
   async edit(
     @Param('id') id: string,
     @CurrentUser() user: AuthPayload,
-    @Body() body: { ciphertext: string },
+    @Body() body: unknown,
   ) {
-    const message = await this.messagesService.editMessage(id, user.id, body.ciphertext);
+    const { ciphertext } = editSchema.parse(body);
+    const message = await this.messagesService.editMessage(id, user.id, ciphertext);
     return { message };
   }
 

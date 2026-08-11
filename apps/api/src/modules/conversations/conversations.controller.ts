@@ -3,10 +3,26 @@ import {
   UseInterceptors, UploadedFile, ParseFilePipe, MaxFileSizeValidator, BadRequestException,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { z } from 'zod';
 import { ConversationsService } from './conversations.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthPayload } from '@messenger/shared';
+
+const createConversationSchema = z.object({
+  type: z.enum(['direct', 'group']),
+  name: z.string().max(120).optional(),
+  description: z.string().max(500).optional(),
+  memberIds: z.array(z.string().uuid()).max(500).optional(),
+  teamId: z.string().uuid().optional(),
+});
+
+const addMembersSchema = z.object({ userIds: z.array(z.string().uuid()).min(1).max(500) });
+
+const updateDetailsSchema = z.object({
+  name: z.string().min(1).max(120).optional(),
+  description: z.string().max(500).optional(),
+});
 
 @Controller('conversations')
 @UseGuards(JwtAuthGuard)
@@ -20,10 +36,11 @@ export class ConversationsController {
   }
 
   @Post()
-  async create(@CurrentUser() user: AuthPayload, @Body() body: {
-    type: string; name?: string; description?: string; memberIds?: string[]; teamId?: string;
-  }) {
-    const conversation = await this.conversationsService.createConversation(user.id, body);
+  async create(@CurrentUser() user: AuthPayload, @Body() body: unknown) {
+    // `type` reached Prisma as an enum value and any other word came back as 500. It is the one
+    // field here with only two legal answers, so it is the one worth naming in the error.
+    const parsed = createConversationSchema.parse(body);
+    const conversation = await this.conversationsService.createConversation(user.id, parsed);
     return { conversation };
   }
 
@@ -66,9 +83,10 @@ export class ConversationsController {
   async updateDetails(
     @Param('id') id: string,
     @CurrentUser() user: AuthPayload,
-    @Body() body: { name?: string; description?: string },
+    @Body() body: unknown,
   ) {
-    const conversation = await this.conversationsService.updateDetails(id, user.id, body);
+    const parsed = updateDetailsSchema.parse(body);
+    const conversation = await this.conversationsService.updateDetails(id, user.id, parsed);
     return { conversation };
   }
 
@@ -76,9 +94,10 @@ export class ConversationsController {
   async addMembers(
     @Param('id') id: string,
     @CurrentUser() user: AuthPayload,
-    @Body() body: { userIds: string[] },
+    @Body() body: unknown,
   ) {
-    const conversation = await this.conversationsService.addMembers(id, user.id, body.userIds ?? []);
+    const { userIds } = addMembersSchema.parse(body);
+    const conversation = await this.conversationsService.addMembers(id, user.id, userIds);
     return { conversation };
   }
 

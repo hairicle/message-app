@@ -1,7 +1,25 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { EventEmitter } from 'node:events';
 import { message_type } from '@prisma/client';
+import { z } from 'zod';
 import { PrismaService } from '../../database/prisma.service';
+
+/**
+ * What a client may send.
+ *
+ * `system` is deliberately absent from the types: the server writes those to narrate events like
+ * someone joining a group, and a client able to post one could forge that narration.
+ */
+export const sendMessageSchema = z.object({
+  conversationId: z.string().uuid(),
+  type: z.enum(['text', 'image', 'video', 'audio', 'file']).optional(),
+  ciphertext: z.string().optional(),
+  // `nullish`, not `optional`: "no reply" and "no attachment" are absences a client may express as
+  // either a missing key or an explicit null, and refusing one of the two spellings would be a
+  // validation error about nothing. Both are read as absent below.
+  replyToMessageId: z.string().uuid().nullish(),
+  fileId: z.string().uuid().nullish(),
+});
 
 /** ciphertext is bytea; the SQL form decoded it with convert_from(…, 'UTF8'). */
 const decode = (bytes: Uint8Array) => Buffer.from(bytes).toString('utf8');
@@ -153,27 +171,53 @@ export class MessagesService {
       .reverse();
   }
 
-  async sendMessage(conversationId: string, senderId: string, data: {
-    type?: string; ciphertext?: string; replyToMessageId?: string; fileId?: string;
-  }) {
+  async sendMessage(conversationId: string, senderId: string, data: unknown) {
+    // Parsed here rather than in the controller because the socket gateway calls this method
+    // directly — a schema on the HTTP route alone would leave `message:send` unguarded, which is
+    // the transport most sends actually use.
+    const body = sendMessageSchema.parse({ ...(data as object), conversationId });
+
     await this.assertMember(conversationId, senderId);
+
+    // A reply to a message that does not exist used to reach the foreign key and come back as 500.
+    // Checking the conversation too, because quoting a message out of a thread you are in from one
+    // you are not would surface its text in the reply preview.
+    if (body.replyToMessageId) {
+      const parent = await this.prisma.messages.findUnique({
+        where: { id: body.replyToMessageId },
+        select: { conversation_id: true },
+      });
+      if (!parent || parent.conversation_id !== conversationId) {
+        throw new BadRequestException('The message being replied to is not in this conversation');
+      }
+    }
+
+    // Scoped by uploader_id and message_id IS NULL: you cannot attach someone else's upload, nor
+    // re-attach a file already bound to another message. Checked before the message row is written
+    // — the previous order created the message first and updated nothing when the file did not
+    // match, which answered 201 and left an image bubble with no image in it.
+    if (body.fileId) {
+      const file = await this.prisma.files.findFirst({
+        where: { id: body.fileId, uploader_id: senderId, message_id: null },
+        select: { id: true },
+      });
+      if (!file) throw new BadRequestException('That attachment does not exist, or is already attached to a message');
+    }
 
     const created = await this.prisma.messages.create({
       data: {
         conversation_id: conversationId,
         sender_id: senderId,
-        type: (data.type ?? 'text') as message_type,
-        ciphertext: Buffer.from(data.ciphertext ?? '', 'utf8'),
-        reply_to_message_id: data.replyToMessageId ?? null,
+        type: (body.type ?? 'text') as message_type,
+        ciphertext: Buffer.from(body.ciphertext ?? '', 'utf8'),
+        reply_to_message_id: body.replyToMessageId ?? null,
       },
       select: { id: true },
     });
 
-    if (data.fileId) {
-      // Scoped by uploader_id and message_id IS NULL: you cannot attach someone else's upload,
-      // nor re-attach a file already bound to another message.
+    if (body.fileId) {
       await this.prisma.files.updateMany({
-        where: { id: data.fileId, uploader_id: senderId, message_id: null },
+        where: { id: body.fileId, uploader_id: senderId, message_id: null },
         data: { message_id: created.id },
       });
     }

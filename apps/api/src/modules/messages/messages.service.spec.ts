@@ -1,12 +1,15 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { ForbiddenException, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, NotFoundException, BadRequestException } from '@nestjs/common';
 import { MessagesService } from './messages.service';
 import { createPrismaMock, MEMBER, type PrismaMock } from '../../testing/prisma-mock';
 
-const CONV = 'conv-1';
-const USER = 'user-1';
-const OTHER = 'user-2';
-const MSG = 'msg-1';
+// Real UUIDs, because sendMessage now validates the shape of what it is given rather than trusting
+// its declared type. Readable digits so a failure still says which one it was.
+const CONV = '11111111-1111-4111-8111-111111111111';
+const USER = '22222222-2222-4222-8222-222222222222';
+const OTHER = '33333333-3333-4333-8333-333333333333';
+const MSG = '44444444-4444-4444-8444-444444444444';
+const FILE = '55555555-5555-4555-8555-555555555555';
 
 const bytes = (s: string) => Buffer.from(s, 'utf8');
 
@@ -183,11 +186,12 @@ describe('MessagesService', () => {
     });
 
     it('only attaches a file the sender uploaded and that is not already attached', async () => {
+      prisma.files.findFirst.mockResolvedValue({ id: FILE });
       prisma.files.updateMany.mockResolvedValue({ count: 1 });
-      await service.sendMessage(CONV, USER, { ciphertext: '', fileId: 'file-1' });
+      await service.sendMessage(CONV, USER, { ciphertext: '', fileId: FILE });
       // These two predicates are the whole access control on attachments.
       expect(prisma.files.updateMany).toHaveBeenCalledWith({
-        where: { id: 'file-1', uploader_id: USER, message_id: null },
+        where: { id: FILE, uploader_id: USER, message_id: null },
         data: { message_id: MSG },
       });
     });
@@ -195,6 +199,56 @@ describe('MessagesService', () => {
     it('does not touch files when no fileId is supplied', async () => {
       await service.sendMessage(CONV, USER, { ciphertext: 'hi' });
       expect(prisma.files.updateMany).not.toHaveBeenCalled();
+    });
+
+    // The previous order created the message and then updated nothing when the file did not match,
+    // which answered 201 and left an image bubble with no image in it.
+    it('refuses an attachment that does not exist, before writing the message', async () => {
+      prisma.files.findFirst.mockResolvedValue(null);
+      await expect(service.sendMessage(CONV, USER, { fileId: FILE, type: 'image' }))
+        .rejects.toBeInstanceOf(BadRequestException);
+      expect(prisma.messages.create).not.toHaveBeenCalled();
+    });
+
+    describe('replies', () => {
+      // A reply to a message that does not exist used to reach the foreign key and return 500.
+      it('refuses a parent that does not exist', async () => {
+        prisma.messages.findUnique.mockResolvedValue(null);
+        await expect(service.sendMessage(CONV, USER, { ciphertext: 'hi', replyToMessageId: MSG }))
+          .rejects.toBeInstanceOf(BadRequestException);
+        expect(prisma.messages.create).not.toHaveBeenCalled();
+      });
+
+      // Quoting across threads would surface the parent's text in a conversation it was not sent to.
+      it('refuses a parent in another conversation', async () => {
+        prisma.messages.findUnique.mockResolvedValue({ conversation_id: OTHER });
+        await expect(service.sendMessage(CONV, USER, { ciphertext: 'hi', replyToMessageId: MSG }))
+          .rejects.toBeInstanceOf(BadRequestException);
+      });
+
+      it('accepts a parent in this conversation', async () => {
+        prisma.messages.findUnique.mockResolvedValue({ conversation_id: CONV });
+        await service.sendMessage(CONV, USER, { ciphertext: 'hi', replyToMessageId: MSG });
+        expect(prisma.messages.create.mock.calls[0][0].data.reply_to_message_id).toBe(MSG);
+      });
+    });
+
+    // The schema is enforced in the service, not the controller, because the socket gateway calls
+    // this method directly — `message:send` would otherwise be unguarded.
+    describe('rejects a malformed body from either transport', () => {
+      for (const [label, body] of [
+        ['an object where text belongs', { ciphertext: { $ne: null } }],
+        ['a number where text belongs', { ciphertext: 42 }],
+        ['an array where text belongs', { ciphertext: ['a', 'b'] }],
+        ['a type the server reserves for itself', { ciphertext: 'hi', type: 'system' }],
+        ['a type that does not exist', { ciphertext: 'hi', type: 'telepathy' }],
+        ['an attachment id that is not a uuid', { fileId: 'file-1' }],
+      ] as const) {
+        it(label, async () => {
+          await expect(service.sendMessage(CONV, USER, body)).rejects.toThrow();
+          expect(prisma.messages.create).not.toHaveBeenCalled();
+        });
+      }
     });
   });
 

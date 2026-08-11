@@ -10,7 +10,8 @@
     "seed:admin": "tsx scripts/seed-admin.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:security": "node scripts/security-test.mjs"
+    "test:security": "node scripts/security-test.mjs",
+    "test:files": "node scripts/file-handling-test.mjs"
   },
   "dependencies": {
     "@messenger/shared": "^0.0.1",
