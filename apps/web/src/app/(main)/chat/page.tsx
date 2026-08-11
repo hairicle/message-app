@@ -25,7 +25,7 @@ import { TeamWorkspace } from '@/components/TeamWorkspace';
 import { Avatar } from '@/components/ui';
 import { useAuth } from '@/context/AuthContext';
 import { useSocket } from '@/context/SocketContext';
-import { FaBullhorn, FaComments, FaGauge, FaMessage, FaMoon, FaRightFromBracket, FaSun, FaUsers } from 'react-icons/fa6';
+import { FaBullhorn, FaComments, FaGauge, FaMessage, FaMoon, FaSun, FaUsers } from 'react-icons/fa6';
 
 type Section = 'chat' | 'teams' | 'dashboard' | 'announcements';
 
@@ -60,18 +60,8 @@ const COMING_SOON: Partial<Record<Section, ComingSoonProps>> = {
 };
 
 export default function ChatPage() {
-  const { user, logout } = useAuth();
+  const { user } = useAuth();
   const { confirm, confirmDialog } = useConfirm();
-
-  async function handleSignOut() {
-    const ok = await confirm({
-      title: 'Sign out of your account?',
-      description: 'You will need to enter your email and password again to get back in.',
-      confirmLabel: 'Sign Out',
-      cancelLabel: 'Stay Signed In',
-    });
-    if (ok) logout();
-  }
   const { theme, toggleTheme } = useTheme();
   const socket = useSocket();
 
@@ -395,11 +385,10 @@ export default function ChatPage() {
           className="transition-colors p-2 rounded-xl mb-1 hover-panel-alt" style={{ color: 'var(--text-dim)' }}>
           {theme === 'dark' ? <FaSun size={18} /> : <FaMoon size={18} />}
         </button>
-        <button onClick={handleSignOut} className="transition-colors p-2 rounded-xl hover-panel-alt" style={{ color: 'var(--text-dim)' }} title="Sign out">
-          <FaRightFromBracket size={18} />
-        </button>
-
-        {/* User avatar — anchored to the bottom, below the account actions */}
+        {/* Signing out lives in the profile panel, behind this avatar, and only there — it used to
+            sit in the rail as well, one click from every screen and next to the theme toggle it
+            looks nothing like. The mobile bar never carried it, so this also makes the two agree. */}
+        {/* User avatar — anchored to the bottom, below the theme toggle */}
         <div className="w-6 h-px my-2 flex-shrink-0" style={{ background: 'var(--border)' }} />
         <button onClick={() => setShowProfile(true)} title="My profile"
           className="flex-shrink-0 rounded-lg hover:ring-2 hover:ring-[var(--accent-dim)] transition-all">
