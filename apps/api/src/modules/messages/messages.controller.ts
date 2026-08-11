@@ -2,10 +2,23 @@ import {
   Controller, Get, Post, Patch, Delete,
   Body, Param, Query, UseGuards,
 } from '@nestjs/common';
+import { z } from 'zod';
 import { MessagesService } from './messages.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthPayload } from '@messenger/shared';
+
+/**
+ * `system` is deliberately absent: those are written by the server to narrate events like someone
+ * joining, and letting a client post one would let anyone forge that narration.
+ */
+const sendMessageSchema = z.object({
+  conversationId: z.string().uuid(),
+  type: z.enum(['text', 'image', 'video', 'audio', 'file']).optional(),
+  ciphertext: z.string().optional(),
+  replyToMessageId: z.string().uuid().optional(),
+  fileId: z.string().uuid().optional(),
+});
 
 @Controller('messages')
 @UseGuards(JwtAuthGuard)
@@ -63,17 +76,14 @@ export class MessagesController {
 
   // Send message — POST /api/messages
   @Post()
-  async send(
-    @Body() body: {
-      conversationId: string;
-      type?: string;
-      ciphertext?: string;
-      replyToMessageId?: string;
-      fileId?: string;
-    },
-    @CurrentUser() user: AuthPayload,
-  ) {
-    const message = await this.messagesService.sendMessage(body.conversationId, user.id, body);
+  async send(@Body() body: unknown, @CurrentUser() user: AuthPayload) {
+    // Parsed rather than asserted. The declared type was a promise the request never had to keep:
+    // `ciphertext` arriving as an object, a number or a boolean reached Buffer.from and threw,
+    // which the filter answered with 500 — a caller's malformed body logged as our fault. An array
+    // was worse, because Buffer.from accepts one, so it was stored. The filter already turns a
+    // ZodError into a 400 naming the field.
+    const parsed = sendMessageSchema.parse(body);
+    const message = await this.messagesService.sendMessage(parsed.conversationId, user.id, parsed);
     return { message };
   }
 

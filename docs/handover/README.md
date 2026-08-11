@@ -28,6 +28,6 @@ Three things in the repository are misleading, and each has cost time already:
 - **`.env.example` is stale in the same way.** It describes a self-hosted Docker Compose stack with
   MinIO and local Postgres. The deployed system uses Supabase and Upstash. The authoritative
   variable list is in [05-deployment.md](05-deployment.md#environment-variables).
-- **Three environment variables are documented but not read by the code.** `CORS_ORIGIN`,
-  `FRONTEND_URL`, and `MAX_FILE_SIZE_MB` have no effect. This matters for security, not just
-  tidiness — see [Known gaps](05-deployment.md#known-gaps-read-before-going-live).
+- **Two environment variables are documented but not read by the code.** `FRONTEND_URL` and
+  `MAX_FILE_SIZE_MB` have no effect. (`CORS_ORIGIN` was a third until the security fixes; it is now
+  read, and **required in production** — see [05-deployment.md](05-deployment.md).)

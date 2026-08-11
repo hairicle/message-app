@@ -8,43 +8,35 @@ before going live.
 
 ## Known gaps — read before going live
 
-The four below are the ones that change how you configure the deploy. The **complete** register —
-18 entries, including a blocking one — is [06-gaps.md](06-gaps.md). In particular
+The three below are the ones that change how you configure the deploy. The **complete** register is
+[06-gaps.md](06-gaps.md). In particular
 [G1](06-gaps.md#g1-the-audio-and-video-call-buttons-do-not-work-and-leave-the-camera-on): the call
 buttons are live, broken, and leave the user's camera on. Hide them before production.
 
 None of these are hypothetical; each was confirmed by reading the code.
 
-### 1. CORS is open to every origin
+> **Two earlier gaps are now closed** and re-verified live — CORS no longer accepts every origin,
+> and rate limiting is enforced. See [07-security-test.md](07-security-test.md). The one thing that
+> changes for you: **`CORS_ORIGIN` is now read, and is therefore required.** Leave it unset and the
+> deployed web app cannot reach the API at all. It was previously inert, so a deployment that had
+> got away with omitting it will now fail.
 
-`main.ts` calls `app.enableCors()` with no arguments, which reflects whatever `Origin` the request
-carries. The Socket.IO gateway is the same: `cors: { origin: true }`.
+### 1. `CORS_ORIGIN` must be set, and must match exactly
 
-`CORS_ORIGIN` appears in `render.yaml` and in the staging walkthrough, but **nothing in the code
-reads it**. Setting it has no effect.
+Set it to the web app's origin — scheme and host, **no trailing slash**, no path. Several origins
+may be given, comma-separated, which is how you allow a preview deployment alongside production.
 
-Any website a signed-in user visits can therefore call this API from their browser. Requests still
-need the bearer token, and the token lives in browser storage rather than a cookie, so this is not
-directly a CSRF hole — but it removes a layer that should be there and it is a finding any security
-review will raise. The fix is a one-line change in `main.ts` and one in the gateway decorator to
-read the variable that is already being set.
+Unset, the API allows only `localhost:3100` and `localhost:3000` and logs a warning naming the
+variable. It does not fall back to allowing everything.
 
-### 2. Rate limiting is configured but not enforced
-
-`ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }])` is registered in `app.module.ts`, but
-`ThrottlerGuard` is never bound as an `APP_GUARD`, so no request is ever counted. **The login
-endpoint is unthrottled**, which matters most: password guessing is limited only by bcrypt's cost.
-
-Put a rate limit at the edge (Cloudflare, or Render's own) before going live, or bind the guard.
-
-### 3. `FRONTEND_URL` and `MAX_FILE_SIZE_MB` do nothing
+### 2. `FRONTEND_URL` and `MAX_FILE_SIZE_MB` do nothing
 
 `FRONTEND_URL` is loaded into config and never read. `MAX_FILE_SIZE_MB` is read into
 `maxFileSizeBytes` and never read either — the real limit is a hard-coded 50 MB in both
 `files.controller.ts` and `files.service.ts`. Changing the variable will not change the limit; you
 have to change the code.
 
-### 4. Messages are not encrypted
+### 3. Messages are not encrypted
 
 The column is called `ciphertext`, but it stores base64-encoded plaintext. Anyone with database
 access — including Supabase support and anyone holding the service key — can read every message.
@@ -94,6 +86,7 @@ Missing these does not stop the boot, but files and migrations break.
 | `STORAGE_BUCKET` | `messenger-files` | |
 | `AVATAR_BUCKET` | `avatars` | |
 | `STORAGE_REGION` | `ap-southeast-1` | |
+| `CORS_ORIGIN` | `https://messenger.example.com` | The web app's origin, no trailing slash. Comma-separate several. **Unset, the deployed web app cannot reach the API.** |
 
 ### API — optional
 
@@ -106,8 +99,10 @@ Missing these does not stop the boot, but files and migrations break.
 
 ### API — set but inert
 
-Listed so nobody wastes time tuning them: **`CORS_ORIGIN`, `FRONTEND_URL`, `MAX_FILE_SIZE_MB`,
-`UPLOADS_DIR`**, and every `LDAP_*` and `FIREBASE_*` variable. No code path reads any of them.
+Listed so nobody wastes time tuning them: **`FRONTEND_URL`, `MAX_FILE_SIZE_MB`, `UPLOADS_DIR`**,
+and every `LDAP_*` and `FIREBASE_*` variable. No code path reads any of them.
+
+`CORS_ORIGIN` used to be on this list. It is now read, and required — see the table above.
 
 ### Web (Vercel)
 
@@ -127,7 +122,7 @@ The two deploys depend on each other and cannot be done in parallel:
 
 ```
    Vercel build  ──needs──▶  the API's URL      (NEXT_PUBLIC_API_URL, baked in at BUILD time)
-   Render API    ──needs──▶  the web's origin   (runtime — and see gap 1, currently unused)
+   Render API    ──needs──▶  the web's origin   (CORS_ORIGIN, read at RUNTIME)
 ```
 
 Because Vercel's dependency is a *build* input: **deploy the API first, then build the web against
@@ -217,7 +212,8 @@ renames a column makes rollback impossible without a restore.
 
 | Symptom | Cause |
 |---|---|
-| Everything loads, nothing sends | Once gap 1 is fixed: `CORS_ORIGIN` does not match the web origin. Scheme and host, no trailing slash. |
+| Everything loads, nothing sends | `CORS_ORIGIN` does not match the web origin. Scheme and host, no trailing slash, no path. |
+| Sign-in refused with 429 after a few tries | The login limit: 10 attempts per 15 minutes for that address and account. It clears itself; `Retry-After` says when. |
 | App calls `localhost:4000` in production | `NEXT_PUBLIC_API_URL` was set after the build. Redeploy the web app. |
 | Messages need a refresh to appear | The socket is not connecting. Same cause as above, or the API is asleep. |
 | Images and avatars 400 | Buckets are private (correct) but the request is not signed — check `SUPABASE_SERVICE_KEY` and `STORAGE_ENDPOINT`. |

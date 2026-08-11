@@ -431,24 +431,41 @@ async function main() {
     }));
   }
   const throttled = attempts.filter((a) => a.status === 429).length;
+  const firstThrottled = attempts.findIndex((a) => a.status === 429);
   check('I1', 'repeated failed logins are throttled', throttled > 0,
-    `40 sequential attempts in ${((Date.now() - t0) / 1000).toFixed(1)}s, ${throttled} throttled`);
+    `40 sequential attempts in ${((Date.now() - t0) / 1000).toFixed(1)}s, ${throttled} throttled from attempt ${firstThrottled + 1}`);
 
-  const stillWorks = await api(null, '/api/auth/login', {
+  // Rate-limiting a login inevitably produces a cool-off for whoever tripped it. What must not
+  // happen is a *lockout* — a state the account stays in, that another person has to undo. The
+  // distinction is whether the account row changed and whether the refusal expires on its own.
+  const cooled = await api(null, '/api/auth/login', {
     method: 'POST', body: JSON.stringify({ email: alice.email, password: PW }),
   });
-  check('I2', 'the account is not locked after 40 failures (no lockout DoS)',
-    stillWorks.status === 200, `${stillWorks.status}`);
+  const row = (await pool.query('SELECT status FROM users WHERE id=$1', [alice.id])).rows[0];
+  check('I2', 'the cool-off is temporary, not a lockout an admin must clear',
+    row.status === 'active' && (cooled.status !== 429 || !!cooled.headers.get('retry-after')),
+    `account still "${row.status}", login → ${cooled.status}${cooled.headers.get('retry-after') ? `, retry after ${cooled.headers.get('retry-after')}s` : ''}`);
 
+  // Someone else's address must not have spent this account's budget, or one bad actor could
+  // stop the whole company signing in.
+  const elsewhere = await api(null, '/api/auth/login', {
+    method: 'POST', body: JSON.stringify({ email: bob.email, password: PW }),
+  });
+  check('I4', 'one account being guessed does not block another',
+    elsewhere.status === 200, `${elsewhere.status}`);
+
+  // Larger than the whole per-minute budget, so it trips regardless of what the run spent already.
   const burst = [];
-  for (let i = 0; i < 130; i += 1) burst.push(api(alice.token, '/api/conversations'));
+  for (let i = 0; i < 400; i += 1) burst.push(api(alice.token, '/api/conversations'));
   const burstRes = await Promise.all(burst);
   const burst429 = burstRes.filter((a) => a.status === 429).length;
-  check('I3', 'authenticated requests are rate limited (configured 100/min)', burst429 > 0,
-    `130 requests, ${burst429} throttled`);
+  check('I3', 'authenticated requests are rate limited', burst429 > 0,
+    `400 requests, ${burst429} throttled`);
 
   // ── J ─────────────────────────────────────────────────────────────────────
   section('J. Business rules and misc');
+  // Runs after the burst above deliberately: these use a different account, which proves the
+  // limiter is per-caller rather than a global tap that one client can close for everyone.
 
   check('J1', 'a two-person group is refused server-side',
     (await api(alice.token, '/api/conversations', {

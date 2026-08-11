@@ -1,18 +1,40 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { Logger, ValidationPipe } from '@nestjs/common';
+import type { NestExpressApplication } from '@nestjs/platform-express';
 import { IoAdapter } from '@nestjs/platform-socket.io';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { allowedOrigins } from './common/cors';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { AvatarUrlInterceptor } from './common/avatar-url.interceptor';
 import { AvatarUrlService } from './common/avatar-url.service';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create<NestExpressApplication>(AppModule);
+  const logger = new Logger('bootstrap');
+
+  // One hop, because exactly one reverse proxy sits in front of this in every deployment. Without
+  // it Express reports the proxy's address as the client's, so the rate limiter counts the whole
+  // internet into a single bucket and the first busy minute locks everybody out together. With a
+  // count rather than `true`, Express reads the address the proxy observed instead of the head of
+  // the forwarded chain, which the caller writes and can therefore forge.
+  app.set('trust proxy', 1);
 
   app.use(helmet({ contentSecurityPolicy: false }));
-  app.enableCors();
+
+  // CORS_ORIGIN has been set in render.yaml and named in the deployment walkthrough since staging
+  // was built, and until now nothing read it: this call took no arguments, which reflects whatever
+  // Origin a request carries. A live test confirmed the API answered evil.example.com with a
+  // wildcard and approved its preflight.
+  const origins = allowedOrigins(process.env.CORS_ORIGIN);
+  if (!process.env.CORS_ORIGIN) {
+    logger.warn(
+      `CORS_ORIGIN is not set — allowing only ${origins.join(', ')}. Set it to the web app's origin.`,
+    );
+  }
+  app.enableCors({ origin: origins, credentials: true });
+
   app.useWebSocketAdapter(new IoAdapter(app));
   app.setGlobalPrefix('api', { exclude: ['health'] });
 

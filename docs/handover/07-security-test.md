@@ -3,9 +3,14 @@
 A live penetration test against the running API — real accounts, real tokens, real requests, as an
 attacker would make them. Not a code review; every result below is an observed response.
 
-**Run:** 2026-08-11, `dev2` at `697df1c`, against a local API on the production Supabase and
-Upstash instances.
-**Result: 58 of 64 passed.** The six failures are four distinct issues, described below.
+**Latest run: 65 of 65 passed.** All findings from the first run have been fixed and re-verified
+live; each is kept below with what it was and what changed, because a fixed finding is the part of
+a security report worth keeping.
+
+| Run | Commit | Result |
+|---|---|---|
+| First | `697df1c` | 58 of 64 — three distinct issues |
+| After the fixes | `dev2`, current | **65 of 65** |
 
 Re-run it any time:
 
@@ -20,91 +25,151 @@ failed to clean up.
 
 ## Coverage
 
-| Section | Checks | Result |
-|---|---|---|
-| A — Authentication | 7 | all passed |
-| B — Authorization / IDOR | 9 | all passed |
-| C — Privilege escalation and self-lockout | 10 | all passed (1 design note) |
-| D — Session revocation | 4 | all passed |
-| E — File access | 7 | all passed |
-| F — Injection and input handling | 8 | **1 failed** |
-| G — Credentials and data exposure | 8 | **1 failed** |
-| H — Transport and headers | 4 | **2 failed** |
-| I — Rate limiting / brute force | 3 | **2 failed** |
-| J — Business rules | 5 | all passed |
+| Section | Checks | First run | Now |
+|---|---|---|---|
+| A — Authentication | 7 | pass | pass |
+| B — Authorization / IDOR | 9 | pass | pass |
+| C — Privilege escalation and self-lockout | 10 | pass | pass |
+| D — Session revocation | 4 | pass | pass |
+| E — File access | 7 | pass | pass |
+| F — Injection and input handling | 8 | **1 failed** | pass |
+| G — Credentials and data exposure | 8 | **1 failed** | pass |
+| H — Transport and headers | 4 | **2 failed** | pass |
+| I — Rate limiting / brute force | 4 | **2 failed** | pass |
+| J — Business rules | 5 | pass | pass |
 
 ---
 
-# Findings
+# Findings — all fixed
 
-## S1 — No rate limiting anywhere, including login
+## S1 — No rate limiting anywhere, including login — **FIXED**
 
-**Severity: high.** Checks I1 and I3.
-
-```
-40 sequential wrong-password attempts in 31.4s  →  0 throttled
-130 authenticated requests in one burst          →  0 throttled
-```
-
-`ThrottlerModule` is configured for 100 requests/60s in `app.module.ts`, but `ThrottlerGuard` is
-never bound as an `APP_GUARD`, so nothing counts requests. The configuration is decorative.
-
-Password guessing against `POST /api/auth/login` is limited only by bcrypt's cost — roughly one
-attempt per 300 ms per connection, and nothing stops an attacker opening a hundred connections.
-There is no account lockout either (confirmed by I2, which is the right trade-off on its own: a
-lockout would let anyone deny service to a colleague by guessing at their account). But with
-neither throttling *nor* lockout, there is nothing at all between an attacker and unlimited guesses.
-
-**Fix:** bind the guard, or put a rate limit at the edge before going live. Both.
-
-## S2 — CORS reflects every origin
-
-**Severity: medium.** Checks H3 and H4.
+**Was: high.** Checks I1 and I3.
 
 ```
-GET  /api/conversations   Origin: https://evil.example.com  →  Access-Control-Allow-Origin: *
-OPTIONS /api/conversations (preflight from the same origin) →  204, Access-Control-Allow-Origin: *
+before   40 sequential wrong-password attempts in 31.4s  →   0 throttled
+         130 authenticated requests in one burst          →   0 throttled
+
+after    40 sequential wrong-password attempts in  2.4s  →  32 throttled, from attempt 9
+         400 authenticated requests in one burst          → 102 throttled
 ```
 
-`main.ts` calls `app.enableCors()` with no arguments. `CORS_ORIGIN` is set in `render.yaml` and
-named in the staging walkthrough, and **no code reads it**.
+`ThrottlerModule` was configured for 100 requests/60 s but `ThrottlerGuard` was never bound as an
+`APP_GUARD`, so nothing counted requests and the `@Throttle` decorators already sitting on the
+login routes never fired. The configuration was decorative.
 
-Be precise about what this does and does not mean. The wildcard means browsers will not send
-cookies, and the app authenticates with a bearer token held in browser storage, which a page on
-another origin cannot read. So a malicious site **cannot** ride a signed-in user's session. What it
-does mean: the API answers any origin that already holds a token, and a layer that should be there
-is not. Any security review will raise it.
+**What changed.** `AppThrottlerGuard` is now bound globally. Binding the stock guard would have
+fixed the counting and broken the product, so what gets counted depends on the request:
 
-**Fix:** two lines — read the variable that is already being set, in `main.ts` and in the
-`@WebSocketGateway` decorator.
-
-## S3 — Unhandled type errors return 500
-
-**Severity: low.** Checks F6 and G1.
-
-Two instances found, and they are almost certainly a class rather than a pair:
-
-| Request | Response |
+| Request | Counted against |
 |---|---|
-| `POST /api/messages` with `ciphertext: {"$ne": null}` | **500** |
-| `POST /api/messages` with `ciphertext: 12345` | **500** |
-| `POST /api/messages` with `ciphertext: true` | **500** |
-| `POST /api/users/me/password` with no `currentPassword` | **500** |
+| A signed-in request | the bearer token it carries |
+| A login attempt | the address **and** the account it names |
+| Anything else | the address |
 
-Verified by direct probe that **nothing changes state**: the password hash is untouched, the old
-password still works, and the API stays up. `changePassword` does check the current password
-correctly — it just reaches `bcrypt.compare(undefined, hash)`, which throws before the check can
-return false.
+This matters because it is an internal tool. The whole company reaches the API through one office
+address, so the stock per-address counting would have given everybody a single shared budget and
+refused them all together on the busiest morning. Two live checks guard against that regression:
+I2 confirms the cool-off is temporary rather than a lockout an administrator has to clear
+(`Retry-After: 900`, account row still `active`), and I4 confirms one account being guessed does
+not block another.
 
-So this is not an authentication bypass. It matters because every one of these is logged as a
-server fault, which is how real faults get lost, and a 500 on a password-change endpoint is exactly
-the kind of thing that looks like a breach when someone finds it in a log at 2am.
+The default budget was also raised from 100/min to **300/min**. The old number had never met real
+traffic because it was never enforced — opening a conversation fetches every visible attachment
+individually, so a gallery of a hundred photos is a hundred requests in seconds, and enforcing 100
+would have rate-limited ordinary scrolling.
 
-Worth noting one oddity found while probing: `ciphertext: ["a","b"]` is **accepted** with 201 —
-`Buffer.from(array)` succeeds where the others throw. That is type confusion reaching storage.
+`GET /health` is exempt. Every platform health poll comes from one address, and throttling it would
+eventually answer 429, which reads as unhealthy and takes the service out of rotation for being up.
 
-**Fix:** validate these bodies with the Zod schemas the exception filter already understands. The
-filter turns a `ZodError` into a 400 with field names; the endpoints just are not using it.
+**One judgement call to be aware of:** login is capped at **10 attempts per 15 minutes** per
+address-and-account. That value was already written on the route; enforcement is what is new. Eight
+wrong passwords in a row and that person waits fifteen minutes. It is defensible and it cannot
+affect a colleague, but if it proves too harsh in practice the number is one edit in
+`auth.controller.ts`.
+
+## S2 — CORS reflects every origin — **FIXED**
+
+**Was: medium.** Checks H3 and H4.
+
+```
+before   GET /api/conversations   Origin: https://evil.example.com  →  ACAO: *
+         OPTIONS (preflight from the same origin)                   →  204, ACAO: *
+
+after    GET /api/conversations   Origin: https://evil.example.com  →  ACAO: absent
+         OPTIONS (preflight from the same origin)                   →  204, ACAO: absent
+         GET /api/conversations   Origin: <the web app>             →  ACAO: <the web app>
+```
+
+`main.ts` called `app.enableCors()` with no arguments, and the gateway set `origin: true`.
+`CORS_ORIGIN` had been set in `render.yaml` and named in the staging walkthrough since staging was
+built, and **nothing read it**.
+
+Be precise about what this did and did not mean. The wildcard means browsers will not send cookies,
+and the app authenticates with a bearer token held in browser storage, which a page on another
+origin cannot read — so a malicious site could **not** ride a signed-in user's session. What it did
+mean is that the API answered any origin already holding a token, and a layer that should have been
+there was not.
+
+**What changed.** Both the HTTP server and the Socket.IO gateway now read `CORS_ORIGIN` through one
+shared helper, `common/cors.ts`, so the two cannot drift apart again — they were previously
+configured in different files and both ended up permitting everything. The gateway mattered as much
+as the HTTP side: `origin: true` there meant the socket accepted a handshake from any page, which
+would have made closing CORS on HTTP alone worth very little. Verified separately, browser-style:
+
+```
+socket.io handshake  Origin: http://localhost:3100     →  200, ACAO: http://localhost:3100
+socket.io handshake  Origin: https://evil.example.com  →  200, no ACAO  (a browser blocks the read)
+```
+
+The helper accepts a comma-separated list and strips trailing slashes — `https://app.example.com/`
+never matches, because a browser sends an Origin with no path at all, and the mismatch shows up as
+every request failing while the API's own logs look healthy.
+
+**When `CORS_ORIGIN` is unset** the API allows only `localhost:3100` and `localhost:3000`, and logs
+a warning naming the variable. It does not fall back to allowing everything: an unset variable is
+far more often a deployment that forgot it than a decision to accept any origin, and the failure it
+produces should be one browser refusing one request with a legible message, not a service that
+looks fine and quietly answers the whole internet.
+
+**This makes `CORS_ORIGIN` a required production variable.** Leave it unset and the deployed web
+app cannot reach the API at all.
+
+## S3 — Unhandled type errors return 500 — **FIXED**
+
+**Was: low.** Checks F6 and G1.
+
+| Request | Before | Now |
+|---|---|---|
+| `POST /api/messages` with `ciphertext: {"$ne": null}` | 500 | **400** |
+| `POST /api/messages` with `ciphertext: 12345` | 500 | **400** |
+| `POST /api/messages` with `ciphertext: true` | 500 | **400** |
+| `POST /api/messages` with `ciphertext: ["a","b"]` | **201 — stored** | **400** |
+| `POST /api/users/me/password` with no `currentPassword` | 500 | **400** |
+
+Verified by direct probe at the time that **nothing changed state**: the password hash was
+untouched, the old password still worked, and the API stayed up. `changePassword` does check the
+current password correctly — it just reached `bcrypt.compare(undefined, hash)`, which throws before
+the check can return false. So it was never an authentication bypass.
+
+It mattered because every one of these was logged as a *server* fault, which is how real faults get
+lost, and a 500 on a password-change endpoint is exactly the kind of log line that reads as a
+breach when someone finds it at 2am. The array case was worse than the others: `Buffer.from`
+accepts an array where it throws on an object, so that one was type confusion reaching storage.
+
+**What changed.** `POST /api/messages`, `POST /api/users/me/password` and `PATCH /api/users/me`
+now parse their bodies with Zod rather than asserting a TypeScript type the request never had to
+keep. The exception filter already turns a `ZodError` into a 400 naming the offending field; these
+endpoints simply were not using it.
+
+Two things came along with the schema, both deliberate:
+
+- **`system` is not an accepted message type.** Those are written by the server to narrate events
+  like someone joining a group. Letting a client post one would let anyone forge that narration.
+- **`PATCH /api/users/me` now strips unknown fields** rather than relying on the service to ignore
+  them. The service does ignore `role` and `status` — check C4 confirms it live — but a schema
+  makes that a property of the endpoint instead of something the next person to edit the service
+  has to remember.
 
 ## Design note — an admin can demote themselves
 

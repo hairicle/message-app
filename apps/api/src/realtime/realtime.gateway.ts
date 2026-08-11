@@ -16,6 +16,7 @@ import { RedisService } from '../redis/redis.service';
 import { MessagesService } from '../modules/messages/messages.service';
 import { ConversationsService } from '../modules/conversations/conversations.service';
 import type { AuthPayload } from '@messenger/shared';
+import { allowedOrigins } from '../common/cors';
 import { AccountStatusService } from '../common/account-status.service';
 
 interface AuthedSocket extends Socket {
@@ -24,7 +25,9 @@ interface AuthedSocket extends Socket {
 
 const PRESENCE_PREFIX = 'presence:user:';
 
-@WebSocketGateway({ cors: { origin: true, credentials: true } })
+// The same origin list the HTTP server uses. `origin: true` here meant the socket accepted a
+// handshake from any page, which made closing CORS on the HTTP side alone worth very little.
+@WebSocketGateway({ cors: { origin: allowedOrigins(process.env.CORS_ORIGIN), credentials: true } })
 export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect, OnModuleInit {
   @WebSocketServer() io!: Server;
 

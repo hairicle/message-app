@@ -57,6 +57,10 @@ services:
       # The Vercel origin the browser loads from. Cross-origin, so the API has to allow it
       # explicitly — set this to the staging web URL, e.g.
       # https://message-app-git-staging-<scope>.vercel.app
+      #
+      # Required. This was declared here long before any code read it; it is read now, by both the
+      # HTTP server and the socket gateway. Left unset the API allows only localhost, so the
+      # deployed web app cannot reach it. Scheme and host, no trailing slash; comma-separate several.
       - key: CORS_ORIGIN
         sync: false
       - key: FRONTEND_URL

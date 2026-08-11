@@ -3,12 +3,24 @@ import {
   UseInterceptors, UploadedFile, ParseFilePipe, MaxFileSizeValidator,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { z } from 'zod';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthPayload } from '@messenger/shared';
+
+/** The length rule lives in the service too, which is what enforces it; this only rejects earlier. */
+const changePasswordSchema = z.object({
+  currentPassword: z.string().min(1),
+  newPassword: z.string().min(1),
+});
+
+const updateProfileSchema = z.object({
+  displayName: z.string().min(1).max(100).optional(),
+  username: z.string().min(1).max(50).optional(),
+});
 
 @Controller('users')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -23,7 +35,11 @@ export class UsersController {
   }
 
   @Patch('me')
-  async updateProfile(@CurrentUser() user: AuthPayload, @Body() body: { displayName?: string; username?: string }) {
+  async updateProfile(@CurrentUser() user: AuthPayload, @Body() rawBody: unknown) {
+    // Parsing also strips anything else the caller sent. The service already ignores `role` and
+    // `status`, verified live, but a schema makes that a property of the endpoint rather than
+    // something the next person to edit the service has to remember.
+    const body = updateProfileSchema.parse(rawBody);
     await this.usersService.updateProfile(user.id, body);
     const profile = await this.usersService.getProfile(user.id);
     return { profile };
@@ -41,8 +57,12 @@ export class UsersController {
   }
 
   @Post('me/password')
-  async changePassword(@CurrentUser() user: AuthPayload, @Body() body: { currentPassword: string; newPassword: string }) {
-    await this.usersService.changePassword(user.id, body.currentPassword, body.newPassword);
+  async changePassword(@CurrentUser() user: AuthPayload, @Body() body: unknown) {
+    // Omitting currentPassword used to answer 500: the check is there and correct, but it reached
+    // bcrypt.compare(undefined, hash), which throws before the comparison can return false. A
+    // server error on a password-change endpoint is the kind of log line that reads as a breach.
+    const { currentPassword, newPassword } = changePasswordSchema.parse(body);
+    await this.usersService.changePassword(user.id, currentPassword, newPassword);
     return { ok: true };
   }
 

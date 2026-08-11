@@ -50,33 +50,32 @@ hosting, and the call UI — not a fix.
 
 ## Security and operations
 
-### G2. CORS accepts every origin
+### ~~G2. CORS accepts every origin~~ — FIXED
 
-`main.ts` calls `app.enableCors()` with no arguments; the gateway sets `cors: { origin: true }`.
-`CORS_ORIGIN` is set in `render.yaml` and named in the staging walkthrough, but **no code reads
-it** — setting it does nothing.
+`main.ts` called `app.enableCors()` with no arguments and the gateway set `origin: true`, so both
+reflected whatever Origin arrived. `CORS_ORIGIN` was set in `render.yaml` and named in the staging
+walkthrough, and nothing read it.
 
-Requests still need a bearer token and the token is not in a cookie, so this is not directly a CSRF
-hole. It is still a missing layer and any security review will raise it. One line in `main.ts`, one
-in the gateway decorator.
+Both now read it through one shared helper, `common/cors.ts`. Verified live: `evil.example.com`
+gets no `Access-Control-Allow-Origin` on either the HTTP route or the socket handshake, and the web
+app's own origin does. Detail in
+[07-security-test.md](07-security-test.md#s2--cors-reflects-every-origin--fixed).
 
-**Confirmed live** ([07-security-test.md](07-security-test.md#s2--cors-reflects-every-origin)): a
-request carrying `Origin: https://evil.example.com` comes back with `Access-Control-Allow-Origin: *`,
-and a preflight from that origin is approved with 204.
+**`CORS_ORIGIN` is now a required production variable.** Unset, the API allows only localhost and
+logs a warning — so a deployment that forgets it will find the web app cannot reach the API.
 
-### G3. Rate limiting is registered but never enforced
+### ~~G3. Rate limiting is registered but never enforced~~ — FIXED
 
-`ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }])` is configured in `app.module.ts`, but
-`ThrottlerGuard` is never bound as an `APP_GUARD`. No request is counted.
+`ThrottlerModule` was configured but `ThrottlerGuard` was never bound as an `APP_GUARD`, so nothing
+counted requests and the `@Throttle` decorators already on the login routes never fired. A live test
+made 40 wrong-password attempts in 31.4 s without one being refused.
 
-**`POST /api/auth/login` is unthrottled** — password guessing is limited only by bcrypt's cost.
-Either bind the guard or put a limit at the edge before going live.
-
-**Confirmed live** ([07-security-test.md](07-security-test.md#s1--no-rate-limiting-anywhere-including-login)):
-40 sequential wrong-password attempts in 31.4 s, none throttled; 130 authenticated requests in one
-burst, none throttled. There is no account lockout either — correctly so, since one would let
-anyone deny a colleague service by guessing at their account — which means nothing at all stands
-between an attacker and unlimited guesses.
+`AppThrottlerGuard` is now bound globally, counting a signed-in request against its token, a login
+against the address *and* the account it names, and anything else against the address. That
+distinction is what makes it safe here: the stock per-address guard would have given a whole office
+one shared budget. The default was also raised to 300/min, because the unenforced 100 would have
+rate-limited ordinary scrolling through a photo gallery. Detail and the trade-offs in
+[07-security-test.md](07-security-test.md#s1--no-rate-limiting-anywhere-including-login--fixed).
 
 ### G4. The API cannot run more than one instance
 
@@ -99,11 +98,13 @@ over encryption keys, and that part is not built.
 
 ## Dead configuration
 
-### G6. Seven environment variables have no effect
+### G6. Six environment variables have no effect
+
+`CORS_ORIGIN` used to head this list and no longer belongs on it — it is now read, and required in
+production. See G2.
 
 | Variable | Reality |
 |---|---|
-| `CORS_ORIGIN` | Never read. See G2. |
 | `FRONTEND_URL` | Loaded into config, read by nothing. |
 | `MAX_FILE_SIZE_MB` | Loaded into `maxFileSizeBytes`, read by nothing. The real limit is a hard-coded 50 MB in **both** `files.controller.ts` and `files.service.ts` — changing it means changing code in two places. |
 | `UPLOADS_DIR` | Left from the pre-Supabase local-disk storage. |
@@ -224,40 +225,36 @@ workflow.
 
 ---
 
-### G19. Unhandled type errors return 500
+### ~~G19. Unhandled type errors return 500~~ — FIXED
 
-Found by the live security test. A request body whose field is the wrong *type* — an object, a
-number or a boolean where a string is expected — reaches the code and throws, and the exception
-filter answers 500.
+Found by the live security test. A body field of the wrong *type* — an object, a number or a
+boolean where a string was expected — reached the code and threw, and the filter answered 500.
+Nothing changed state and nothing was bypassed, but each was logged as a *server* fault, and
+`ciphertext: ["a","b"]` was worse than the rest: `Buffer.from` accepts an array, so it was stored.
 
-| Request | Response |
-|---|---|
-| `POST /api/messages` with `ciphertext: {"$ne": null}`, `12345`, or `true` | **500** |
-| `POST /api/users/me/password` with no `currentPassword` | **500** |
-| `POST /api/messages` with `ciphertext: ["a","b"]` | **201 — accepted** |
-
-Nothing changes state and nothing is bypassed — verified by probe: the password hash is untouched
-and the old password still works. It matters because each of these is logged as a *server* fault,
-which is how real ones get lost, and because the array case is type confusion reaching storage.
-
-The fix is to validate these bodies with Zod; the exception filter already turns a `ZodError` into
-a 400 with field names, and these endpoints simply are not using it. Full detail in
-[07-security-test.md](07-security-test.md#s3--unhandled-type-errors-return-500).
+`POST /api/messages`, `POST /api/users/me/password` and `PATCH /api/users/me` now parse their
+bodies with Zod, and all five cases answer 400. Detail in
+[07-security-test.md](07-security-test.md#s3--unhandled-type-errors-return-500--fixed).
 
 ---
 
 ## Summary
 
-| | Count |
-|---|---|
-| Blocking before production | 1 (G1) |
-| Security and operations | 4 (G2–G5) |
-| Dead configuration | 1, covering 9 variables (G6) |
-| Stubs and unbuilt features | 6 (G7–G12) |
-| Data issues | 2 (G13–G14) |
-| Repository and process | 4 (G15–G18) |
-| Error handling | 1 (G19) |
+| | Open | Fixed |
+|---|---|---|
+| Blocking before production | 1 (G1) | — |
+| Security and operations | 2 (G4, G5) | 2 (G2, G3) |
+| Dead configuration | 1, covering 8 variables (G6) | — |
+| Stubs and unbuilt features | 6 (G7–G12) | — |
+| Data issues | 2 (G13–G14) | — |
+| Repository and process | 4 (G15–G18) | — |
+| Error handling | — | 1 (G19) |
 
-The smallest set that makes production defensible: **G1** (hide the call buttons), **G2** (close
-CORS), **G3** (rate-limit login), **G13** (fix the role casing), and **G16** (the Vercel setting).
+The smallest set that makes production defensible was **G1**, **G2**, **G3**, **G13** and **G16**.
+Three are now closed and verified live. **What remains of that set:**
+
+- **G1** — hide the call buttons. Still open, still the one that must not ship.
+- **G13** — `UPDATE users SET role = lower(role) WHERE role <> lower(role);`
+- **G16** — change Vercel's Root Directory to the repository root before `main` merges.
+
 Everything else can follow.

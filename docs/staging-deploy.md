@@ -111,7 +111,9 @@ Environment variables:
 | `JWT_EXPIRES_IN` | `8h` |
 | `NODE_ENV` | `production` |
 
-Leave `CORS_ORIGIN` and `FRONTEND_URL` unset for now — the Vercel URL does not exist yet.
+Leave `CORS_ORIGIN` and `FRONTEND_URL` unset for now — the Vercel URL does not exist yet. Note that
+`CORS_ORIGIN` is read as of the security fixes, so the API will refuse the web app until step 7
+sets it. Until then it allows only localhost and says so in its startup log.
 
 Deploy, then **note the service URL**, e.g. `https://messenger-api-staging.onrender.com`.
 Check `<url>/health` responds before continuing.
