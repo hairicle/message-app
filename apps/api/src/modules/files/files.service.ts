@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../database/prisma.service';
 import { randomUUID } from 'crypto';
 import * as path from 'path';
+import { MAX_FILE_SIZE, isPreviewableImage, storageMimeType } from './file-rules';
 
 interface FileRow {
   id: string; file_name: string; mime_type: string; size_bytes: number;
@@ -17,8 +18,6 @@ interface FileRow {
  */
 const THUMBNAIL_EDGE = 1280;
 const THUMBNAIL_QUALITY = 82;
-
-const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
 
 // Long enough to cover the redirect plus a slow transfer of a 50 MB attachment; short enough that
 // a leaked URL is not a lasting grant. Supabase validates the token when the request starts, so an
@@ -91,8 +90,11 @@ export class FilesService {
     const bucket = this.bucket;
     const headers = this.supabaseHeaders();
 
-    let buffer = file.buffer;
-    let mimeType = file.mimetype;
+    const buffer = file.buffer;
+    // Not what the client said, necessarily. A type a browser would execute is stored as opaque
+    // bytes — see storageMimeType. Applied before the preview branch below, so a neutralised file
+    // is never handed to the image decoder either.
+    const mimeType = storageMimeType(file.mimetype);
     let hasThumbnail = false;
 
     // A preview for images.
@@ -104,7 +106,7 @@ export class FilesService {
     //
     // 1280 at quality 82 is sharp at any of those sizes and still a fraction of a twelve-megapixel
     // original, which is the point of not sending the original to a list of bubbles.
-    if (file.mimetype.startsWith('image/')) {
+    if (isPreviewableImage(mimeType)) {
       try {
         const sharp = (await import('sharp')).default;
         const thumb = await sharp(buffer)

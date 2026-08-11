@@ -153,19 +153,18 @@ async function main() {
   const overMs = Date.now() - t0;
   check('A5', 'a file over the limit is refused', clientError(over.status), `${over.status} in ${overMs}ms`);
 
-  // Multer is mounted with no `limits`, so the whole body should land in memory before either size
-  // check runs. Timing one oversized upload proves nothing on a loopback interface — but if the
-  // refusal is streaming, doubling the payload costs nothing, and if the body is read in full
-  // first, the time roughly doubles with it.
-  const t1 = Date.now();
+  check('A6', 'an oversized upload is refused as too large, not as a server fault',
+    over.status === 413, `${over.status} "${over.body?.error}"`);
+
   const over2 = await upload(alice.token, 'bigger.bin', 'application/octet-stream', Buffer.alloc(150 * 1024 * 1024));
-  const over2Ms = Date.now() - t1;
-  const scales = over2Ms > overMs * 1.8;
-  info('A6', 'where the size limit is applied',
-    scales
-      ? `55 MB refused in ${overMs}ms, 150 MB in ${over2Ms}ms — the time scales with the payload, so the whole body is read into memory before the limit is applied. It guards storage, not the process.`
-      : `55 MB refused in ${overMs}ms, 150 MB in ${over2Ms}ms — refusal does not scale with size, so it is rejected before the body is read`);
-  check('A7', 'an oversized upload is still refused rather than accepted', clientError(over2.status), `${over2.status}`);
+  check('A7', 'a much larger upload is refused the same way', over2.status === 413, `${over2.status}`);
+
+  // Elapsed time is not the measure here and was misread as one at first. multer stops *storing*
+  // once the limit is passed, but the client goes on sending, so the wall clock still grows with
+  // the payload while the memory held does not. Confirmed by sampling the API process during a
+  // 400 MB upload: 400 MB sent, 87 MB held. See 08-file-and-input-test.md.
+  info('A8', 'the limit is applied to the stream, not after it',
+    `55 MB refused in ${overMs}ms, 150 MB in ${Date.now() - t0 - overMs}ms — elapsed time follows what the client sends, not what the server keeps`);
 
   // ── B ─────────────────────────────────────────────────────────────────────
   section('B. Filename handling');
@@ -196,13 +195,22 @@ async function main() {
   // ── C ─────────────────────────────────────────────────────────────────────
   section('C. Content type');
 
+  // Accepted, but never under a type a browser would act on. Nothing is rejected — this is a
+  // messenger and an allowlist would be wrong about a colleague's work file every week — so what
+  // is removed is the file's ability to run, not the ability to send it.
   const svg = Buffer.from('<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><script>alert(1)</script></svg>');
   const svgUp = await upload(alice.token, 'x.svg', 'image/svg+xml', svg);
-  info('C1', 'an SVG carrying a script', `${svgUp.status}${svgUp.body?.file ? ' — stored' : ''}`);
+  check('C1', 'an SVG carrying a script is stored as opaque bytes',
+    svgUp.body?.file?.mimeType === 'application/octet-stream', `${svgUp.status}, ${svgUp.body?.file?.mimeType}`);
 
   const html = Buffer.from('<html><script>alert(document.domain)</script></html>');
   const htmlUp = await upload(alice.token, 'page.html', 'text/html', html);
-  info('C2', 'an HTML file declared as text/html', `${htmlUp.status}${htmlUp.body?.file ? ' — stored' : ''}`);
+  check('C2', 'an HTML file is stored as opaque bytes',
+    htmlUp.body?.file?.mimeType === 'application/octet-stream', `${htmlUp.status}, ${htmlUp.body?.file?.mimeType}`);
+
+  const pdf = await upload(alice.token, 'report.pdf', 'application/pdf', Buffer.from('%PDF-1.4'));
+  check('C0', 'an ordinary document keeps its declared type',
+    pdf.body?.file?.mimeType === 'application/pdf', `${pdf.body?.file?.mimeType}`);
 
   // What the browser is told when the file comes back is what decides whether the two above
   // matter. A download served as an attachment is inert; one served inline as its declared type

@@ -4,13 +4,14 @@ Companion to [07-security-test.md](07-security-test.md). That one asks whether t
 one asks what happens when a caller sends something malformed, hostile or merely strange — and
 whether the answer is a clear 4xx or a 500 logged as our fault.
 
-**Latest run: 50 of 50 passed.** The first run found eight failures; seven were real and are fixed,
+**Latest run: 54 of 54 passed.** The first run found eight failures; seven were real and are fixed,
 one was a bug in the test.
 
 | Run | Result |
 |---|---|
 | First | 42 of 50 |
-| After the fixes | **50 of 50** |
+| After the input fixes | 50 of 50 |
+| After the file-handling fixes | **54 of 54** |
 
 ```bash
 npm run test:files --workspace=apps/api
@@ -132,46 +133,68 @@ SQL or Prisma internals appear in any response. An unknown route is a clean 404,
 
 ---
 
-# Observations — judgement calls, not defects
+# Observations — both since fixed
 
-These are recorded rather than fixed, because each is a decision rather than a bug.
+Both of these were recorded as decisions rather than bugs, and both were then taken.
 
-## O1 — The upload size limit protects storage, not memory
+## O1 — The upload size limit protected storage, not memory — **FIXED**
 
-`FileInterceptor` is mounted with no `limits`, so multer buffers the entire request body in memory
-before either size check runs. Measured:
+`FileInterceptor` was mounted with no `limits`, so multer buffered the entire request body in
+memory before either size check ran. A caller could make the API allocate as much as they cared to
+send, and the 50 MB limit only stopped it reaching storage — a denial-of-service vector on a
+free-tier instance with a few hundred megabytes of RAM.
 
-```
-55 MB  → refused in 229 ms
-150 MB → refused in 768 ms
-```
+The limit now lives on multer as well as on the validator, so the stream is cut off the moment it
+is passed. It is applied to attachments (50 MB) and to both avatar routes (5 MB).
 
-The time scales with the payload, which means the whole thing was read before it was rejected. A
-caller can therefore make the API allocate as much memory as they care to send, and the 50 MB limit
-only stops it reaching storage.
-
-**The fix is one line** — `FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } })` —
-which makes multer abort mid-stream. It is not applied here because it changes the error a caller
-sees for an oversized upload, and the web client's message for that case would want to change with
-it. Worth doing before production; it is a denial-of-service vector on a free-tier instance with a
-few hundred megabytes of RAM.
-
-## O2 — Nothing validates the declared content type
-
-The API stores whatever MIME type the client claims, with no allowlist. An SVG carrying a script and
-an HTML file declaring `text/html` are both accepted and stored.
-
-**They are inert on download, but not because of anything this code does.** Supabase decides:
+**Measuring it needed a better instrument than the first attempt used.** Elapsed time still grows
+with the payload, because the *client* goes on sending after the server has stopped storing — so
+timing was the wrong signal, and reading it as "still buffering" would have been wrong. Sampling the
+API process during a 400 MB upload is the right one:
 
 ```
-the SVG   → content-type: image/svg+xml, content-disposition: attachment   (downloaded, not rendered)
-the HTML  → content-type: text/plain, no disposition                        (displayed as source)
+baseline RSS                     144.6 MB
+peak RSS during a 400 MB upload  232.0 MB   (+87.5 MB)
+response                         413 "File too large"
 ```
 
-Both are safe today, and both would still be on a different origin from the app even if they were
-not. But the safety is the storage provider's behaviour, not a property of this system — change
-provider, or change a bucket setting, and it moves without anything here failing. If that matters,
-an allowlist on upload is the thing that would not move.
+400 MB sent, **87 MB held** — the limit plus overhead, not the payload.
+
+One more thing had to change with it. multer reports a limit breach by throwing a `MulterError`,
+which is not an `HttpException`, so it would have become a **500** — telling the caller their
+too-large file was our fault. The exception filter now maps it to **413 Payload Too Large**, and the
+other multer refusals to 400 with a sentence each.
+
+The web app also checks the size before uploading now. The server is still what enforces it; the
+client check is the difference between being told straight away and watching a progress bar cross a
+200 MB file before the answer arrives.
+
+## O2 — Nothing validated the declared content type — **FIXED**
+
+The API stored whatever MIME type the client claimed. An SVG carrying a script and an HTML file
+declaring `text/html` were both accepted and stored as declared.
+
+They were inert on download — but because Supabase served the SVG as an attachment and the HTML as
+`text/plain`, which is the storage provider's behaviour and not a property of this system. Change
+provider, or a bucket setting, and that moves without anything here failing.
+
+**Nothing is rejected.** This is a messenger: people send spreadsheets, archives and installers, and
+an allowlist would be wrong about a colleague's work file every week. What is removed is a file's
+ability to *run*. A declared type a browser would execute or render as a document is stored as
+`application/octet-stream` — the file still downloads under its own name, and can never render
+itself, whoever is serving it.
+
+| Uploaded as | Stored as |
+|---|---|
+| `image/svg+xml`, `text/html`, `application/xhtml+xml` | `application/octet-stream` |
+| `text/xml`, `application/xml`, `application/xslt+xml` | `application/octet-stream` |
+| `application/javascript`, `text/javascript`, `text/vbscript` | `application/octet-stream` |
+| nothing at all | `application/octet-stream` |
+| `image/png`, `application/pdf`, `.xlsx`, `video/mp4`, `text/plain` | unchanged |
+
+Parameters are stripped before comparing, so `text/html; charset=utf-8` is caught. The check is
+applied *before* the preview branch, which has a second benefit: sharp is never asked to rasterise
+an SVG, and so never parses an XML document that may reference something outside itself.
 
 ## O3 — A zero-byte file is accepted
 

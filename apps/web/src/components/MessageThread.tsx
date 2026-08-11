@@ -28,6 +28,7 @@ import { getConversationTitle, getOtherMember } from '../utils/conversation';
 import { decodeMessageText, encodeMessageText } from '../utils/text';
 import { FaArrowRotateRight, FaBookmark, FaCheck, FaEllipsisVertical, FaRegFaceSmile, FaChevronDown, FaChevronLeft, FaImage, FaMagnifyingGlass, FaMicrophone, FaPaperPlane, FaPaperclip, FaPen, FaPhone, FaRegBookmark, FaRegCopy, FaReply, FaShare, FaThumbtack, FaTrash, FaVideo, FaXmark } from 'react-icons/fa6';
 import { attachmentNoun } from '../utils/messagePreview';
+import { attachmentTooLargeMessage } from '../utils/uploadLimits';
 import { groupingFor } from '../utils/messageGrouping';
 import { groupReactions } from '../utils/reactionSummary';
 import { compressImage } from '../utils/imageCompression';
@@ -761,6 +762,17 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   /** Stage files without sending them. Nothing is uploaded until Send is pressed. */
   function stageFiles(files: File[]) {
     if (files.length === 0) return;
+
+    // Checked before staging, not after uploading. The API refuses anything over the limit, but it
+    // can only do so once the bytes have arrived — so without this the person watches a progress
+    // bar cross a 200 MB file and is told at the end. The server remains what enforces it.
+    const tooLarge = files.map((f) => attachmentTooLargeMessage(f)).filter((m): m is string => m !== null);
+    if (tooLarge.length > 0) {
+      window.alert(tooLarge.join('\n\n'));
+      files = files.filter((f) => attachmentTooLargeMessage(f) === null);
+      if (files.length === 0) return;
+    }
+
     setStaged((prev) => [
       ...prev,
       ...files.map((file) => ({

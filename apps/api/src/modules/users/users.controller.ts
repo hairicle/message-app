@@ -5,6 +5,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { z } from 'zod';
 import { UsersService } from './users.service';
+import { MAX_AVATAR_SIZE } from '../files/file-rules';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
@@ -46,9 +47,9 @@ export class UsersController {
   }
 
   @Post('me/avatar')
-  @UseInterceptors(FileInterceptor('avatar'))
+  @UseInterceptors(FileInterceptor('avatar', { limits: { fileSize: MAX_AVATAR_SIZE } }))
   async uploadAvatar(
-    @UploadedFile(new ParseFilePipe({ validators: [new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 })] }))
+    @UploadedFile(new ParseFilePipe({ validators: [new MaxFileSizeValidator({ maxSize: MAX_AVATAR_SIZE })] }))
     file: Express.Multer.File,
     @CurrentUser() user: AuthPayload,
   ) {

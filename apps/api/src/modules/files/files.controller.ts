@@ -4,6 +4,7 @@ import {
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { FilesService } from './files.service';
+import { MAX_FILE_SIZE } from './file-rules';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthPayload } from '@messenger/shared';
@@ -14,9 +15,14 @@ export class FilesController {
   constructor(private readonly filesService: FilesService) {}
 
   @Post()
-  @UseInterceptors(FileInterceptor('file'))
+  // The limit belongs here, on multer, and not only on the validator below. Without it the whole
+  // request body is buffered in memory before anything checks its size — measured at 150 MB read in
+  // full before a 50 MB limit refused it, which made the limit a guard on storage rather than on
+  // this process. multer now aborts the stream as soon as the limit is passed.
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: MAX_FILE_SIZE } }))
   async upload(
-    @UploadedFile(new ParseFilePipe({ validators: [new MaxFileSizeValidator({ maxSize: 50 * 1024 * 1024 })] }))
+    // Kept as well, so the boundary is enforced even if the interceptor is ever reconfigured.
+    @UploadedFile(new ParseFilePipe({ validators: [new MaxFileSizeValidator({ maxSize: MAX_FILE_SIZE })] }))
     file: Express.Multer.File,
     @CurrentUser() user: AuthPayload,
   ) {

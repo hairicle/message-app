@@ -5,6 +5,7 @@ import {
 import { FileInterceptor } from '@nestjs/platform-express';
 import { z } from 'zod';
 import { ConversationsService } from './conversations.service';
+import { MAX_AVATAR_SIZE } from '../files/file-rules';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthPayload } from '@messenger/shared';
@@ -45,10 +46,10 @@ export class ConversationsController {
   }
 
   @Post(':id/avatar')
-  @UseInterceptors(FileInterceptor('avatar'))
+  @UseInterceptors(FileInterceptor('avatar', { limits: { fileSize: MAX_AVATAR_SIZE } }))
   async uploadAvatar(
     @Param('id') id: string,
-    @UploadedFile(new ParseFilePipe({ validators: [new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 })] }))
+    @UploadedFile(new ParseFilePipe({ validators: [new MaxFileSizeValidator({ maxSize: MAX_AVATAR_SIZE })] }))
     file: Express.Multer.File,
     @CurrentUser() user: AuthPayload,
   ) {

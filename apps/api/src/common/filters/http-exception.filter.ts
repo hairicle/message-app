@@ -40,6 +40,37 @@ function isMalformedIdError(error: unknown): error is PrismaLikeError {
   );
 }
 
+/**
+ * Multer aborts the request stream the moment an upload passes its limit, and reports it by
+ * throwing rather than by returning. The thrown value is not an HttpException, so without this it
+ * became a 500 — telling the caller their too-large file was our fault, and burying a routine
+ * refusal among real server faults.
+ */
+interface MulterLikeError {
+  name: string;
+  code: string;
+}
+
+function isUploadLimitError(error: unknown): error is MulterLikeError {
+  return (
+    typeof error === 'object'
+    && error !== null
+    && (error as MulterLikeError).name === 'MulterError'
+    && typeof (error as MulterLikeError).code === 'string'
+  );
+}
+
+/** What each multer refusal means to whoever sent the request. */
+const MULTER_MESSAGES: Record<string, { status: HttpStatus; message: string }> = {
+  LIMIT_FILE_SIZE: { status: HttpStatus.PAYLOAD_TOO_LARGE, message: 'That file is too large' },
+  LIMIT_FILE_COUNT: { status: HttpStatus.BAD_REQUEST, message: 'Too many files' },
+  LIMIT_UNEXPECTED_FILE: { status: HttpStatus.BAD_REQUEST, message: 'Unexpected file field' },
+  LIMIT_PART_COUNT: { status: HttpStatus.BAD_REQUEST, message: 'Too many parts in the upload' },
+  LIMIT_FIELD_KEY: { status: HttpStatus.BAD_REQUEST, message: 'A field name in the upload is too long' },
+  LIMIT_FIELD_VALUE: { status: HttpStatus.BAD_REQUEST, message: 'A field value in the upload is too long' },
+  LIMIT_FIELD_COUNT: { status: HttpStatus.BAD_REQUEST, message: 'Too many fields in the upload' },
+};
+
 function isZodError(error: unknown): error is ZodLikeError {
   return (
     typeof error === 'object'
@@ -83,6 +114,14 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // reflected content ends up somewhere it should not be.
     if (isMalformedIdError(exception)) {
       response.status(HttpStatus.BAD_REQUEST).json({ error: 'That identifier is not valid' });
+      return;
+    }
+
+    if (isUploadLimitError(exception)) {
+      const known = MULTER_MESSAGES[exception.code];
+      response
+        .status(known?.status ?? HttpStatus.BAD_REQUEST)
+        .json({ error: known?.message ?? 'That upload was rejected' });
       return;
     }
 

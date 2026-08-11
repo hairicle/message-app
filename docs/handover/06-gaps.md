@@ -106,7 +106,7 @@ production. See G2.
 | Variable | Reality |
 |---|---|
 | `FRONTEND_URL` | Loaded into config, read by nothing. |
-| `MAX_FILE_SIZE_MB` | Loaded into `maxFileSizeBytes`, read by nothing. The real limit is a hard-coded 50 MB in **both** `files.controller.ts` and `files.service.ts` — changing it means changing code in two places. |
+| `MAX_FILE_SIZE_MB` | Loaded into `maxFileSizeBytes`, read by nothing. The real limit is `MAX_FILE_SIZE` in `modules/files/file-rules.ts` — one constant now, where it used to be written in three places. |
 | `UPLOADS_DIR` | Left from the pre-Supabase local-disk storage. |
 | `LDAP_*` (5 variables) | `ldapts` is installed and the config is parsed, but no code path authenticates against LDAP. |
 | `FIREBASE_SERVICE_ACCOUNT_JSON` / `_PATH` | `firebase-admin` is installed and the config is parsed. Nothing sends a push notification. |
@@ -241,25 +241,26 @@ transport bypassed every schema on the HTTP controllers, so validation had to mo
 both transports share. All fixed —
 [08-file-and-input-test.md](08-file-and-input-test.md#findings--all-fixed).
 
-### G20. The upload size limit protects storage, not memory
+### ~~G20. The upload size limit protects storage, not memory~~ — FIXED
 
-`FileInterceptor` is mounted with no `limits`, so multer buffers the whole request body in memory
-before the 50 MB check runs. Measured live: 55 MB refused in 229 ms, 150 MB in 768 ms — the time
-scales with the payload, so the whole thing is read before it is rejected. A caller can make the
-API allocate as much as they care to send.
+multer was mounted with no `limits`, so the whole request body was buffered before the 50 MB check
+ran. The limit is now on the interceptor as well as the validator, on attachments and both avatar
+routes, so the stream is cut off when it is passed.
 
-One line fixes it — `FileInterceptor('file', { limits: { fileSize: 50 * 1024 * 1024 } })` — but it
-changes the error an oversized upload produces, and the web client's message for that case should
-change with it. Worth doing before production: it is a denial-of-service vector on a small instance.
-[Detail](08-file-and-input-test.md#o1--the-upload-size-limit-protects-storage-not-memory).
+Measured by sampling the API process, because elapsed time is not the signal — the client keeps
+sending after the server has stopped storing: **400 MB sent, 87 MB held**, answered 413. A
+`MulterError` is not an `HttpException`, so the exception filter had to learn it too, or an
+oversized upload would have been a 500.
 
-### G21. Nothing validates an uploaded file's declared content type
+### ~~G21. Nothing validates an uploaded file's declared content type~~ — FIXED
 
-Whatever MIME type a client claims is stored and served back. An SVG carrying a script and an HTML
-file are both accepted. Both are inert on download — but because Supabase serves the SVG as an
-attachment and the HTML as `text/plain`, not because of anything this code does. Change provider or
-a bucket setting and that moves silently.
-[Detail](08-file-and-input-test.md#o2--nothing-validates-the-declared-content-type).
+Whatever type a client claimed was stored and served back, and an SVG carrying a script was inert
+only because Supabase chose to serve it as an attachment.
+
+Nothing is rejected — an allowlist would be wrong about a colleague's work file every week — but a
+declared type a browser would execute is now stored as `application/octet-stream`, so the file
+downloads under its own name and can never render itself, whoever serves it.
+[Detail](08-file-and-input-test.md#o2--nothing-validated-the-declared-content-type--fixed).
 
 ---
 
@@ -274,7 +275,7 @@ a bucket setting and that moves silently.
 | Data issues | 2 (G13–G14) | — |
 | Repository and process | 4 (G15–G18) | — |
 | Error handling | — | 1 (G19), plus 8 more found by the input sweep |
-| File handling | 2 (G20, G21) | — |
+| File handling | — | 2 (G20, G21) |
 
 The smallest set that makes production defensible was **G1**, **G2**, **G3**, **G13** and **G16**.
 Three are now closed and verified live. **What remains of that set:**
