@@ -60,6 +60,10 @@ Requests still need a bearer token and the token is not in a cookie, so this is 
 hole. It is still a missing layer and any security review will raise it. One line in `main.ts`, one
 in the gateway decorator.
 
+**Confirmed live** ([07-security-test.md](07-security-test.md#s2--cors-reflects-every-origin)): a
+request carrying `Origin: https://evil.example.com` comes back with `Access-Control-Allow-Origin: *`,
+and a preflight from that origin is approved with 204.
+
 ### G3. Rate limiting is registered but never enforced
 
 `ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }])` is configured in `app.module.ts`, but
@@ -67,6 +71,12 @@ in the gateway decorator.
 
 **`POST /api/auth/login` is unthrottled** — password guessing is limited only by bcrypt's cost.
 Either bind the guard or put a limit at the edge before going live.
+
+**Confirmed live** ([07-security-test.md](07-security-test.md#s1--no-rate-limiting-anywhere-including-login)):
+40 sequential wrong-password attempts in 31.4 s, none throttled; 130 authenticated requests in one
+burst, none throttled. There is no account lockout either — correctly so, since one would let
+anyone deny a colleague service by guessing at their account — which means nothing at all stands
+between an attacker and unlimited guesses.
 
 ### G4. The API cannot run more than one instance
 
@@ -214,6 +224,28 @@ workflow.
 
 ---
 
+### G19. Unhandled type errors return 500
+
+Found by the live security test. A request body whose field is the wrong *type* — an object, a
+number or a boolean where a string is expected — reaches the code and throws, and the exception
+filter answers 500.
+
+| Request | Response |
+|---|---|
+| `POST /api/messages` with `ciphertext: {"$ne": null}`, `12345`, or `true` | **500** |
+| `POST /api/users/me/password` with no `currentPassword` | **500** |
+| `POST /api/messages` with `ciphertext: ["a","b"]` | **201 — accepted** |
+
+Nothing changes state and nothing is bypassed — verified by probe: the password hash is untouched
+and the old password still works. It matters because each of these is logged as a *server* fault,
+which is how real ones get lost, and because the array case is type confusion reaching storage.
+
+The fix is to validate these bodies with Zod; the exception filter already turns a `ZodError` into
+a 400 with field names, and these endpoints simply are not using it. Full detail in
+[07-security-test.md](07-security-test.md#s3--unhandled-type-errors-return-500).
+
+---
+
 ## Summary
 
 | | Count |
@@ -224,6 +256,7 @@ workflow.
 | Stubs and unbuilt features | 6 (G7–G12) |
 | Data issues | 2 (G13–G14) |
 | Repository and process | 4 (G15–G18) |
+| Error handling | 1 (G19) |
 
 The smallest set that makes production defensible: **G1** (hide the call buttons), **G2** (close
 CORS), **G3** (rate-limit login), **G13** (fix the role casing), and **G16** (the Vercel setting).

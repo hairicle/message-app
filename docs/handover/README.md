@@ -12,6 +12,7 @@ older docs disagree, the code wins and the difference is called out.
 | 4 | [API reference](04-api-reference.md) | You're writing smoke tests, a gateway config, or a WAF rule |
 | 5 | [Production deployment](05-deployment.md) | You're doing the deploy |
 | 6 | [Gaps register](06-gaps.md) | **Read before sign-off.** Everything missing, stubbed, dead or broken — 18 entries, one of them blocking |
+| 7 | [Security test results](07-security-test.md) | A live penetration test of the API — 58/64 passed, with the four real findings and what they do and do not mean. Re-runnable. |
 
 Staging is already running and documented separately in
 [../staging-deploy.md](../staging-deploy.md). Production follows the same shape; document 5 covers
