@@ -126,6 +126,13 @@ The helper accepts a comma-separated list and strips trailing slashes — `https
 never matches, because a browser sends an Origin with no path at all, and the mismatch shows up as
 every request failing while the API's own logs look healthy.
 
+**Outside production, local addresses are also accepted** — loopback and the private ranges. That
+was added after the first version of this fix broke the app: `CORS_ORIGIN` said
+`http://localhost:3100`, the browser was at `http://127.0.0.1:3100`, and every request was refused,
+including sending a message. The two spell the same server, and no developer should have to know
+which spelling the API was told about. In production the rule is off — there the deployment has a
+real hostname and a private-address origin is never a legitimate caller.
+
 **When `CORS_ORIGIN` is unset** the API allows only `localhost:3100` and `localhost:3000`, and logs
 a warning naming the variable. It does not fall back to allowing everything: an unset variable is
 far more often a deployment that forgot it than a decision to accept any origin, and the failure it

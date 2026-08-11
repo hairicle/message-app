@@ -6,7 +6,7 @@ import helmet from 'helmet';
 import { AppModule } from './app.module';
 import { RedisIoAdapter } from './realtime/redis-io.adapter';
 import { RedisService } from './redis/redis.service';
-import { allowedOrigins } from './common/cors';
+import { ALLOW_LOCAL_ORIGINS, allowedOrigins, corsOriginMatcher } from './common/cors';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { AvatarUrlInterceptor } from './common/avatar-url.interceptor';
 import { AvatarUrlService } from './common/avatar-url.service';
@@ -34,7 +34,10 @@ async function bootstrap() {
       `CORS_ORIGIN is not set — allowing only ${origins.join(', ')}. Set it to the web app's origin.`,
     );
   }
-  app.enableCors({ origin: origins, credentials: true });
+  if (ALLOW_LOCAL_ORIGINS) {
+    logger.log(`CORS: ${origins.join(', ')}, plus any local address (NODE_ENV is not production)`);
+  }
+  app.enableCors({ origin: corsOriginMatcher(process.env.CORS_ORIGIN, ALLOW_LOCAL_ORIGINS), credentials: true });
 
   // Rooms live in one process's memory unless something shares them. Two instances without this
   // look healthy and quietly fail to deliver between them — see RedisIoAdapter.

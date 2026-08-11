@@ -33,6 +33,13 @@ may be given, comma-separated, which is how you allow a preview deployment along
 Unset, the API allows only `localhost:3100` and `localhost:3000` and logs a warning naming the
 variable. It does not fall back to allowing everything.
 
+**Outside production** (`NODE_ENV` is anything but `production`) any loopback or private-network
+address is also accepted — `localhost`, `127.0.0.1`, `::1`, `10.x`, `192.168.x`, `172.16–31.x`.
+That is not laxity, it is a fix: `localhost:3100` and `127.0.0.1:3100` are the same server and
+different origins, and opening the app at the wrong spelling made every request fail. In production
+the rule is off, because there the deployment has a real hostname and a private-address origin is
+never a legitimate caller.
+
 ### 2. `MESSAGE_ENCRYPTION_KEY` must be set, and must be kept
 
 Message bodies are encrypted at rest. Without the variable the API still starts and still works —
