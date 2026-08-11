@@ -1,8 +1,9 @@
 import { Injectable, ForbiddenException, NotFoundException } from '@nestjs/common';
+import { decryptMessage, encryptMessage } from '../../common/message-cipher';
 import { PrismaService } from '../../database/prisma.service';
 
 /** ciphertext is a bytea column; the old SQL decoded it with convert_from(…, 'UTF8'). */
-const decode = (bytes: Uint8Array) => Buffer.from(bytes).toString('utf8');
+const decode = (bytes: Uint8Array) => decryptMessage(bytes);
 
 const MANAGER_ROLES = ['owner', 'admin'];
 
@@ -180,7 +181,7 @@ export class TeamsService {
           conversation_id: conversationId,
           sender_id: userId,
           type: 'text',
-          ciphertext: Buffer.from(content, 'utf8'),
+          ciphertext: encryptMessage(content),
         },
         select: { id: true, created_at: true },
       }),

@@ -68,10 +68,66 @@ jobs:
           fi
           curl --fail --silent --show-error "${{ secrets.RENDER_DEPLOY_HOOK_API }}"
 
-      # The web app is on Vercel, which is connected to this repository and builds a preview for
-      # every branch on its own. It is not triggered here — but note that means Vercel's preview
-      # is not gated on the tests above, unlike the API.
+      - name: Summary
+        run: echo "API deploy requested on Render." >> $GITHUB_STEP_SUMMARY
+
+  deploy-web:
+    name: Deploy web (Vercel)
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      # Vercel used to build this itself, from its Git integration, on the same push — which meant
+      # the web app was the one thing that shipped without the tests above having passed. A commit
+      # that failed CI still reached users. Deploying from here makes the gate apply to both halves
+      # of the deployment rather than one.
+      #
+      # This only holds while Vercel's own Git integration is OFF for the project: Settings → Git →
+      # "Ignored Build Step" set to `exit 0`, or the repository disconnected. With both enabled,
+      # every push deploys twice and the ungated one can win.
+      - name: Check the deploy credentials are present
+        run: |
+          missing=""
+          [ -z "${{ secrets.VERCEL_TOKEN }}" ] && missing="$missing VERCEL_TOKEN"
+          [ -z "${{ secrets.VERCEL_ORG_ID }}" ] && missing="$missing VERCEL_ORG_ID"
+          [ -z "${{ secrets.VERCEL_PROJECT_ID }}" ] && missing="$missing VERCEL_PROJECT_ID"
+          if [ -n "$missing" ]; then
+            echo "Missing repository secrets:$missing"
+            echo "Add them in Settings → Secrets and variables → Actions. See docs/handover/05-deployment.md."
+            exit 1
+          fi
+
+      - name: Install Vercel CLI
+        run: npm install --global vercel@latest
+
+      # Built here rather than on Vercel, so what is deployed is the exact tree the tests ran
+      # against. `vercel build` still honours vercel.json, which is what compiles the shared
+      # workspace before the web app — the step a bare `next build` skips.
+      - name: Build
+        run: |
+          vercel pull --yes --environment=preview --token="${{ secrets.VERCEL_TOKEN }}"
+          vercel build --token="${{ secrets.VERCEL_TOKEN }}"
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
+      - name: Deploy
+        id: deploy
+        run: |
+          url=$(vercel deploy --prebuilt --token="${{ secrets.VERCEL_TOKEN }}")
+          echo "url=$url" >> $GITHUB_OUTPUT
+        env:
+          VERCEL_ORG_ID: ${{ secrets.VERCEL_ORG_ID }}
+          VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
+
       - name: Summary
         run: |
-          echo "API deploy requested on Render." >> $GITHUB_STEP_SUMMARY
-          echo "The web app deploys separately on Vercel from the same push." >> $GITHUB_STEP_SUMMARY
+          echo "Web deployed to ${{ steps.deploy.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "NEXT_PUBLIC_API_URL is inlined at build time — if the API's URL changed, this build carries the old one until it is re-run." >> $GITHUB_STEP_SUMMARY

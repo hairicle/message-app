@@ -15,11 +15,15 @@ buttons are live, broken, and leave the user's camera on. Hide them before produ
 
 None of these are hypothetical; each was confirmed by reading the code.
 
-> **Two earlier gaps are now closed** and re-verified live — CORS no longer accepts every origin,
-> and rate limiting is enforced. See [07-security-test.md](07-security-test.md). The one thing that
-> changes for you: **`CORS_ORIGIN` is now read, and is therefore required.** Leave it unset and the
-> deployed web app cannot reach the API at all. It was previously inert, so a deployment that had
-> got away with omitting it will now fail.
+> **Five earlier gaps are now closed** and re-verified live: CORS no longer accepts every origin,
+> rate limiting is enforced, message bodies are encrypted at rest, the API can run more than one
+> instance, and Vercel deploys are gated on the tests. See [07](07-security-test.md) and
+> [10](10-scaling-and-encryption.md).
+>
+> **Three things change for you.** `CORS_ORIGIN` and `MESSAGE_ENCRYPTION_KEY` are now read, and
+> both belong in the variable table below — a deployment that omitted the first will now find the
+> web app cannot reach the API. And Vercel's own Git integration has to be turned off, or the
+> gating this adds is undone by a second, ungated build of the same commit.
 
 ### 1. `CORS_ORIGIN` must be set, and must match exactly
 
@@ -29,22 +33,31 @@ may be given, comma-separated, which is how you allow a preview deployment along
 Unset, the API allows only `localhost:3100` and `localhost:3000` and logs a warning naming the
 variable. It does not fall back to allowing everything.
 
-### 2. `FRONTEND_URL` and `MAX_FILE_SIZE_MB` do nothing
+### 2. `MESSAGE_ENCRYPTION_KEY` must be set, and must be kept
+
+Message bodies are encrypted at rest. Without the variable the API still starts and still works —
+and stores plaintext, warning at startup.
+
+**Lose the key and every message encrypted under it is unrecoverable.** There is no recovery path,
+by design. Back it up wherever `JWT_SECRET` is backed up, and never share it between staging and
+production.
+
+After the first deploy, convert the messages already stored — encryption applies to new ones only,
+and until this is run a database dump still hands over the whole history:
+
+```bash
+npm run encrypt:messages --workspace=apps/api -- --apply
+```
+
+**This is encryption at rest, not end-to-end.** The key is on the server. Do not let anyone sign off
+believing otherwise — [10-scaling-and-encryption.md](10-scaling-and-encryption.md#why-this-is-not-end-to-end)
+explains the difference and what end-to-end would still cost.
+
+### 3. `FRONTEND_URL` and `MAX_FILE_SIZE_MB` do nothing
 
 `FRONTEND_URL` is loaded into config and never read. `MAX_FILE_SIZE_MB` is read into
-`maxFileSizeBytes` and never read either — the real limit is a hard-coded 50 MB in both
-`files.controller.ts` and `files.service.ts`. Changing the variable will not change the limit; you
-have to change the code.
-
-### 3. Messages are not encrypted
-
-The column is called `ciphertext`, but it stores base64-encoded plaintext. Anyone with database
-access — including Supabase support and anyone holding the service key — can read every message.
-The Signal Protocol tables in the schema are unused.
-
-This is a known Phase 3 item, not a defect. It matters here because the project is described
-internally as "secure, self-hosted, full control over encryption keys", and the encryption part is
-not built. Make sure whoever signs off knows that.
+`maxFileSizeBytes` and never read either — the real limit is `MAX_FILE_SIZE` in
+`modules/files/file-rules.ts`. Changing the variable will not change the limit; change the code.
 
 ## Before `main` can ship
 
@@ -87,6 +100,7 @@ Missing these does not stop the boot, but files and migrations break.
 | `AVATAR_BUCKET` | `avatars` | |
 | `STORAGE_REGION` | `ap-southeast-1` | |
 | `CORS_ORIGIN` | `https://messenger.example.com` | The web app's origin, no trailing slash. Comma-separate several. **Unset, the deployed web app cannot reach the API.** |
+| `MESSAGE_ENCRYPTION_KEY` | 64 hex characters | Encrypts message bodies at rest. **Unset, bodies are stored as plaintext** and the API warns at startup. Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. **Lose it and every message encrypted under it is unrecoverable** — back it up with `JWT_SECRET`, and never share it between staging and production. |
 
 ### API — optional
 
@@ -115,6 +129,13 @@ and every `LDAP_*` and `FIREBASE_*` variable. No code path reads any of them.
 | Secret | Notes |
 |---|---|
 | `RENDER_DEPLOY_HOOK_API` | A deploy hook scoped to the one service. Render's own auto-deploy is off so this workflow is the only thing that ships. |
+| `VERCEL_TOKEN` | Account Settings → Tokens |
+| `VERCEL_ORG_ID` | `.vercel/project.json` after `vercel link`, or Team Settings |
+| `VERCEL_PROJECT_ID` | the same file, or Project Settings |
+
+The web app is deployed **from the workflow**, after the tests. Vercel's own Git integration must be
+turned off for the project — Settings → Git → Ignored Build Step set to `exit 0` — or every push
+deploys twice and the ungated build can win. See [10-scaling-and-encryption.md](10-scaling-and-encryption.md).
 
 ## The ordering constraint
 
@@ -213,6 +234,8 @@ renames a column makes rollback impossible without a restore.
 | Symptom | Cause |
 |---|---|
 | Everything loads, nothing sends | `CORS_ORIGIN` does not match the web origin. Scheme and host, no trailing slash, no path. |
+| Messages appear blank after a key change | `MESSAGE_ENCRYPTION_KEY` differs from the one they were written under. There is no recovery; restore the original key. |
+| Two users cannot see each other's messages, no errors anywhere | Historically: two instances without shared rooms. Fixed — but check Redis is reachable, since the adapter falls back to per-process delivery. |
 | Sign-in refused with 429 after a few tries | The login limit: 10 attempts per 15 minutes for that address and account. It clears itself; `Retry-After` says when. |
 | App calls `localhost:4000` in production | `NEXT_PUBLIC_API_URL` was set after the build. Redeploy the web app. |
 | Messages need a refresh to appear | The socket is not connecting. Same cause as above, or the API is asleep. |

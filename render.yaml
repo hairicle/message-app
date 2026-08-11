@@ -51,6 +51,16 @@ services:
       - key: JWT_SECRET
         generateValue: true
 
+      # Encrypts message bodies at rest. Set by hand rather than generated: this has to be exactly
+      # 32 bytes as 64 hex characters, and the API refuses to start on anything else — a generated
+      # value would be the wrong shape. Produce one with
+      #   node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
+      #
+      # Losing it makes every message written under it unrecoverable, so back it up with
+      # JWT_SECRET. Never share it with production.
+      - key: MESSAGE_ENCRYPTION_KEY
+        sync: false
+
       - key: REDIS_URL
         sync: false
 

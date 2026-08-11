@@ -77,22 +77,38 @@ one shared budget. The default was also raised to 300/min, because the unenforce
 rate-limited ordinary scrolling through a photo gallery. Detail and the trade-offs in
 [07-security-test.md](07-security-test.md#s1--no-rate-limiting-anywhere-including-login--fixed).
 
-### G4. The API cannot run more than one instance
+### ~~G4. The API cannot run more than one instance~~ — FIXED
 
-Socket.IO rooms live in the Node process's memory and the Socket.IO Redis adapter is not wired up.
-Two instances means two users connected to different ones never see each other's messages — and it
-fails **silently**, which is the dangerous part. Redis is already provisioned, so the change is
-small, but until it is made, do not scale the service horizontally or enable autoscaling.
+Socket.IO rooms lived in one process's memory, so two instances both looked healthy while two
+people who happened to land on different ones never saw each other's messages. Nothing errored —
+that silence is what made it worth fixing before anyone scaled rather than after.
 
-### G5. Messages are not encrypted
+`RedisIoAdapter` now puts room broadcasts on Redis pub/sub. It degrades rather than fails: with
+Redis unreachable the server still delivers within its own process, which is exactly right on a
+single instance and no worse than before on several.
 
-The column is named `ciphertext` but holds base64-encoded plaintext. Anyone with database access —
-including Supabase support and anyone holding the service key — can read every message. The
-`signal_identity_keys`, `signal_prekeys` and `signal_signed_prekeys` tables exist and are referenced
-by nothing.
+**Verified by running two instances**, connecting a client to each, and sending between them —
+messages and typing indicators both cross. Detail in
+[10-scaling-and-encryption.md](10-scaling-and-encryption.md).
 
-A known Phase 3 item. It matters because the project is described internally as giving full control
-over encryption keys, and that part is not built.
+### ~~G5. Messages are not encrypted~~ — FIXED, with a precise caveat
+
+The column named `ciphertext` held base64 — an encoding, not a cipher. Bodies are now encrypted
+with AES-256-GCM before they are stored.
+
+**This is encryption at rest, not end-to-end.** The key is on the server, so the running API can
+read messages and so can anyone holding both the database and the key. What it removes is the far
+more likely exposure: a dump, a backup, a leaked connection string, or the hosting provider's staff
+reading the table. Do not describe the system as end-to-end encrypted — that remains unbuilt, and
+[10-scaling-and-encryption.md](10-scaling-and-encryption.md#why-this-is-not-end-to-end) says what it
+would cost.
+
+Rows written before this still read correctly, so it was deployable without downtime.
+`npm run encrypt:messages` converts them.
+
+**`MESSAGE_ENCRYPTION_KEY` is now a required production variable.** Without it the API runs and
+stores plaintext, warning at startup.
+
 
 ---
 
@@ -216,12 +232,20 @@ in [05-deployment.md](05-deployment.md#before-main-can-ship).
 `git remote set-url origin https://github.com/hairicle/message-app.git` still needs running on every
 machine that pushes. Pushes currently succeed with a "repository moved" warning.
 
-### G18. Vercel deploys are not gated on CI
+### ~~G18. Vercel deploys are not gated on CI~~ — FIXED
 
-`.github/workflows/deploy-staging.yml` runs the full suite before triggering Render. Vercel builds
-from the same push independently and runs no tests, so a commit that fails CI still reaches the web
-app. If that matters for production, disable Vercel's git integration and trigger it from the
-workflow.
+Vercel built from its own Git integration on the same push, so the web app was the one thing that
+shipped without the tests having passed — a commit that failed CI still reached users.
+
+`deploy-staging.yml` now has a `deploy-web` job that needs `verify`, builds with the Vercel CLI
+and deploys the prebuilt output. Building in CI also means what ships is the exact tree the tests
+ran against.
+
+**This only holds while Vercel's own Git integration is off** for the project — Settings → Git →
+Ignored Build Step set to `exit 0`, or the repository disconnected. With both enabled every push
+deploys twice and the ungated one can win. Three secrets are needed: `VERCEL_TOKEN`,
+`VERCEL_ORG_ID`, `VERCEL_PROJECT_ID`; the job fails with a legible message naming any that are
+missing rather than deploying nothing quietly.
 
 ---
 
@@ -269,11 +293,11 @@ downloads under its own name and can never render itself, whoever serves it.
 | | Open | Fixed |
 |---|---|---|
 | Blocking before production | 1 (G1) | — |
-| Security and operations | 2 (G4, G5) | 2 (G2, G3) |
+| Security and operations | — | 4 (G2–G5) |
 | Dead configuration | 1, covering 8 variables (G6) | — |
 | Stubs and unbuilt features | 6 (G7–G12) | — |
 | Data issues | 2 (G13–G14) | — |
-| Repository and process | 4 (G15–G18) | — |
+| Repository and process | 3 (G15–G17) | 1 (G18) |
 | Error handling | — | 1 (G19), plus 8 more found by the input sweep |
 | File handling | — | 2 (G20, G21) |
 

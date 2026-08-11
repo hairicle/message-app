@@ -2,9 +2,10 @@ import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
 import { Logger, ValidationPipe } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
-import { IoAdapter } from '@nestjs/platform-socket.io';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
+import { RedisIoAdapter } from './realtime/redis-io.adapter';
+import { RedisService } from './redis/redis.service';
 import { allowedOrigins } from './common/cors';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { AvatarUrlInterceptor } from './common/avatar-url.interceptor';
@@ -35,7 +36,11 @@ async function bootstrap() {
   }
   app.enableCors({ origin: origins, credentials: true });
 
-  app.useWebSocketAdapter(new IoAdapter(app));
+  // Rooms live in one process's memory unless something shares them. Two instances without this
+  // look healthy and quietly fail to deliver between them — see RedisIoAdapter.
+  const socketAdapter = new RedisIoAdapter(app, app.get(RedisService));
+  socketAdapter.connect();
+  app.useWebSocketAdapter(socketAdapter);
   app.setGlobalPrefix('api', { exclude: ['health'] });
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));

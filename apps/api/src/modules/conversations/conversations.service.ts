@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events';
 import { PrismaService } from '../../database/prisma.service';
 import { AvatarStorageService } from '../../common/avatar-storage.service';
 import { AvatarUrlService } from '../../common/avatar-url.service';
+import { decryptBase64Message, decryptMessage } from '../../common/message-cipher';
 
 /**
  * The smallest group worth calling one — the creator plus two others.
@@ -13,8 +14,11 @@ import { AvatarUrlService } from '../../common/avatar-url.service';
  */
 const MIN_GROUP_MEMBERS = 3;
 
-/** ciphertext is bytea; the SQL form decoded it with convert_from(…, 'UTF8'). */
-const decode = (bytes: Uint8Array) => Buffer.from(bytes).toString('utf8');
+/**
+ * Message bodies are encrypted at rest, so reading one is a decryption rather than a conversion.
+ * Handles rows written before encryption existed too — see common/message-cipher.ts.
+ */
+const decode = (bytes: Uint8Array) => decryptMessage(bytes);
 
 /** files.size_bytes is bigint, which does not survive JSON serialisation as-is. */
 const fileDto = (f: {
@@ -274,7 +278,7 @@ export class ConversationsService {
    * still Prisma — same client, same pool, parameterised — just its raw escape hatch.
    */
   async listConversations(userId: string) {
-    return this.prisma.$queryRaw<unknown[]>`
+    const rows = await this.prisma.$queryRaw<{ last_message: { ciphertext?: string | null } | null }[]>`
       SELECT c.*,
         (cm.muted_until IS NOT NULL AND cm.muted_until > now()) AS is_muted,
         (cm.pinned_at IS NOT NULL) AS is_pinned,
@@ -295,7 +299,7 @@ export class ConversationsService {
       LEFT JOIN LATERAL (
         SELECT row_to_json(sub) AS msg FROM (
           SELECT u.username AS sender_username, u.display_name AS sender_display_name,
-                 m.type, convert_from(m.ciphertext, 'UTF8') AS ciphertext,
+                 m.type, encode(m.ciphertext, 'base64') AS ciphertext,
                  m.deleted_at, m.created_at
           FROM messages m
           JOIN users u ON u.id = m.sender_id
@@ -318,6 +322,15 @@ export class ConversationsService {
       -- Pinned first, and among themselves by when they were pinned, so pinning something does
       -- not reorder the ones already up there. Everything else stays newest-first.
       ORDER BY (cm.pinned_at IS NOT NULL) DESC, cm.pinned_at ASC, c.updated_at DESC`;
+
+    // The last-message line in the sidebar. The query hands back the stored bytes base64-encoded
+    // rather than converted to text, because the column holds an encrypted envelope that is not
+    // valid UTF-8 — `convert_from` on one fails the whole query rather than the one row.
+    return rows.map((row) => (
+      row.last_message
+        ? { ...row, last_message: { ...row.last_message, ciphertext: decryptBase64Message(row.last_message.ciphertext) } }
+        : row
+    ));
   }
 
   async getConversation(id: string, userId: string) {

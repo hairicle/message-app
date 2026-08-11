@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import { message_type } from '@prisma/client';
 import { z } from 'zod';
 import { PrismaService } from '../../database/prisma.service';
+import { decryptBase64Message, decryptMessage, encryptMessage } from '../../common/message-cipher';
 
 /**
  * What a client may send.
@@ -21,8 +22,11 @@ export const sendMessageSchema = z.object({
   fileId: z.string().uuid().nullish(),
 });
 
-/** ciphertext is bytea; the SQL form decoded it with convert_from(…, 'UTF8'). */
-const decode = (bytes: Uint8Array) => Buffer.from(bytes).toString('utf8');
+/**
+ * Message bodies are encrypted at rest. `decode` is the single reader — it handles both the
+ * encrypted envelope and the plain rows written before there was one. See message-cipher.ts.
+ */
+const decode = (bytes: Uint8Array) => decryptMessage(bytes);
 
 /**
  * How many recent messages a search reads before giving up.
@@ -45,7 +49,10 @@ const BASE64_SHAPE = /^[A-Za-z0-9+/]+={0,2}$/;
  * match either without having to guess which era a row came from.
  */
 export function searchableText(bytes: Uint8Array): string {
-  const raw = Buffer.from(bytes).toString('utf8');
+  // Decrypted first, because the column now holds an envelope rather than the base64 itself. This
+  // is also why search survived encryption at all: it already matched in Node rather than in SQL,
+  // so it reads the same plaintext it always did. A `LIKE` in the query would have stopped working.
+  const raw = decryptMessage(bytes);
   if (raw.length === 0 || raw.length % 4 !== 0 || !BASE64_SHAPE.test(raw)) return raw;
 
   const decoded = Buffer.from(raw, 'base64').toString('utf8');
@@ -209,7 +216,7 @@ export class MessagesService {
         conversation_id: conversationId,
         sender_id: senderId,
         type: (body.type ?? 'text') as message_type,
-        ciphertext: Buffer.from(body.ciphertext ?? '', 'utf8'),
+        ciphertext: encryptMessage(body.ciphertext ?? ''),
         reply_to_message_id: body.replyToMessageId ?? null,
       },
       select: { id: true },
@@ -260,7 +267,7 @@ export class MessagesService {
     // Guarded by the same predicate the UPDATE … WHERE carried: own message, not deleted.
     const result = await this.prisma.messages.updateMany({
       where: { id: messageId, sender_id: userId, deleted_at: null },
-      data: { ciphertext: Buffer.from(ciphertext, 'utf8'), edited_at: new Date() },
+      data: { ciphertext: encryptMessage(ciphertext), edited_at: new Date() },
     });
     if (result.count === 0) throw new ForbiddenException('Cannot edit this message');
 
@@ -654,12 +661,15 @@ export class MessagesService {
    * message timestamp, so it differs per conversation and cannot be expressed as one filter.
    */
   async listUndelivered(userId: string) {
-    return this.prisma.$queryRaw<unknown[]>`
+    // `encode(…, 'base64')` rather than `convert_from(…, 'UTF8')`: the column holds an encrypted
+    // envelope now, which is not valid UTF-8 and would make the conversion fail outright. The row
+    // is decrypted in Node below, where the key is.
+    const rows = await this.prisma.$queryRaw<{ ciphertext: string | null }[]>`
       SELECT m.id,
              m.conversation_id AS "conversationId",
              m.sender_id       AS "senderId",
              m.type,
-             convert_from(m.ciphertext, 'UTF8') AS ciphertext,
+             encode(m.ciphertext, 'base64') AS ciphertext,
              m.created_at AS "createdAt"
       FROM messages m
       JOIN conversation_members cm ON cm.conversation_id = m.conversation_id AND cm.user_id = ${userId}::uuid
@@ -669,5 +679,7 @@ export class MessagesService {
              m.created_at > (SELECT created_at FROM messages lrm WHERE lrm.id = cm.last_read_message_id))
       ORDER BY m.created_at ASC
       LIMIT 200`;
+
+    return rows.map((row) => ({ ...row, ciphertext: decryptBase64Message(row.ciphertext) }));
   }
 }
