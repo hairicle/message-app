@@ -16,6 +16,7 @@ older docs disagree, the code wins and the difference is called out.
 | 8 | [File, validation and exception test](08-file-and-input-test.md) | What happens on malformed, hostile or merely strange input — 54/54 after fixes. Re-runnable. |
 | 9 | [Performance and speed](09-performance-test.md) | Where the time goes. Reading a thread is flat from 100 to 20,000 messages; throughput improves ten-fold under concurrency. Re-runnable. |
 | 10 | [Scaling and encryption](10-scaling-and-encryption.md) | The API can now run more than one instance, message bodies are encrypted at rest, and Vercel deploys are gated on CI. **Two new required variables.** |
+| 11 | [Limits](11-limits.md) | Every bound the system enforces — files, message length, passwords, rate limits — what happens when you cross it, and what is not limited at all. |
 
 Staging is already running and documented separately in
 [../staging-deploy.md](../staging-deploy.md). Production follows the same shape; document 5 covers

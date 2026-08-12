@@ -17,6 +17,7 @@ import { MessagesService } from '../modules/messages/messages.service';
 import { ConversationsService } from '../modules/conversations/conversations.service';
 import type { AuthPayload } from '@messenger/shared';
 import { ALLOW_LOCAL_ORIGINS, corsOriginMatcher } from '../common/cors';
+import { readableError } from '../common/error-message';
 import { AccountStatusService } from '../common/account-status.service';
 
 interface AuthedSocket extends Socket {
@@ -270,7 +271,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       const message = await this.messages.sendMessage(payload.conversationId, socket.data.user.id, payload);
       return { ok: true, message };
     } catch (err: unknown) {
-      return { ok: false, error: err instanceof Error ? err.message : 'Failed to send message' };
+      return { ok: false, error: readableError(err, 'Failed to send message') };
     }
   }
 
@@ -284,7 +285,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       this.io.to(`conversation:${message.conversationId}`).emit('message:edited', message);
       return { ok: true };
     } catch (err: unknown) {
-      return { ok: false, error: err instanceof Error ? err.message : 'Failed to edit message' };
+      return { ok: false, error: readableError(err, 'Failed to edit message') };
     }
   }
 
@@ -298,7 +299,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       this.io.to(`conversation:${result.conversationId}`).emit('message:deleted', result);
       return { ok: true };
     } catch (err: unknown) {
-      return { ok: false, error: err instanceof Error ? err.message : 'Failed to delete message' };
+      return { ok: false, error: readableError(err, 'Failed to delete message') };
     }
   }
 
@@ -315,7 +316,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       await this.messages.markRead(payload.messageId, socket.data.user.id);
       return { ok: true };
     } catch (err: unknown) {
-      return { ok: false, error: err instanceof Error ? err.message : 'Failed to mark as read' };
+      return { ok: false, error: readableError(err, 'Failed to mark as read') };
     }
   }
 
@@ -330,7 +331,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       await this.messages.addReaction(payload.messageId, socket.data.user.id, payload.emoji);
       return { ok: true };
     } catch (err: unknown) {
-      return { ok: false, error: err instanceof Error ? err.message : 'Failed to add reaction' };
+      return { ok: false, error: readableError(err, 'Failed to add reaction') };
     }
   }
 
@@ -343,7 +344,7 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
       await this.messages.removeReaction(payload.messageId, socket.data.user.id, payload.emoji);
       return { ok: true };
     } catch (err: unknown) {
-      return { ok: false, error: err instanceof Error ? err.message : 'Failed to remove reaction' };
+      return { ok: false, error: readableError(err, 'Failed to remove reaction') };
     }
   }
 

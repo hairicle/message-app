@@ -7,6 +7,29 @@ import { AvatarStorageService } from '../../common/avatar-storage.service';
 /** Matches what the profile form asks for, so the two cannot disagree about what is acceptable. */
 const MIN_PASSWORD_LENGTH = 8;
 
+/**
+ * bcrypt ignores everything past 72 bytes.
+ *
+ * Not a limit this application chose — it is the algorithm's, and accepting a longer password while
+ * silently hashing only the first 72 bytes tells someone their passphrase is stronger than it is. A
+ * live check confirmed it: an account set with a 102-character password opened with the first 72 of
+ * them. Counted in bytes rather than characters, because bytes are what bcrypt truncates; one emoji
+ * is four of them.
+ */
+const MAX_PASSWORD_BYTES = 72;
+
+/** Both ends of the rule, applied wherever a password is set. */
+function assertPasswordAcceptable(password: string): void {
+  if (!password || password.length < MIN_PASSWORD_LENGTH) {
+    throw new BadRequestException(`A password must be at least ${MIN_PASSWORD_LENGTH} characters`);
+  }
+  if (Buffer.byteLength(password, 'utf8') > MAX_PASSWORD_BYTES) {
+    throw new BadRequestException(
+      `A password can be at most ${MAX_PASSWORD_BYTES} bytes — anything beyond that is ignored when it is hashed`,
+    );
+  }
+}
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -79,6 +102,9 @@ export class UsersService {
   }
 
   async createUser(data: { email: string; username: string; displayName: string; password: string; role?: string; department?: string | null }) {
+    // The same rule the self-service change applies. An account an administrator creates should
+    // not be allowed a password the person could never set for themselves afterwards.
+    assertPasswordAcceptable(data.password);
     const bcrypt = await import('bcryptjs');
     const hash = await bcrypt.hash(data.password, 12);
     const user = await this.prisma.users.create({
@@ -170,9 +196,7 @@ export class UsersService {
    */
   async changePassword(userId: string, current: string, next: string) {
     // Checked here as well as in the form, because the endpoint is reachable without it.
-    if (!next || next.length < MIN_PASSWORD_LENGTH) {
-      throw new BadRequestException(`A password must be at least ${MIN_PASSWORD_LENGTH} characters`);
-    }
+    assertPasswordAcceptable(next);
 
     const bcrypt = await import('bcryptjs');
     const row = await this.prisma.users.findUnique({

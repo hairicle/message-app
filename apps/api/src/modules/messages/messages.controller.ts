@@ -4,6 +4,7 @@ import {
 } from '@nestjs/common';
 import { z } from 'zod';
 import { MessagesService } from './messages.service';
+import { MAX_MESSAGE_BYTES, MAX_SEARCH_QUERY } from './message-limits';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import type { AuthPayload } from '@messenger/shared';
@@ -23,7 +24,7 @@ const listQuery = conversationQuery.extend({
 });
 
 const searchQuery = z.object({
-  q: z.string().min(1, 'A search needs something to look for'),
+  q: z.string().min(1, 'A search needs something to look for').max(MAX_SEARCH_QUERY),
   conversationId: z.string().uuid().optional(),
 });
 
@@ -39,7 +40,7 @@ const optionalConversationQuery = z.object({ conversationId: z.string().uuid().o
 const reactionSchema = z.object({ emoji: z.string().min(1).max(32) });
 
 const forwardSchema = z.object({ targetConversationId: z.string().uuid() });
-const editSchema = z.object({ ciphertext: z.string() });
+const editSchema = z.object({ ciphertext: z.string().max(MAX_MESSAGE_BYTES, 'That message is too long') });
 
 @Controller('messages')
 @UseGuards(JwtAuthGuard)

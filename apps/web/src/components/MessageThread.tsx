@@ -30,6 +30,7 @@ import { FaArrowRotateRight, FaBookmark, FaCheck, FaEllipsisVertical, FaRegFaceS
 import { attachmentNoun } from '../utils/messagePreview';
 import { attachmentTooLargeMessage } from '../utils/uploadLimits';
 import { nextToSend } from '../utils/outbox';
+import { isOverMessageLimit, messageLengthHint } from '../utils/messageLimits';
 import { groupingFor } from '../utils/messageGrouping';
 import { groupReactions } from '../utils/reactionSummary';
 import { compressImage } from '../utils/imageCompression';
@@ -126,6 +127,7 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   const [conversation, setConversation] = useState<Conversation | null>(null);
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
+  const composerHint = messageLengthHint(input);
   const [typingUsers, setTypingUsers] = useState<Set<string>>(new Set());
   /**
    * How far each member has read, as an ISO timestamp.
@@ -736,6 +738,9 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
     const text = input.trim();
     const toSend = staged.filter((f) => f.status !== 'uploading');
     if ((!text && toSend.length === 0) || sending) return;
+    // Refused here, while it can still be edited. The server refuses it too, but by then the text
+    // has left the box and the failure arrives as a red line under a message nobody can shorten.
+    if (isOverMessageLimit(text)) return;
 
     setInput('');
     if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current);
@@ -2413,10 +2418,19 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
           className="input-base flex-1 disabled:opacity-60 resize-none"
           style={{ maxHeight: COMPOSER_MAX_HEIGHT, overflowY: 'auto', lineHeight: 1.45 }}
         />
-        <button type="submit" disabled={(!input.trim() && staged.length === 0) || uploading || isRecording || sending} title="Send" className="btn-primary disabled:opacity-40">
+        <button type="submit" disabled={(!input.trim() && staged.length === 0) || uploading || isRecording || sending || isOverMessageLimit(input)} title="Send" className="btn-primary disabled:opacity-40">
           <FaPaperPlane size={14} />
         </button>
       </form>}
+
+      {/* Only near the limit. A counter that is always on is a counter nobody reads, and this one
+          has something to say for roughly the last tenth of a very long message. */}
+      {composerHint && (
+        <div className="px-4 pb-2 -mt-1 text-right font-mono text-[11px]"
+          style={{ color: composerHint.over ? 'var(--danger)' : 'var(--text-dim)' }}>
+          {composerHint.label}
+        </div>
+      )}
 
       {/* Jumping can take several requests when the target is far back, so it says so rather
           than appearing to have ignored the click. */}

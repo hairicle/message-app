@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import { message_type } from '@prisma/client';
 import { z } from 'zod';
 import { PrismaService } from '../../database/prisma.service';
+import { MAX_MESSAGE_BYTES } from './message-limits';
 import { decryptBase64Message, decryptMessage, encryptMessage } from '../../common/message-cipher';
 
 /**
@@ -14,7 +15,7 @@ import { decryptBase64Message, decryptMessage, encryptMessage } from '../../comm
 export const sendMessageSchema = z.object({
   conversationId: z.string().uuid(),
   type: z.enum(['text', 'image', 'video', 'audio', 'file']).optional(),
-  ciphertext: z.string().optional(),
+  ciphertext: z.string().max(MAX_MESSAGE_BYTES, 'That message is too long').optional(),
   // `nullish`, not `optional`: "no reply" and "no attachment" are absences a client may express as
   // either a missing key or an explicit null, and refusing one of the two spellings would be a
   // validation error about nothing. Both are read as absent below.

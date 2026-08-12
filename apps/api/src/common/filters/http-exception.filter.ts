@@ -51,6 +51,13 @@ interface MulterLikeError {
   code: string;
 }
 
+/** What body-parser raises when the request body passes its size ceiling. */
+function isPayloadTooLargeError(error: unknown): boolean {
+  if (typeof error !== 'object' || error === null) return false;
+  const e = error as { type?: string; status?: number; statusCode?: number };
+  return e.type === 'entity.too.large' || e.status === 413 || e.statusCode === 413;
+}
+
 function isUploadLimitError(error: unknown): error is MulterLikeError {
   return (
     typeof error === 'object'
@@ -114,6 +121,15 @@ export class HttpExceptionFilter implements ExceptionFilter {
     // reflected content ends up somewhere it should not be.
     if (isMalformedIdError(exception)) {
       response.status(HttpStatus.BAD_REQUEST).json({ error: 'That identifier is not valid' });
+      return;
+    }
+
+    // Express's body parser rejects a request body past its own ceiling by throwing, and what it
+    // throws is not an HttpException — so an oversized message came back as 500, our fault rather
+    // than the caller's. The schemas now refuse anything long before this is reached; it remains
+    // as the honest answer if something ever gets past them.
+    if (isPayloadTooLargeError(exception)) {
+      response.status(HttpStatus.PAYLOAD_TOO_LARGE).json({ error: 'That request is too large' });
       return;
     }
 
