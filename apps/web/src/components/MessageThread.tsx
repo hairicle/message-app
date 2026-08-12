@@ -29,6 +29,7 @@ import { decodeMessageText, encodeMessageText } from '../utils/text';
 import { FaArrowRotateRight, FaBookmark, FaCheck, FaEllipsisVertical, FaRegFaceSmile, FaChevronDown, FaChevronLeft, FaImage, FaMagnifyingGlass, FaMicrophone, FaPaperPlane, FaPaperclip, FaPen, FaPhone, FaRegBookmark, FaRegCopy, FaReply, FaShare, FaThumbtack, FaTrash, FaVideo, FaXmark } from 'react-icons/fa6';
 import { attachmentNoun } from '../utils/messagePreview';
 import { attachmentTooLargeMessage } from '../utils/uploadLimits';
+import { nextToSend } from '../utils/outbox';
 import { groupingFor } from '../utils/messageGrouping';
 import { groupReactions } from '../utils/reactionSummary';
 import { compressImage } from '../utils/imageCompression';
@@ -75,7 +76,15 @@ interface OutboxItem {
   id: string;
   text: string;
   replyToMessageId?: string;
-  state: 'sending' | 'failed';
+  /**
+   * `queued` is waiting to be picked up, `sending` is in flight, `failed` will be retried.
+   *
+   * The distinction between the first two is not cosmetic and its absence was a real bug: a new
+   * message was queued as `sending`, and the flush loop picks the first item that is *not*
+   * `sending` — precisely so it cannot start one twice — so it stepped over every message the
+   * moment it was written and no text was ever sent.
+   */
+  state: 'queued' | 'sending' | 'failed';
   error?: string;
 }
 
@@ -525,7 +534,7 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
       for (;;) {
         const next = await new Promise<OutboxItem | undefined>((resolve) => {
           setOutbox((prev) => {
-            resolve(prev.find((o) => o.state !== 'sending') ?? prev.find((o) => o.state === 'failed'));
+            resolve(nextToSend(prev));
             return prev;
           });
         });
@@ -750,7 +759,9 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
           id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
           text,
           replyToMessageId: replySpent ? undefined : replyToId,
-          state: 'sending',
+          // Queued, not sending: nothing has been sent yet, and claiming otherwise is what made
+          // the flush below skip it.
+          state: 'queued',
         }]);
         await flushOutbox();
       }
