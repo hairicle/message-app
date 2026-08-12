@@ -9,11 +9,7 @@ before going live.
 ## Known gaps — read before going live
 
 The three below are the ones that change how you configure the deploy. The **complete** register is
-[06-gaps.md](06-gaps.md). In particular
-[G1](06-gaps.md#g1-the-audio-and-video-call-buttons-do-not-work-and-leave-the-camera-on): the call
-buttons are live, broken, and leave the user's camera on. Hide them before production.
-
-None of these are hypothetical; each was confirmed by reading the code.
+[06-gaps.md](06-gaps.md). None of these are hypothetical; each was confirmed by reading the code.
 
 > **Five earlier gaps are now closed** and re-verified live: CORS no longer accepts every origin,
 > rate limiting is enforced, message bodies are encrypted at rest, the API can run more than one

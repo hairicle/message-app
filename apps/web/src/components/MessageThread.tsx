@@ -26,7 +26,7 @@ import { useAuth } from '../context/AuthContext';
 import { useSocket } from '../context/SocketContext';
 import { getConversationTitle, getOtherMember } from '../utils/conversation';
 import { decodeMessageText, encodeMessageText } from '../utils/text';
-import { FaArrowRotateRight, FaBookmark, FaCheck, FaEllipsisVertical, FaRegFaceSmile, FaChevronDown, FaChevronLeft, FaImage, FaMagnifyingGlass, FaMicrophone, FaPaperPlane, FaPaperclip, FaPen, FaPhone, FaRegBookmark, FaRegCopy, FaReply, FaShare, FaThumbtack, FaTrash, FaVideo, FaXmark } from 'react-icons/fa6';
+import { FaArrowRotateRight, FaBookmark, FaCheck, FaEllipsisVertical, FaRegFaceSmile, FaChevronDown, FaChevronLeft, FaImage, FaMagnifyingGlass, FaMicrophone, FaPaperPlane, FaPaperclip, FaPen, FaRegBookmark, FaRegCopy, FaReply, FaShare, FaThumbtack, FaTrash, FaVideo, FaXmark } from 'react-icons/fa6';
 import { attachmentNoun } from '../utils/messagePreview';
 import { attachmentTooLargeMessage } from '../utils/uploadLimits';
 import { nextToSend } from '../utils/outbox';
@@ -178,10 +178,6 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Message[] | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [activeCall, setActiveCall] = useState<{ callId: string; type: 'audio' | 'video' } | null>(null);
-  const [incomingCall, setIncomingCall] = useState<{ callId: string; initiatorId: string; type: string } | null>(null);
-  const localStreamRef = useRef<MediaStream | null>(null);
-  const peerConnectionRef = useRef<RTCPeerConnection | null>(null);
   const QUICK_EMOJIS = ['👍', '❤️', '😂', '😢', '🔥'];
   const bottomRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -335,15 +331,6 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
     const handleReactionRemoved = (payload: { messageId: string; userId: string; emoji: string }) => {
       setMessages((prev) => prev.map((m) => m.id !== payload.messageId ? m : { ...m, reactions: (m.reactions ?? []).filter((r) => !(r.userId === payload.userId && r.emoji === payload.emoji)) }));
     };
-    const handleCallIncoming = (payload: { callId: string; initiatorId: string; type: string; conversationId: string }) => {
-      if (payload.conversationId !== conversationId) return;
-      setIncomingCall({ callId: payload.callId, initiatorId: payload.initiatorId, type: payload.type });
-    };
-    const handleCallEnded = () => {
-      setActiveCall(null); setIncomingCall(null);
-      if (localStreamRef.current) { localStreamRef.current.getTracks().forEach((t) => t.stop()); localStreamRef.current = null; }
-      if (peerConnectionRef.current) { peerConnectionRef.current.close(); peerConnectionRef.current = null; }
-    };
 
     socket.on('message:new', handleNewMessage);
     socket.on('typing:start', handleTypingStart);
@@ -353,8 +340,6 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
     socket.on('message:deleted', handleMessageDeleted);
     socket.on('reaction:added', handleReactionAdded);
     socket.on('reaction:removed', handleReactionRemoved);
-    socket.on('call:incoming', handleCallIncoming);
-    socket.on('call:ended', handleCallEnded);
 
     return () => {
       socket.off('message:new', handleNewMessage);
@@ -365,8 +350,6 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
       socket.off('message:deleted', handleMessageDeleted);
       socket.off('reaction:added', handleReactionAdded);
       socket.off('reaction:removed', handleReactionRemoved);
-      socket.off('call:incoming', handleCallIncoming);
-      socket.off('call:ended', handleCallEnded);
     };
   }, [socket, conversationId, user]);
 
@@ -930,41 +913,6 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
     setSearchResults(results.reverse());
   }
 
-  async function startCall(type: 'audio' | 'video') {
-    if (!socket) return;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: type === 'video' });
-      localStreamRef.current = stream;
-      socket.emit('call:start', { conversationId, type }, (res: { ok: boolean; call?: { id: string }; error?: string }) => {
-        if (!res.ok || !res.call) { window.alert(res.error ?? 'Failed to start call'); return; }
-        setActiveCall({ callId: res.call.id, type });
-      });
-    } catch { window.alert('Microphone/camera access required for calls.'); }
-  }
-
-  async function answerCall() {
-    if (!incomingCall || !socket) return;
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      localStreamRef.current = stream;
-      setActiveCall({ callId: incomingCall.callId, type: 'audio' });
-      setIncomingCall(null);
-    } catch { window.alert('Microphone access required.'); }
-  }
-
-  function rejectCall() {
-    if (!incomingCall || !socket) return;
-    socket.emit('call:reject', { callId: incomingCall.callId, initiatorUserId: incomingCall.initiatorId });
-    setIncomingCall(null);
-  }
-
-  function endCall() {
-    if (!activeCall || !socket) return;
-    socket.emit('call:end', { callId: activeCall.callId });
-    setActiveCall(null);
-    if (localStreamRef.current) { localStreamRef.current.getTracks().forEach((t) => t.stop()); localStreamRef.current = null; }
-  }
-
   async function handlePin(message: Message) {
     const isPinned = pinnedIds.has(message.id);
     try {
@@ -1277,21 +1225,6 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
         <button type="button" onClick={() => setSearchOpen((v) => !v)} className="p-2 rounded-xl transition-colors flex-shrink-0 btn-icon" title="Search messages">
           <FaMagnifyingGlass size={14} />
         </button>
-        {/* Call buttons — hidden, re-enable by changing false → true when calling is ready */}
-        {false && (activeCall ? (
-          <button type="button" onClick={endCall} className="px-3 py-1.5 rounded-xl text-xs font-mono font-medium flex items-center gap-1 flex-shrink-0" style={{ background: 'var(--danger)', color: '#fff' }}>
-            <span className="animate-pulse">●</span> End call
-          </button>
-        ) : (
-          <>
-            <button type="button" onClick={() => startCall('audio')} className="p-2 rounded-xl transition-colors flex-shrink-0 btn-icon" title="Audio call">
-              <FaPhone size={16} />
-            </button>
-            <button type="button" onClick={() => startCall('video')} className="p-2 rounded-xl transition-colors flex-shrink-0 btn-icon" title="Video call">
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.069A1 1 0 0121 8.82v6.36a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>
-            </button>
-          </>
-        ))}
       </header>
 
       {/* Search bar */}
@@ -1304,16 +1237,6 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
           <button type="button" onClick={() => { setSearchOpen(false); setSearchResults(null); setSearchQuery(''); }}
             className="px-3 py-1.5 rounded-lg text-sm" style={{ background: 'var(--panel)', border: '1px solid var(--border)', color: 'var(--text-muted)' }}>✕</button>
         </form>
-      )}
-
-      {/* Incoming call banner — hidden, re-enable when calling is ready */}
-      {false && incomingCall && (
-        <div className="flex items-center gap-3 px-4 py-3 flex-shrink-0" style={{ background: 'var(--accent-wash)', borderBottom: '1px solid var(--accent-dim)' }}>
-          <span className="animate-pulse" style={{ color: 'var(--accent)' }}>📞</span>
-          <span className="text-sm font-medium flex-1" style={{ color: 'var(--text)' }}>Incoming {incomingCall?.type} call…</span>
-          <button onClick={answerCall} className="px-3 py-1.5 rounded-lg text-sm font-mono" style={{ background: 'var(--accent)', color: '#fff' }}>Answer</button>
-          <button onClick={rejectCall} className="px-3 py-1.5 rounded-lg text-sm font-mono" style={{ background: 'var(--danger-wash)', color: 'var(--danger)' }}>Decline</button>
-        </div>
       )}
 
       {/* Search results overlay */}

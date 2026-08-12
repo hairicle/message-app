@@ -11,7 +11,7 @@ older docs disagree, the code wins and the difference is called out.
 | 3 | [How it works](03-flow.md) | You need to know what talks to what, so you know what to provision and what breaks when it's missing |
 | 4 | [API reference](04-api-reference.md) | You're writing smoke tests, a gateway config, or a WAF rule |
 | 5 | [Production deployment](05-deployment.md) | You're doing the deploy |
-| 6 | [Gaps register](06-gaps.md) | **Read before sign-off.** Everything missing, stubbed, dead or broken — 18 entries, one of them blocking |
+| 6 | [Gaps register](06-gaps.md) | **Read before sign-off.** Everything missing, stubbed, dead or broken, with what is now closed |
 | 7 | [Security test results](07-security-test.md) | A live penetration test of the API — 65/65 after fixes, with every finding and what it did and did not mean. Re-runnable. |
 | 8 | [File, validation and exception test](08-file-and-input-test.md) | What happens on malformed, hostile or merely strange input — 54/54 after fixes. Re-runnable. |
 | 9 | [Performance and speed](09-performance-test.md) | Where the time goes. Reading a thread is flat from 100 to 20,000 messages; throughput improves ten-fold under concurrency. Re-runnable. |

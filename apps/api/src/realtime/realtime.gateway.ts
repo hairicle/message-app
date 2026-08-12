@@ -207,59 +207,6 @@ export class RealtimeGateway implements OnGatewayConnection, OnGatewayDisconnect
     });
   }
 
-  @SubscribeMessage('call:offer')
-  async handleCallOffer(
-    @ConnectedSocket() socket: AuthedSocket,
-    @MessageBody() payload: { targetUserId: string; sdp: string; callId: string; conversationId: string },
-  ) {
-    if (!(await this.isMember(socket, payload.conversationId))) return;
-    socket.to(`user:${payload.targetUserId}`).emit('call:offer', {
-      fromUserId: socket.data.user.id,
-      sdp: payload.sdp,
-      callId: payload.callId,
-    });
-  }
-
-  @SubscribeMessage('call:answer')
-  async handleCallAnswer(
-    @ConnectedSocket() socket: AuthedSocket,
-    @MessageBody() payload: { targetUserId: string; sdp: string; callId: string; conversationId: string },
-  ) {
-    // Was the only call:* handler without this check, so any authenticated socket could inject an
-    // SDP answer into a call between two other users.
-    if (!(await this.isMember(socket, payload.conversationId))) return;
-    socket.to(`user:${payload.targetUserId}`).emit('call:answer', {
-      fromUserId: socket.data.user.id,
-      sdp: payload.sdp,
-      callId: payload.callId,
-    });
-  }
-
-  @SubscribeMessage('call:ice-candidate')
-  async handleIceCandidate(
-    @ConnectedSocket() socket: AuthedSocket,
-    @MessageBody() payload: { targetUserId: string; candidate: unknown; callId: string; conversationId: string },
-  ) {
-    if (!(await this.isMember(socket, payload.conversationId))) return;
-    socket.to(`user:${payload.targetUserId}`).emit('call:ice-candidate', {
-      fromUserId: socket.data.user.id,
-      candidate: payload.candidate,
-      callId: payload.callId,
-    });
-  }
-
-  @SubscribeMessage('call:reject')
-  async handleCallReject(
-    @ConnectedSocket() socket: AuthedSocket,
-    @MessageBody() payload: { targetUserId: string; callId: string; conversationId: string },
-  ) {
-    if (!(await this.isMember(socket, payload.conversationId))) return;
-    socket.to(`user:${payload.targetUserId}`).emit('call:reject', {
-      fromUserId: socket.data.user.id,
-      callId: payload.callId,
-    });
-  }
-
   @SubscribeMessage('message:send')
   async handleMessageSend(
     @ConnectedSocket() socket: AuthedSocket,

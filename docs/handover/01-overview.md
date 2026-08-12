@@ -68,16 +68,12 @@ Everything below is implemented and covered by tests or live verification.
 - Typing indicators
 - Light and dark theme
 
-**Broken, not missing:** the audio and video **call buttons are live in every conversation and do
-not work** — and they leave the microphone and camera running. Hide them before production. See
-[G1](06-gaps.md#g1-the-audio-and-video-call-buttons-do-not-work-and-leave-the-camera-on).
-
 **Not built yet:** end-to-end encryption (the schema has Signal Protocol tables, unused), link
 previews (rendered, never generated), mobile apps, push notifications to a closed tab (in-browser
 notifications do work), LDAP sign-in, bulk user import.
 
-The full register of what is missing, stubbed, dead or broken is
-[06-gaps.md](06-gaps.md) — 18 entries.
+The full register of what is missing, stubbed, dead or broken — and what has since been closed — is
+[06-gaps.md](06-gaps.md).
 
 ## Technology
 
@@ -106,8 +102,10 @@ The full register of what is missing, stubbed, dead or broken is
 
 Staging's Render service is on the free plan (`render.yaml`), where instances sleep after
 inactivity and take ~30 s to answer the first request. Confirm the production service's plan in the
-dashboard — see [05-deployment.md](05-deployment.md#sizing-and-tier-notes), which also covers the
-one hard scaling limit: **the API cannot run more than one instance** as it stands.
+dashboard — see [05-deployment.md](05-deployment.md#sizing-and-tier-notes).
+
+The API **can** now run more than one instance: socket rooms are shared through Redis. That was a
+hard limit until recently — see [10-scaling-and-encryption.md](10-scaling-and-encryption.md).
 
 ## Security posture
 
@@ -123,8 +121,12 @@ Worth knowing before you sign off on the deploy:
   the token to expire.
 - **Disabled accounts are blocked through Redis** as well as the database, and live sockets are
   disconnected immediately.
-- **There is no end-to-end encryption.** Message bodies are stored in the `ciphertext` column but
-  are base64-encoded plaintext, not encrypted. Anyone with database access can read every message.
-  This is a known Phase 3 item; do not describe the system as end-to-end encrypted to stakeholders.
-- **CORS is currently open to all origins.** See
-  [Known gaps](05-deployment.md#known-gaps-read-before-going-live).
+- **Message bodies are encrypted at rest** with AES-256-GCM. **This is not end-to-end encryption**
+  — the key is on the server, so the running API can read every message, and so can anyone holding
+  both the database and the key. It removes the likelier exposure: a dump, a backup, a leaked
+  connection string. Do not describe the system as end-to-end encrypted to stakeholders; that
+  remains unbuilt. See [10-scaling-and-encryption.md](10-scaling-and-encryption.md#why-this-is-not-end-to-end).
+- **CORS is restricted** to the configured origin, on both the HTTP routes and the socket
+  handshake. Local addresses are additionally allowed outside production.
+- **Rate limiting is enforced** — 300 requests a minute per token, and sign-in is capped per address
+  *and* account so one person being guessed at cannot lock out a colleague.

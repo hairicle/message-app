@@ -8,43 +8,48 @@ Each entry says what is wrong, how it shows up, and what closing it involves.
 
 ---
 
-## Blocking — fix or hide before production
+## Blocking — nothing outstanding
 
-### G1. The audio and video call buttons do not work, and leave the camera on
+### ~~G1. The audio and video call buttons do not work, and leave the camera on~~ — REMOVED
 
-**Severity: high. This is user-facing and privacy-visible.**
+**This entry was out of date and said so for longer than it should have.** By the time it came to
+be fixed, the buttons had already been put behind `{false && …}` with a comment saying to flip it
+when calling was ready — so the camera problem described below was no longer reachable. The register
+kept reporting it as live. Recorded because a stale gap register is worse than none: it spends
+attention on something already handled and, next time, earns less trust for something that is not.
 
-Every conversation header shows an audio-call and a video-call button
-([`MessageThread.tsx:1259`](../../apps/web/src/components/MessageThread.tsx#L1259)). Pressing
-either:
+What was true, and what the entry got right, is that the code underneath was not a working
+implementation and read like one:
 
-1. calls `getUserMedia` — **the microphone and camera turn on, and the browser shows the recording
-   indicator**;
-2. emits `call:start`;
-3. waits for an acknowledgement that never arrives.
+- The client and server spoke **different, non-overlapping protocols** — the client emitted
+  `call:start` / `call:end` and listened for `call:incoming` / `call:ended`; the gateway handled
+  `call:offer` / `call:answer` / `call:ice-candidate` / `call:reject` and emitted the same four
+  back. Only `call:reject` appeared on both sides, with payloads that disagreed.
+- `new RTCPeerConnection` was **never called anywhere**. `peerConnectionRef` was declared and never
+  assigned, so there was no media path at all.
+- No TURN or STUN server was configured, so correct signalling still would not have connected two
+  people on different networks.
+- The four gateway relays checked that the *sender* belonged to the named conversation but never
+  that the **target** did, so a member of any conversation could push an arbitrary payload to any
+  user id in the system. Inert while no client listened; live the moment one did.
 
-The client and the server implement **different, non-overlapping protocols**:
+**Removed rather than left behind a flag.** Someone who finds an empty space writes calls from
+scratch and gets it right. Someone who finds this spends two days making two incompatible halves
+talk before realising neither was finished — and a `false` waiting to be flipped is an invitation
+to restore the camera bug. Git history keeps all of it.
 
-| Direction | Client uses | Server implements |
-|---|---|---|
-| Client → server | `call:start`, `call:end`, `call:reject` | `call:offer`, `call:answer`, `call:ice-candidate`, `call:reject` |
-| Server → client | listens for `call:incoming`, `call:ended` | emits `call:offer`, `call:answer`, `call:ice-candidate`, `call:reject` |
+Gone: the header buttons, the incoming-call banner, `startCall` / `answerCall` / `rejectCall` /
+`endCall`, `localStreamRef`, `peerConnectionRef`, the call state and its socket listeners, and the
+four gateway relay handlers. About 130 lines.
 
-Only `call:reject` appears on both sides, and even there the payloads disagree — the client sends
-`{ callId, initiatorUserId }`, the gateway expects `{ targetUserId }`.
+Kept: the `calls` and `call_participants` tables, and the three `/api/calls` routes, which only
+record history. Dropping tables is a migration for no benefit. They remain on the list of routes
+with no UI in front of them (G10).
 
-**The media stream is never released.** Both cleanup paths are unreachable: `endCall()` requires
-`activeCall`, which is only set inside the `call:start` acknowledgement that never fires; and
-`handleCallEnded` waits for `call:ended`, which the server never sends. The camera and microphone
-stay on until the tab is closed.
-
-There is also no media path at all even if signalling were fixed: `peerConnectionRef` is declared
-but `new RTCPeerConnection` is never called anywhere in the codebase, and no TURN or STUN server is
-configured.
-
-**Do before production:** hide the two buttons. That is a small change and removes the problem
-entirely. Building calls properly is a feature project — signalling, peer connections, TURN
-hosting, and the call UI — not a fix.
+**If calls are wanted as a feature**, the expensive part is not the code: TURN is not optional —
+two people on different networks will not connect peer-to-peer, and a relay carries the media and
+its bandwidth cost. Group calls are a different architecture again. For an internal tool, a hosted
+provider gets there in days where hand-rolled WebRTC is weeks.
 
 ---
 
@@ -292,7 +297,7 @@ downloads under its own name and can never render itself, whoever serves it.
 
 | | Open | Fixed |
 |---|---|---|
-| Blocking before production | 1 (G1) | — |
+| Blocking before production | — | 1 (G1) |
 | Security and operations | — | 4 (G2–G5) |
 | Dead configuration | 1, covering 8 variables (G6) | — |
 | Stubs and unbuilt features | 6 (G7–G12) | — |
@@ -302,9 +307,8 @@ downloads under its own name and can never render itself, whoever serves it.
 | File handling | — | 2 (G20, G21) |
 
 The smallest set that makes production defensible was **G1**, **G2**, **G3**, **G13** and **G16**.
-Three are now closed and verified live. **What remains of that set:**
+Four are now closed. **What remains of that set:**
 
-- **G1** — hide the call buttons. Still open, still the one that must not ship.
 - **G13** — `UPDATE users SET role = lower(role) WHERE role <> lower(role);`
 - **G16** — change Vercel's Root Directory to the repository root before `main` merges.
 
