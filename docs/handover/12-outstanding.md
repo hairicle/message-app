@@ -104,7 +104,7 @@ when you want the API responsive.
 
 ## Open gaps
 
-Nine of twenty-one are closed (G1–G5, G18–G21). Twelve remain — full detail in
+Ten of twenty-one are closed (G1–G6, G18–G21). Eleven remain — full detail in
 [06-gaps.md](06-gaps.md).
 
 ### Needs you, not code
@@ -136,9 +136,6 @@ UPDATE users SET role = lower(role) WHERE role <> lower(role);
 
 ### Housekeeping
 
-- **G6** — six environment variables read by nothing: `FRONTEND_URL`, `MAX_FILE_SIZE_MB`,
-  `UPLOADS_DIR`, and every `LDAP_*` / `FIREBASE_*`. `ldapts` and `firebase-admin` also ship in the
-  production image for no reason.
 - **G14** — 51 files still carry 400 px previews from before the preview fix. The client works
   around it by preferring the original under 600 KB; larger old images stay soft. A backfill would
   fix them and does not exist.

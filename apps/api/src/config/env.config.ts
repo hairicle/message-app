@@ -6,27 +6,20 @@ function required(name: string): string {
   return value;
 }
 
+/**
+ * Fails the boot when something the API cannot run without is missing.
+ *
+ * This namespace used to carry thirty settings and **nothing read any of them** — every consumer
+ * reaches for its own variable directly, through `ConfigService.get('STORAGE_ENDPOINT')` or
+ * `process.env`. The list had become a second, silent source of truth: it named LDAP, Firebase and
+ * MinIO settings for features that do not exist, and defaults like `frontendUrl` that no code path
+ * could ever apply. Anyone reading it would reasonably conclude those settings did something.
+ *
+ * What it does do is throw at startup, by name, when one of these three is absent — which is worth
+ * far more than the list was, and is why the module is still registered.
+ */
 export default registerAs('app', () => ({
-  port: Number(process.env.PORT ?? 4000),
   databaseUrl: required('DATABASE_URL'),
   redisUrl: required('REDIS_URL'),
   jwtSecret: required('JWT_SECRET'),
-  jwtExpiresIn: process.env.JWT_EXPIRES_IN ?? '1h',
-  uploadsDir: process.env.UPLOADS_DIR ?? 'uploads',
-  maxFileSizeBytes: Number(process.env.MAX_FILE_SIZE_MB ?? 25) * 1024 * 1024,
-  minioEndpoint: process.env.STORAGE_ENDPOINT ?? process.env.MINIO_ENDPOINT,
-  minioAccessKey: process.env.STORAGE_ACCESS_KEY ?? process.env.MINIO_ACCESS_KEY,
-  minioSecretKey: process.env.STORAGE_SECRET_KEY ?? process.env.MINIO_SECRET_KEY,
-  minioBucket: process.env.STORAGE_BUCKET ?? process.env.MINIO_BUCKET ?? 'messenger-files',
-  minioRegion: process.env.STORAGE_REGION ?? process.env.MINIO_REGION ?? 'us-east-1',
-  avatarBucket: process.env.AVATAR_BUCKET ?? 'avatars',
-  ldapUrl: process.env.LDAP_URL,
-  ldapBaseDn: process.env.LDAP_BASE_DN ?? '',
-  ldapBindDn: process.env.LDAP_BIND_DN,
-  ldapBindPassword: process.env.LDAP_BIND_PASSWORD,
-  ldapUsernameAttr: process.env.LDAP_USERNAME_ATTR ?? 'uid',
-  totpIssuer: process.env.TOTP_ISSUER ?? 'InternalMessenger',
-  firebaseServiceAccountJson: process.env.FIREBASE_SERVICE_ACCOUNT_JSON,
-  firebaseServiceAccountPath: process.env.FIREBASE_SERVICE_ACCOUNT_PATH,
-  frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:3000',
 }));

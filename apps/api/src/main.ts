@@ -1,6 +1,6 @@
 import 'reflect-metadata';
 import { NestFactory } from '@nestjs/core';
-import { Logger, ValidationPipe } from '@nestjs/common';
+import { Logger } from '@nestjs/common';
 import type { NestExpressApplication } from '@nestjs/platform-express';
 import helmet from 'helmet';
 import { AppModule } from './app.module';
@@ -46,7 +46,11 @@ async function bootstrap() {
   app.useWebSocketAdapter(socketAdapter);
   app.setGlobalPrefix('api', { exclude: ['health'] });
 
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+  // No global ValidationPipe. It validates class DTOs annotated with class-validator decorators,
+  // and this API has none — every route parses its input with a Zod schema instead, which is what
+  // the exception filter turns into a 400 naming the field. The pipe was inspecting every request
+  // and finding nothing to check, while requiring class-validator and class-transformer to be
+  // installed for it.
   app.useGlobalFilters(new HttpExceptionFilter());
   // Resolved from the container so it gets the shared signing cache.
   app.useGlobalInterceptors(new AvatarUrlInterceptor(app.get(AvatarUrlService)));

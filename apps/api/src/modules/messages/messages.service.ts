@@ -12,7 +12,7 @@ import { decryptBase64Message, decryptMessage, encryptMessage } from '../../comm
  * `system` is deliberately absent from the types: the server writes those to narrate events like
  * someone joining a group, and a client able to post one could forge that narration.
  */
-export const sendMessageSchema = z.object({
+const sendMessageSchema = z.object({
   conversationId: z.string().uuid(),
   type: z.enum(['text', 'image', 'video', 'audio', 'file']).optional(),
   ciphertext: z.string().max(MAX_MESSAGE_BYTES, 'That message is too long').optional(),
@@ -49,7 +49,7 @@ const BASE64_SHAPE = /^[A-Za-z0-9+/]+={0,2}$/;
  * has always fallen back for them — this mirrors that, and returns both readings so a caller can
  * match either without having to guess which era a row came from.
  */
-export function searchableText(bytes: Uint8Array): string {
+function searchableText(bytes: Uint8Array): string {
   // Decrypted first, because the column now holds an envelope rather than the base64 itself. This
   // is also why search survived encryption at all: it already matched in Node rather than in SQL,
   // so it reads the same plaintext it always did. A `LIKE` in the query would have stopped working.

@@ -56,11 +56,14 @@ npm run encrypt:messages --workspace=apps/api -- --apply
 believing otherwise — [10-scaling-and-encryption.md](10-scaling-and-encryption.md#why-this-is-not-end-to-end)
 explains the difference and what end-to-end would still cost.
 
-### 3. `FRONTEND_URL` and `MAX_FILE_SIZE_MB` do nothing
+### 3. Several variables no longer exist
 
-`FRONTEND_URL` is loaded into config and never read. `MAX_FILE_SIZE_MB` is read into
-`maxFileSizeBytes` and never read either — the real limit is `MAX_FILE_SIZE` in
-`modules/files/file-rules.ts`. Changing the variable will not change the limit; change the code.
+`FRONTEND_URL`, `MAX_FILE_SIZE_MB`, `UPLOADS_DIR` and every `LDAP_*` / `FIREBASE_*` setting were
+declared in config and read by nothing. They have been removed rather than documented — setting
+them in Render does nothing, and they can be deleted from the dashboard.
+
+The upload limit is `MAX_FILE_SIZE` in `modules/files/file-rules.ts`; change the code, not a
+variable.
 
 ## Before `main` can ship
 
@@ -116,10 +119,8 @@ Missing these does not stop the boot, but files and migrations break.
 
 ### API — set but inert
 
-Listed so nobody wastes time tuning them: **`FRONTEND_URL`, `MAX_FILE_SIZE_MB`, `UPLOADS_DIR`**,
-and every `LDAP_*` and `FIREBASE_*` variable. No code path reads any of them.
-
-`CORS_ORIGIN` used to be on this list. It is now read, and required — see the table above.
+None. The variables that used to be listed here were removed from the code rather than left to be
+explained; if any are still set in Render they can be deleted.
 
 ### Web (Vercel)
 

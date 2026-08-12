@@ -2,8 +2,8 @@ import { Injectable, BadRequestException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import * as path from 'path';
+import { MAX_AVATAR_SIZE } from '../modules/files/file-rules';
 
-const MAX_BYTES = 5 * 1024 * 1024;
 
 /** Only formats a browser will reliably render inline — an avatar is never downloaded. */
 const ALLOWED_MIME = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif']);
@@ -41,7 +41,8 @@ export class AvatarStorageService {
    * signs it per request with a short-lived token.
    */
   async upload(prefix: string, file: Express.Multer.File): Promise<string> {
-    if (file.size > MAX_BYTES) throw new BadRequestException('Avatar too large (max 5 MB)');
+    // The same constant the two avatar routes hand to multer, rather than a fourth copy of 5 MB.
+    if (file.size > MAX_AVATAR_SIZE) throw new BadRequestException('Avatar too large (max 5 MB)');
     if (!ALLOWED_MIME.has(file.mimetype)) {
       throw new BadRequestException('Avatar must be a JPEG, PNG, WebP or GIF image');
     }

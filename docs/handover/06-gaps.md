@@ -119,13 +119,21 @@ stores plaintext, warning at startup.
 
 ## Dead configuration
 
-### G6. Six environment variables have no effect
+### ~~G6. Six environment variables have no effect~~ — REMOVED
 
-`CORS_ORIGIN` used to head this list and no longer belongs on it — it is now read, and required in
-production. See G2.
+They no longer exist to have no effect. `env.config.ts` declared thirty settings and **nothing read
+any of them** — every consumer reaches for its own variable directly through
+`ConfigService.get('STORAGE_ENDPOINT')` or `process.env`. The namespace had become a second, silent
+source of truth naming LDAP, Firebase and MinIO settings for features that do not exist.
 
-| Variable | Reality |
-|---|---|
+It now declares only the three the API refuses to start without, which is the one thing it was
+actually doing. `ldapts`, `firebase-admin`, `class-validator`, `class-transformer` and `cors` were
+uninstalled with it — five packages that shipped in the production image for nothing.
+
+`MAX_FILE_SIZE_MB` and `UPLOADS_DIR` are gone from the config too. The real limit is
+`MAX_FILE_SIZE` in `modules/files/file-rules.ts`; there is no local upload directory any more.
+
+---|---|
 | `FRONTEND_URL` | Loaded into config, read by nothing. |
 | `MAX_FILE_SIZE_MB` | Loaded into `maxFileSizeBytes`, read by nothing. The real limit is `MAX_FILE_SIZE` in `modules/files/file-rules.ts` — one constant now, where it used to be written in three places. |
 | `UPLOADS_DIR` | Left from the pre-Supabase local-disk storage. |
