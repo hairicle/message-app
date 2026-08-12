@@ -1840,7 +1840,11 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
               })()}
 
               {/* Column: name+time header + bubble + reactions */}
-              <div className="flex flex-col max-w-[80%] sm:max-w-[62%]" style={{ alignItems: mine ? 'flex-end' : 'flex-start' }}>
+              {/* `min-w-0` is what makes the max-width above mean anything. A flex item's default
+                  `min-width: auto` resolves to the width of its longest unbreakable run, and a
+                  minimum beats a maximum — so one 200-character word with no spaces in it stretched
+                  the bubble past the edge of the thread and took the layout with it. */}
+              <div className="flex flex-col min-w-0 max-w-[80%] sm:max-w-[62%]" style={{ alignItems: mine ? 'flex-end' : 'flex-start' }}>
                 {/* Forwarded label — shows original sender, preserved through chains */}
                 {message.forwardedFromMessageId && message.forwardedFromDisplayName && !message.deletedAt && (
                   <div className="flex items-center gap-1 mb-0.5 px-1" style={{ flexDirection: mine ? 'row-reverse' : 'row' }}>
@@ -1946,7 +1950,11 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
                           </div>
                         </form>
                       ) : (text && (
-                        <p className="text-sm whitespace-pre-wrap break-words">
+                        // `wrap-anywhere`, not `break-words`: both break a long word, but only this
+                        // one also shrinks the element's min-content size, which is the measurement
+                        // the flex layout above uses to decide how narrow the bubble may be. With
+                        // `break-words` the text wrapped and the bubble still grew to fit the run.
+                        <p className="text-sm whitespace-pre-wrap wrap-anywhere">
                           <MessageText
                             text={text}
                             usernames={memberUsernames}
@@ -2191,7 +2199,7 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
                   opacity: item.state === 'failed' ? 0.55 : 0.7,
                 }}
               >
-                <p className="text-sm whitespace-pre-wrap break-words">{item.text}</p>
+                <p className="text-sm whitespace-pre-wrap wrap-anywhere">{item.text}</p>
               </div>
               <span className="mt-0.5 text-[10px] font-mono flex items-center gap-1.5"
                 style={{ color: item.state === 'failed' ? 'var(--danger)' : 'var(--text-dim)' }}>
