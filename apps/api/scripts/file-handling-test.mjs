@@ -16,7 +16,8 @@ import bcrypt from 'bcryptjs';
 
 config();
 
-const API = 'http://localhost:4000';
+// Overridable, so the suite can be pointed at an instance on another port when 4000 is taken.
+const API = process.env.TEST_API_URL ?? 'http://localhost:4000';
 const PW = 'FileHarness!2026';
 
 const pool = new Pool({

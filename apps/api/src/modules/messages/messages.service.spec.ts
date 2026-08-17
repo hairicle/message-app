@@ -233,6 +233,58 @@ describe('MessagesService', () => {
       });
     });
 
+    describe('a retry of the same send', () => {
+      const CLIENT_ID = '66666666-6666-4666-8666-666666666666';
+
+      // The reason this exists: the client cannot tell "never received" from "saved, reply lost",
+      // so it sends again — and without this the second attempt was a second message, permanently.
+      it('returns the message already stored instead of writing another', async () => {
+        prisma.messages.findFirst.mockResolvedValue(messageRow({ id: 'already-there' }));
+        const out = await service.sendMessage(CONV, USER, { ciphertext: 'hi', clientMessageId: CLIENT_ID });
+        expect(out.id).toBe('already-there');
+        expect(prisma.messages.create).not.toHaveBeenCalled();
+      });
+
+      it('looks it up against the sender, not the conversation', async () => {
+        prisma.messages.findFirst.mockResolvedValue(messageRow());
+        await service.sendMessage(CONV, USER, { ciphertext: 'hi', clientMessageId: CLIENT_ID });
+        expect(prisma.messages.findFirst).toHaveBeenCalledWith(
+          expect.objectContaining({ where: { sender_id: USER, client_message_id: CLIENT_ID } }),
+        );
+      });
+
+      it('stores the id so the next attempt can find it', async () => {
+        prisma.messages.findFirst.mockResolvedValue(null);
+        await service.sendMessage(CONV, USER, { ciphertext: 'hi', clientMessageId: CLIENT_ID });
+        expect(prisma.messages.create.mock.calls[0][0].data.client_message_id).toBe(CLIENT_ID);
+      });
+
+      // The lookup cannot close the race where both attempts are in flight at once — the unique
+      // index decides it, and the loser has to read back what the winner wrote rather than fail.
+      it('recovers the row the winner wrote when two attempts collide', async () => {
+        prisma.messages.findFirst
+          .mockResolvedValueOnce(null)
+          .mockResolvedValueOnce(messageRow({ id: 'the-winner' }));
+        prisma.messages.create.mockRejectedValue(Object.assign(new Error('unique'), { code: 'P2002' }));
+        const out = await service.sendMessage(CONV, USER, { ciphertext: 'hi', clientMessageId: CLIENT_ID });
+        expect(out.id).toBe('the-winner');
+      });
+
+      // Any other failure is still a failure; only a collision on this id means "already done".
+      it('does not swallow an unrelated database error', async () => {
+        prisma.messages.findFirst.mockResolvedValue(null);
+        prisma.messages.create.mockRejectedValue(Object.assign(new Error('connection lost'), { code: 'P1001' }));
+        await expect(service.sendMessage(CONV, USER, { ciphertext: 'hi', clientMessageId: CLIENT_ID }))
+          .rejects.toThrow('connection lost');
+      });
+
+      it('writes null when the client sends no id, as older builds do', async () => {
+        await service.sendMessage(CONV, USER, { ciphertext: 'hi' });
+        expect(prisma.messages.create.mock.calls[0][0].data.client_message_id).toBeNull();
+        expect(prisma.messages.findFirst).not.toHaveBeenCalled();
+      });
+    });
+
     // The schema is enforced in the service, not the controller, because the socket gateway calls
     // this method directly — `message:send` would otherwise be unguarded.
     describe('rejects a malformed body from either transport', () => {

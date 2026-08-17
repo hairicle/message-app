@@ -21,6 +21,9 @@ const sendMessageSchema = z.object({
   // validation error about nothing. Both are read as absent below.
   replyToMessageId: z.string().uuid().nullish(),
   fileId: z.string().uuid().nullish(),
+  // The sender's own id for this message, used to recognise a retry. Optional: the web client did
+  // not send one before this existed, and an older build should keep working.
+  clientMessageId: z.string().uuid().nullish(),
 });
 
 /**
@@ -40,6 +43,21 @@ const SEARCH_SCAN_LIMIT = 4000;
 const SEARCH_RESULT_LIMIT = 50;
 
 const BASE64_SHAPE = /^[A-Za-z0-9+/]+={0,2}$/;
+
+/**
+ * Prisma's code for a row that collides with a unique index.
+ *
+ * Matched by shape rather than `instanceof`, for the same reason the exception filter does:
+ * `@prisma/client` can resolve to more than one copy in a workspace, and an instanceof against the
+ * wrong one fails silently — which here would turn a recognised retry back into a 500.
+ */
+function isUniqueViolation(error: unknown): boolean {
+  return (
+    typeof error === 'object'
+    && error !== null
+    && (error as { code?: string }).code === 'P2002'
+  );
+}
 
 /**
  * The text a person actually typed, from what the column holds.
@@ -107,6 +125,36 @@ export class MessagesService {
       select: { id: true },
     });
     if (!member) throw new ForbiddenException(message);
+  }
+
+  /**
+   * A message this sender has already written under their own id, shaped as `sendMessage` returns.
+   *
+   * Returns null when there is none. Deliberately not scoped to a conversation: the id identifies
+   * the send, and a retry that somehow named a different conversation is still the same send.
+   */
+  private async findByClientId(senderId: string, clientMessageId: string) {
+    const m = await this.prisma.messages.findFirst({
+      where: { sender_id: senderId, client_message_id: clientMessageId },
+      select: {
+        id: true, conversation_id: true, sender_id: true, type: true, ciphertext: true,
+        reply_to_message_id: true, created_at: true, edited_at: true, deleted_at: true,
+        files: true,
+      },
+    });
+    if (!m) return null;
+    return {
+      id: m.id,
+      conversationId: m.conversation_id,
+      senderId: m.sender_id,
+      type: m.type,
+      ciphertext: decode(m.ciphertext),
+      replyToMessageId: m.reply_to_message_id,
+      createdAt: m.created_at,
+      editedAt: m.edited_at,
+      deletedAt: m.deleted_at,
+      file: fileDto(m.files),
+    };
   }
 
   private async conversationIdOf(messageId: string, requireLive = false) {
@@ -187,6 +235,16 @@ export class MessagesService {
 
     await this.assertMember(conversationId, senderId);
 
+    // Sending is at-least-once and always has been: the client waits twelve seconds for an
+    // acknowledgement and cannot tell "never received" from "saved, but the reply was lost", so it
+    // assumes the first and sends again. Recognising the sender's own id turns that retry into the
+    // same message rather than a second one — permanently, since two identical messages a second
+    // apart cannot be told from someone genuinely sending twice.
+    if (body.clientMessageId) {
+      const already = await this.findByClientId(senderId, body.clientMessageId);
+      if (already) return already;
+    }
+
     // A reply to a message that does not exist used to reach the foreign key and come back as 500.
     // Checking the conversation too, because quoting a message out of a thread you are in from one
     // you are not would surface its text in the reply preview.
@@ -212,16 +270,30 @@ export class MessagesService {
       if (!file) throw new BadRequestException('That attachment does not exist, or is already attached to a message');
     }
 
-    const created = await this.prisma.messages.create({
-      data: {
-        conversation_id: conversationId,
-        sender_id: senderId,
-        type: (body.type ?? 'text') as message_type,
-        ciphertext: encryptMessage(body.ciphertext ?? ''),
-        reply_to_message_id: body.replyToMessageId ?? null,
-      },
-      select: { id: true },
-    });
+    // The lookup above closes the ordinary case, where the retry arrives after the first request
+    // finished. It cannot close the race where both are in flight at once — two sends of the same
+    // id can each find nothing and each proceed. The unique index is what actually decides it, and
+    // the loser reads back the row the winner wrote.
+    let created: { id: string };
+    try {
+      created = await this.prisma.messages.create({
+        data: {
+          conversation_id: conversationId,
+          sender_id: senderId,
+          type: (body.type ?? 'text') as message_type,
+          ciphertext: encryptMessage(body.ciphertext ?? ''),
+          reply_to_message_id: body.replyToMessageId ?? null,
+          client_message_id: body.clientMessageId ?? null,
+        },
+        select: { id: true },
+      });
+    } catch (err) {
+      const existing = body.clientMessageId && isUniqueViolation(err)
+        ? await this.findByClientId(senderId, body.clientMessageId)
+        : null;
+      if (existing) return existing;
+      throw err;
+    }
 
     if (body.fileId) {
       await this.prisma.files.updateMany({

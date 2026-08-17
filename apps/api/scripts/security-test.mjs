@@ -15,7 +15,8 @@ import jwt from 'jsonwebtoken';
 
 config();
 
-const API = 'http://localhost:4000';
+// Overridable, so the suite can be pointed at an instance on another port when 4000 is taken.
+const API = process.env.TEST_API_URL ?? 'http://localhost:4000';
 const PW = 'SecHarness!2026';
 
 const pool = new Pool({

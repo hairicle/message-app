@@ -193,6 +193,7 @@ model messages {
   ciphertext                                                  Bytes
   reply_to_message_id                                         String?              @db.Uuid
   forwarded_from_message_id                                   String?              @db.Uuid
+  client_message_id                                           String?              @db.Uuid
   original_sender_id                                          String?              @db.Uuid
   created_at                                                  DateTime             @default(now()) @db.Timestamptz(6)
   edited_at                                                   DateTime?            @db.Timestamptz(6)
@@ -215,6 +216,7 @@ model messages {
   @@index([conversation_id, created_at], map: "idx_messages_conversation_id_created_at")
   @@index([deleted_at], map: "idx_messages_deleted_at", where: raw("(deleted_at IS NULL)"))
   @@index([sender_id], map: "idx_messages_sender_id")
+  @@unique([sender_id, client_message_id], map: "idx_messages_sender_client_id")
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
@@ -366,7 +368,6 @@ model users {
   ldap_dn                                     String?                   @unique
   password_hash                               String?
   status                                      user_status               @default(active)
-  last_seen_at                                DateTime?                 @db.Timestamptz(6)
   totp_secret                                 String?
   totp_enabled                                Boolean                   @default(false)
   created_at                                  DateTime                  @default(now()) @db.Timestamptz(6)

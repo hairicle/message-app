@@ -15,6 +15,8 @@ export function sendMessage(input: {
   ciphertext?: string;
   replyToMessageId?: string;
   fileId?: string;
+  /** The sender's own id, so a retry is recognised rather than duplicated. */
+  clientMessageId?: string;
 }) {
   return apiFetch<{ message: Message }>('/api/messages', {
     method: 'POST',

@@ -30,6 +30,7 @@ import { FaArrowRotateRight, FaBookmark, FaCheck, FaEllipsisVertical, FaRegFaceS
 import { attachmentNoun } from '../utils/messagePreview';
 import { attachmentTooLargeMessage } from '../utils/uploadLimits';
 import { nextToSend } from '../utils/outbox';
+import { newClientMessageId } from '../utils/clientMessageId';
 import { isOverMessageLimit, messageLengthHint } from '../utils/messageLimits';
 import { groupingFor } from '../utils/messageGrouping';
 import { groupReactions } from '../utils/reactionSummary';
@@ -77,6 +78,13 @@ interface OutboxItem {
   id: string;
   text: string;
   replyToMessageId?: string;
+  /**
+   * The id sent to the server, generated once when the message is written.
+   *
+   * It has to survive every retry, which is the whole point — a fresh id per attempt would be a
+   * fresh message per attempt, which is the bug this prevents.
+   */
+  clientMessageId: string;
   /**
    * `queued` is waiting to be picked up, `sending` is in flight, `failed` will be retried.
    *
@@ -531,6 +539,9 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
             conversationId,
             ciphertext: encodeMessageText(next.text),
             replyToMessageId: next.replyToMessageId,
+            // Carried from the queued item rather than made here, so every retry of this message
+            // sends the same id. Generating one per attempt would defeat the whole mechanism.
+            clientMessageId: next.clientMessageId,
           });
           setOutbox((prev) => prev.filter((o) => o.id !== next.id));
         } catch (err) {
@@ -585,7 +596,7 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
    * lost without a trace. Falling back to HTTP means an offline send fails, which is the honest
    * answer and the one the outbox can act on.
    */
-  function dispatchMessage(payload: { conversationId: string; type?: MessageType; ciphertext?: string; fileId?: string; replyToMessageId?: string }): Promise<Message> {
+  function dispatchMessage(payload: { conversationId: string; type?: MessageType; ciphertext?: string; fileId?: string; replyToMessageId?: string; clientMessageId?: string }): Promise<Message> {
     if (socket?.connected) {
       return new Promise<Message>((resolve, reject) => {
         // Acknowledged or given up on: without a timeout a send into a half-open connection
@@ -747,6 +758,10 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
           id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
           text,
           replyToMessageId: replySpent ? undefined : replyToId,
+          // Generated once, here, at the moment the message is written — not at send time, and not
+          // per attempt. The server recognises it and returns the message it already stored rather
+          // than storing a second one, which is what makes a retry safe on a flaky connection.
+          clientMessageId: newClientMessageId(),
           // Queued, not sending: nothing has been sent yet, and claiming otherwise is what made
           // the flush below skip it.
           state: 'queued',
