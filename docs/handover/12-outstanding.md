@@ -2,7 +2,7 @@
 
 Everything known to be unfinished, unfixed or worth deciding about, in one place.
 
-**As of `00859e2`, 2026-08-12.** Every figure below was measured on that commit, not recalled — the
+**As of `7d4cfc2`, 2026-08-12.** Every figure below was measured on that commit, not recalled — the
 commands to re-measure are at the bottom, and they matter more than the numbers, because this
 document is only true until the next change.
 
@@ -29,24 +29,19 @@ the point of writing it down.
 From the reliability audit ([the six patterns](#where-these-came-from)). Audited and reported, not
 fixed. **None of these appear in the gaps register**, so this is the only record of them.
 
-### A3 — No idempotency key · **P0**
+### ~~A3 — No idempotency key~~ — **FIXED** in `7d4cfc2`
 
-Sending has no client-generated id. `socket.timeout(12_000)` cannot tell *"the server never got
-it"* from *"the server saved it and the reply was lost"* — it assumes the first and retries.
+The sender attaches a `clientMessageId`, generated once when the message is written and reused by
+every retry; the server returns the message it already stored. Verified live on both transports,
+including eight simultaneous sends of one id producing a single row. The unique index decides the
+concurrent case, and the loser reads back what the winner wrote.
 
-**Consequence:** a lost acknowledgement puts a **second message in the database**, permanently. It
-cannot be cleaned up afterwards, because two identical messages a second apart are indistinguishable
-from someone genuinely sending twice. Delete is admin-only, so the person who sent it cannot remove
-their own duplicate.
+Done as Phase 0.2 of [the Android plan](13-android-app.md), where it stopped being optional — on a
+phone a lost acknowledgement is the ordinary condition rather than a hiccup.
 
-**Likelihood:** ordinary. Anyone on mobile, patchy wifi, or a sleeping laptop.
-
-**Fix:** `client_message_id UUID` on `messages`, unique on `(sender_id, client_message_id)`,
-generated in the composer and carried through `OutboxItem`; `sendMessage` returns the existing row
-instead of inserting.
-
-**Retrofitting is only partly possible.** Messages written before the column exists have no key, so
-past duplicates can never be identified — only future ones are prevented.
+**Messages written before `7d4cfc2` carry no id**, so any duplicates already in the table cannot be
+identified. Only future ones are prevented, which is why this was worth doing before the mobile
+client rather than after.
 
 ### A4 — Denormalized client state · **P0**
 
@@ -187,17 +182,16 @@ Absence is harder to notice than a number, so these are written down rather than
 
 ---
 
-## If you only do two things
+## What to do next
 
-**A3** and **A4.**
+**A4.** Deterministic, visible, and it makes a moderation action appear to have worked when it did
+not — delete a pinned message and its text stays readable in the pinned bar, every time.
 
-A3 is the only open item that puts **wrong data in the database** rather than displaying right data
-badly — and the information needed to identify duplicates can only be captured going forward.
+A3 was the other half of that pair and is done.
 
-A4 is deterministic, visible, and makes a moderation action appear to have worked when it did not.
-
-Everything else is either latent (A1/A2), a decision (the unbuilt features), or someone else's
-console (G16, G17).
+After it, **Phase 0.1 — refresh tokens**, which is the remaining blocker for the Android client and
+the largest single piece left. Everything else is either latent (A1/A2), a decision (the unbuilt
+features), or someone else's console (G13, G16, G17).
 
 ---
 
