@@ -138,7 +138,7 @@ uninstalled with it — five packages that shipped in the production image for n
 | `MAX_FILE_SIZE_MB` | Loaded into `maxFileSizeBytes`, read by nothing. The real limit is `MAX_FILE_SIZE` in `modules/files/file-rules.ts` — one constant now, where it used to be written in three places. |
 | `UPLOADS_DIR` | Left from the pre-Supabase local-disk storage. |
 | `LDAP_*` (5 variables) | `ldapts` is installed and the config is parsed, but no code path authenticates against LDAP. |
-| `FIREBASE_SERVICE_ACCOUNT_JSON` / `_PATH` | `firebase-admin` is installed and the config is parsed. Nothing sends a push notification. |
+
 
 Anyone tuning these is tuning nothing. `ldapts` and `firebase-admin` can also be dropped from
 `package.json` until their features are built — they are shipped in the production image today for
@@ -180,7 +180,7 @@ Together with G9's team routes and G1's call routes, that is **18 routes reachab
 authenticated user with no UI in front of them.** Consider blocking them at the edge until their
 features ship.
 
-### G11. Push notifications are not built
+### ~~G11. Push notifications are not built~~ — SERVER DONE
 
 In-browser notifications *do* work — sound plus the `Notification` API, with per-user preferences.
 But that only fires while the tab is open. There is no service worker and no Firebase delivery

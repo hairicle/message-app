@@ -58,9 +58,12 @@ explains the difference and what end-to-end would still cost.
 
 ### 3. Several variables no longer exist
 
-`FRONTEND_URL`, `MAX_FILE_SIZE_MB`, `UPLOADS_DIR` and every `LDAP_*` / `FIREBASE_*` setting were
-declared in config and read by nothing. They have been removed rather than documented — setting
-them in Render does nothing, and they can be deleted from the dashboard.
+`FRONTEND_URL`, `MAX_FILE_SIZE_MB`, `UPLOADS_DIR` and every `LDAP_*` setting were declared in config
+and read by nothing. They have been removed rather than documented — setting them in Render does
+nothing, and they can be deleted from the dashboard.
+
+`FIREBASE_SERVICE_ACCOUNT_JSON` was on that list and has come back for a reason: push notifications
+now use it. It is in the variable table below.
 
 The upload limit is `MAX_FILE_SIZE` in `modules/files/file-rules.ts`; change the code, not a
 variable.
