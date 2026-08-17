@@ -169,22 +169,42 @@ export class MessagesService {
   async listMessages(conversationId: string, userId: string, before?: string, limit = 50) {
     await this.assertMember(conversationId, userId);
 
-    // Keyset pagination: the SQL resolved `before` to that message's timestamp in a subquery,
-    // scoped to this conversation so an id from elsewhere cannot shift the window.
-    let cutoff: Date | undefined;
+    // Keyset pagination on (created_at, id), not on created_at alone.
+    //
+    // The timestamp is not unique. `now()` is the *transaction* timestamp, identical for every row
+    // written in one transaction, so ties are certain the first time anything inserts in bulk — and
+    // a tie under the old cursor was silently destructive: `created_at < cutoff` excluded the
+    // boundary message's twin, which was then never fetched by any page. A hole in the scrollback
+    // with no error and nothing to see.
+    //
+    // The pair is unique because the id is, which makes the order total and the cursor exact.
+    let cutoff: { created_at: Date; id: string } | undefined;
     if (before) {
       const anchor = await this.prisma.messages.findFirst({
         where: { id: before, conversation_id: conversationId },
-        select: { created_at: true },
+        select: { created_at: true, id: true },
       });
       // No anchor means the SQL's subquery yielded NULL and the predicate dropped every row.
       if (!anchor) return [];
-      cutoff = anchor.created_at;
+      cutoff = anchor;
     }
 
     const rows = await this.prisma.messages.findMany({
-      where: { conversation_id: conversationId, ...(cutoff ? { created_at: { lt: cutoff } } : {}) },
-      orderBy: { created_at: 'desc' },
+      where: {
+        conversation_id: conversationId,
+        // "Strictly before this message" as a pair: an earlier instant, or the same instant and a
+        // lower id. Written as an OR because SQL row-value comparison has no Prisma spelling.
+        ...(cutoff
+          ? {
+            OR: [
+              { created_at: { lt: cutoff.created_at } },
+              { created_at: cutoff.created_at, id: { lt: cutoff.id } },
+            ],
+          }
+          : {}),
+      },
+      // Both keys, in the same direction, or the tiebreaker would not match the cursor above.
+      orderBy: [{ created_at: 'desc' }, { id: 'desc' }],
       take: limit,
       select: {
         id: true, conversation_id: true, sender_id: true, type: true, ciphertext: true,

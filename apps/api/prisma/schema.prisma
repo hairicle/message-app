@@ -212,7 +212,7 @@ model messages {
   pinned_messages                                             pinned_messages[]
   user_bookmarks                                              user_bookmarks[]
 
-  @@index([conversation_id, created_at(sort: Desc)], map: "idx_messages_conv_created_desc")
+  @@index([conversation_id, created_at(sort: Desc), id(sort: Desc)], map: "idx_messages_conv_created_id_desc")
   @@index([conversation_id, created_at], map: "idx_messages_conversation_id_created_at")
   @@index([deleted_at], map: "idx_messages_deleted_at", where: raw("(deleted_at IS NULL)"))
   @@index([sender_id], map: "idx_messages_sender_id")

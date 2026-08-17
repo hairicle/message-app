@@ -32,6 +32,7 @@ import { attachmentTooLargeMessage } from '../utils/uploadLimits';
 import { nextToSend } from '../utils/outbox';
 import { newClientMessageId } from '../utils/clientMessageId';
 import { applyDeletion, applyEdit } from '../utils/messageMutations';
+import { compareMessages } from '../utils/messageOrder';
 import { isOverMessageLimit, messageLengthHint } from '../utils/messageLimits';
 import { groupingFor } from '../utils/messageGrouping';
 import { groupReactions } from '../utils/reactionSummary';
@@ -123,8 +124,10 @@ interface StagedFile {
 
 export function addMessage(messages: Message[], message: Message): Message[] {
   if (messages.some((m) => m.id === message.id)) return messages;
-  const newTime = new Date(message.createdAt).getTime();
-  const insertAt = messages.findIndex((m) => new Date(m.createdAt).getTime() > newTime);
+  // Placed by (createdAt, id), the same order the server sorts by. Timestamp alone is not unique —
+  // every row written in one transaction shares one — so comparing on it left ties to arrival
+  // order here and to the planner there, and the two could disagree permanently.
+  const insertAt = messages.findIndex((m) => compareMessages(m, message) > 0);
   if (insertAt === -1) return [...messages, message];
   return [...messages.slice(0, insertAt), message, ...messages.slice(insertAt)];
 }

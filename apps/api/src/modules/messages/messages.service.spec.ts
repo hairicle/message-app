@@ -88,8 +88,11 @@ describe('MessagesService', () => {
       ]);
       const out = await service.listMessages(CONV, USER);
       expect(out.map((m) => m.id)).toEqual(['older', 'newer']);
+      // Both keys. The timestamp alone is not unique — every row written in one transaction shares
+      // one — so ordering by it left ties to the planner, and two runs of the same query could
+      // disagree. The id makes the order total.
       expect(prisma.messages.findMany).toHaveBeenCalledWith(
-        expect.objectContaining({ orderBy: { created_at: 'desc' } }),
+        expect.objectContaining({ orderBy: [{ created_at: 'desc' }, { id: 'desc' }] }),
       );
     });
 
@@ -101,7 +104,7 @@ describe('MessagesService', () => {
 
     it('resolves `before` against the anchor message and scopes it to this conversation', async () => {
       const anchor = new Date('2026-08-01T09:00:00Z');
-      prisma.messages.findFirst.mockResolvedValue({ created_at: anchor });
+      prisma.messages.findFirst.mockResolvedValue({ created_at: anchor, id: 'anchor-id' });
       prisma.messages.findMany.mockResolvedValue([]);
 
       await service.listMessages(CONV, USER, 'anchor-id', 25);
@@ -110,11 +113,31 @@ describe('MessagesService', () => {
       expect(prisma.messages.findFirst).toHaveBeenCalledWith(
         expect.objectContaining({ where: { id: 'anchor-id', conversation_id: CONV } }),
       );
+      // The cursor is the pair, not the timestamp. With `created_at < cutoff` alone, a message
+      // sharing the boundary's timestamp was excluded from this page and every later one — a hole
+      // in the scrollback that produced no error and nothing to see.
       expect(prisma.messages.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { conversation_id: CONV, created_at: { lt: anchor } },
+          where: {
+            conversation_id: CONV,
+            OR: [
+              { created_at: { lt: anchor } },
+              { created_at: anchor, id: { lt: 'anchor-id' } },
+            ],
+          },
           take: 25,
         }),
+      );
+    });
+
+    // The anchor's own id is half the cursor, so selecting only its timestamp would silently
+    // rebuild the bug this replaced.
+    it('reads the anchor\'s id as well as its timestamp', async () => {
+      prisma.messages.findFirst.mockResolvedValue({ created_at: new Date(), id: 'anchor-id' });
+      prisma.messages.findMany.mockResolvedValue([]);
+      await service.listMessages(CONV, USER, 'anchor-id');
+      expect(prisma.messages.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ select: { created_at: true, id: true } }),
       );
     });
 

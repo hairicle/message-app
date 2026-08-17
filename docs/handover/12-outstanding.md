@@ -12,8 +12,8 @@ document is only true until the next change.
 
 | Suite | Result |
 |---|---|
-| API unit | **290 / 290** |
-| Web unit | **215 / 215** |
+| API unit | **291 / 291** |
+| Web unit | **221 / 221** |
 | Security, live against the running API | **65 / 65** |
 | File, input and exception handling, live | **54 / 54** |
 | API and web typecheck | clean |
@@ -65,30 +65,36 @@ The sidebar preview needed one server change to be fixable at all — it carried
 the client could not tell whether a deletion referred to it. `last_message.id` is now returned and
 has no other use.
 
-### A1 + A2 — No ordering tiebreaker, and a pagination gap · **P0, latent**
+### ~~A1 + A2 — No ordering tiebreaker, and a pagination gap~~ — **FIXED**
 
-`id` is `uuid_generate_v4()` — random, not sortable — and `orderBy: { created_at: 'desc' }` has no
-second key, so the order is not *total*. Postgres may return tied rows either way, and on two runs
-of the same query may answer differently. The pagination cursor is the same non-unique column with
-strict `lt`.
+One fix, because they were one cause. `created_at` is not unique — it defaults to `now()`, which is
+the *transaction* timestamp and identical for every row written in one transaction — so ordering by
+it alone was not a total order, and the keyset cursor built on it was not exact.
 
-**Consequence:** two clients can render the same two messages in opposite orders, permanently. Worse,
-a tied message at a page boundary is `lt`-excluded and **never fetched** — an invisible hole in
-scrollback with no error and no placeholder.
+Messages now order by `(created_at, id)` on the server, on the client, and in the index; the cursor
+is the same pair.
 
-**Likelihood: low today, and rising.** Every message is its own transaction, so a tie needs two
-independent commits inside the same microsecond. But `created_at` defaults to `now()`, which is
-`transaction_timestamp()` — **identical for every row in one transaction** — so any future batch
-(an import, a backfill, a multi-forward optimised into one transaction) makes ties certain. Running
-more than one API instance also makes concurrent commits normal rather than incidental.
+**The pagination half was the destructive one, and it is worth seeing the size of it.** Ten messages
+sharing one timestamp, after a first page of three:
 
-**Fix:** `orderBy: [{ created_at: 'desc' }, { id: 'desc' }]`, the same comparator on the client, and
-extend `idx_messages_conv_created_desc` to `(conversation_id, created_at DESC, id DESC)`. Then the
-cursor becomes `(created_at, id)`. **Not a ULID migration** — `id` is a `uuid` with foreign keys
-from five tables.
+```
+old cursor   created_at < cutoff                    →  0 more rows reachable
+new cursor   (created_at, id) < (cutoff, anchor)    →  7 more rows reachable
+```
 
-**The argument for doing it now is cost, not risk.** Three lines today. After a batch insert has
-written 10,000 tied rows, the correct order no longer exists to recover.
+The remaining seven were unreachable by any page — no error, nothing missing on screen to notice.
+Verified at scale too: 120 messages sharing a single timestamp now page through completely, no
+duplicates, and two independent reads return byte-identical order.
+
+**One residual, stated because it is real.** The column is microsecond-precision, but Prisma returns
+a JavaScript `Date` and JSON serialises milliseconds — so the client never sees microseconds. For
+rows written in one transaction that costs nothing, because their timestamps are identical to the
+microsecond and the server is tie-breaking on the id too. Two separate transactions inside one
+millisecond could be ordered by microsecond on the server and by id on the client, and a reload
+corrects it, since a page renders in the order the server returned rather than being re-sorted.
+
+Reading a page is still flat as the thread grows — 188 ms at 100 messages, 198 ms at 20,000 — so
+the wider index is not costing anything.
 
 ### A6 — Typing does a database read per keystroke · **P2**
 
@@ -193,7 +199,7 @@ Absence is harder to notice than a number, so these are written down rather than
 **Phase 0.1 — refresh tokens.** The remaining blocker for the Android client and the largest single
 piece left: sessions expire in an hour with no refresh flow.
 
-A3 and A4 are both done.
+A3, A4, A1 and A2 are done. Only A6 — the typing throttle, a P2 — remains from the audit.
 
 After it, **Phase 0.1 — refresh tokens**, which is the remaining blocker for the Android client and
 the largest single piece left. Everything else is either latent (A1/A2), a decision (the unbuilt
