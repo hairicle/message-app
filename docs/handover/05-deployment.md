@@ -107,6 +107,7 @@ Missing these does not stop the boot, but files and migrations break.
 | `STORAGE_REGION` | `ap-southeast-1` | |
 | `CORS_ORIGIN` | `https://messenger.example.com` | The web app's origin, no trailing slash. Comma-separate several. **Unset, the deployed web app cannot reach the API.** |
 | `MESSAGE_ENCRYPTION_KEY` | 64 hex characters | Encrypts message bodies at rest. **Unset, bodies are stored as plaintext** and the API warns at startup. Generate: `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. **Lose it and every message encrypted under it is unrecoverable** — back it up with `JWT_SECRET`, and never share it between staging and production. |
+| `FIREBASE_SERVICE_ACCOUNT_JSON` | the service-account JSON, or its base64 | Enables push notifications to the mobile app. **Unset, push is a no-op** and the API says so once at startup — nothing else is affected. Accepted raw or base64-encoded, since the raw form is awkward to paste into a dashboard. |
 
 ### API — optional
 

@@ -195,17 +195,17 @@ Absence is harder to notice than a number, so these are written down rather than
 ---
 
 ## What to do next
-**Phase 0 is complete.** Sessions, idempotency, ordering and push are all done, and the Android app
-can begin — see [13-android-app.md](13-android-app.md), Phase 1.
 
-Push is unverified against a real device by necessity: it needs Firebase credentials and a phone.
-Set  and the first send is the test.
+**Phase 0 is complete.** Sessions, idempotency, message ordering and push are all done, so the
+Android app itself can begin — [13-android-app.md](13-android-app.md), Phase 1.
 
-Only **A6** — the typing throttle, a P2 — remains from the audit.
+Push is the one piece unverified against a real device, and necessarily so: it needs Firebase
+credentials and a phone. Set `FIREBASE_SERVICE_ACCOUNT_JSON` and the first send is the test. Until
+then the feature is a no-op that warns once at startup.
 
-After it, **Phase 0.1 — refresh tokens**, which is the remaining blocker for the Android client and
-the largest single piece left. Everything else is either latent (A1/A2), a decision (the unbuilt
-features), or someone else's console (G13, G16, G17).
+Only **A6** — the typing throttle, a P2 — remains from the audit. Everything else outstanding is a
+decision (the unbuilt features) or someone else's console: **G13** the role casing, **G16** the
+Vercel root directory, **G17** the git remote.
 
 ---
 
