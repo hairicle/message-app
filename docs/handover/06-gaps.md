@@ -133,16 +133,12 @@ uninstalled with it — five packages that shipped in the production image for n
 `MAX_FILE_SIZE_MB` and `UPLOADS_DIR` are gone from the config too. The real limit is
 `MAX_FILE_SIZE` in `modules/files/file-rules.ts`; there is no local upload directory any more.
 
----|---|
-| `FRONTEND_URL` | Loaded into config, read by nothing. |
-| `MAX_FILE_SIZE_MB` | Loaded into `maxFileSizeBytes`, read by nothing. The real limit is `MAX_FILE_SIZE` in `modules/files/file-rules.ts` — one constant now, where it used to be written in three places. |
-| `UPLOADS_DIR` | Left from the pre-Supabase local-disk storage. |
-| `LDAP_*` (5 variables) | `ldapts` is installed and the config is parsed, but no code path authenticates against LDAP. |
+**`firebase-admin` has since come back**, and properly this time: push notifications use it, and
+`FIREBASE_SERVICE_ACCOUNT_JSON` is read. It is loaded dynamically, so a deployment that has not
+configured push still pays nothing for it. See G11.
 
-
-Anyone tuning these is tuning nothing. `ldapts` and `firebase-admin` can also be dropped from
-`package.json` until their features are built — they are shipped in the production image today for
-no reason.
+Nothing is left declared-and-unread. The `LDAP_*` names went with the rest — `grep -rn "LDAP_"`
+over the API finds nothing, so there is no longer a setting whose presence implies a feature.
 
 ---
 
@@ -180,11 +176,20 @@ Together with G9's team routes and G1's call routes, that is **18 routes reachab
 authenticated user with no UI in front of them.** Consider blocking them at the edge until their
 features ship.
 
-### ~~G11. Push notifications are not built~~ — SERVER DONE
+### ~~G11. Push notifications are not built~~ — SERVER DONE, CLIENT PENDING
 
-In-browser notifications *do* work — sound plus the `Notification` API, with per-user preferences.
-But that only fires while the tab is open. There is no service worker and no Firebase delivery
-path, so a closed tab or a phone gets nothing.
+**The server side is built.** `POST /api/push/token` registers a device, sending hangs off the
+messages emitter, and mute, a new `push_enabled` preference and the sender themselves are all
+respected. The payload deliberately omits the message text. Unconfigured it is a no-op that warns
+once at startup. Detail in [13-android-app.md](13-android-app.md).
+
+**Nothing consumes it yet.** No notification has been delivered to a real device, because that needs
+Firebase credentials and a phone — set `FIREBASE_SERVICE_ACCOUNT_JSON` and the first send is the
+test.
+
+For the **web**, this changes nothing: in-browser notifications work while a tab is open, and a
+closed tab still gets nothing. Reaching a closed browser tab needs a service worker, which is a
+separate piece of work from the mobile push above.
 
 ### G12. Mobile apps
 
