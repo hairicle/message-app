@@ -82,6 +82,8 @@ export interface Conversation {
   /** Pinned by the requesting member; pinned conversations sort above the rest. */
   is_pinned?: boolean;
   last_message?: {
+    /** Present so a client can tell whether an edit or a deletion refers to this preview. */
+    id: string;
     sender_username: string;
     sender_display_name: string;
     type: MessageType;

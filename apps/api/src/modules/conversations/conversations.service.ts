@@ -298,7 +298,7 @@ export class ConversationsService {
       ) unread ON true
       LEFT JOIN LATERAL (
         SELECT row_to_json(sub) AS msg FROM (
-          SELECT u.username AS sender_username, u.display_name AS sender_display_name,
+          SELECT m.id, u.username AS sender_username, u.display_name AS sender_display_name,
                  m.type, encode(m.ciphertext, 'base64') AS ciphertext,
                  m.deleted_at, m.created_at
           FROM messages m

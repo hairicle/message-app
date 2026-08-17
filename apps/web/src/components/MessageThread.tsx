@@ -31,6 +31,7 @@ import { attachmentNoun } from '../utils/messagePreview';
 import { attachmentTooLargeMessage } from '../utils/uploadLimits';
 import { nextToSend } from '../utils/outbox';
 import { newClientMessageId } from '../utils/clientMessageId';
+import { applyDeletion, applyEdit } from '../utils/messageMutations';
 import { isOverMessageLimit, messageLengthHint } from '../utils/messageLimits';
 import { groupingFor } from '../utils/messageGrouping';
 import { groupReactions } from '../utils/reactionSummary';
@@ -320,13 +321,26 @@ export function MessageThread({ conversationId, presence, onBack, onConversation
         return { ...prev, [payload.userId]: new Date(at).toISOString() };
       });
     };
+    // Every list that holds this message's text, not only the thread. The pinned bar, the bookmarks
+    // and the search results each keep their own copy, and updating the thread alone left a deleted
+    // message readable in the other two — while the deletion reported success.
     const handleMessageEdited = (payload: MessageEditResult) => {
       if (payload.conversationId !== conversationId) return;
-      setMessages((prev) => prev.map((m) => m.id === payload.id ? { ...m, ciphertext: payload.ciphertext, editedAt: payload.editedAt } : m));
+      setMessages((prev) => applyEdit(prev, payload.id, payload.ciphertext, payload.editedAt));
+      setPinnedMessages((prev) => applyEdit(prev, payload.id, payload.ciphertext, payload.editedAt));
+      setBookmarks((prev) => applyEdit(prev, payload.id, payload.ciphertext, payload.editedAt));
+      setSearchResults((prev) => (prev ? applyEdit(prev, payload.id, payload.ciphertext, payload.editedAt) : prev));
+      setReplyingTo((prev) => (prev && prev.id === payload.id
+        ? { ...prev, ciphertext: payload.ciphertext, editedAt: payload.editedAt } : prev));
     };
     const handleMessageDeleted = (payload: MessageDeleteResult) => {
       if (payload.conversationId !== conversationId) return;
-      setMessages((prev) => prev.map((m) => m.id === payload.id ? { ...m, ciphertext: '', file: undefined, deletedAt: payload.deletedAt } : m));
+      setMessages((prev) => applyDeletion(prev, payload.id, payload.deletedAt));
+      setPinnedMessages((prev) => applyDeletion(prev, payload.id, payload.deletedAt));
+      setBookmarks((prev) => applyDeletion(prev, payload.id, payload.deletedAt));
+      setSearchResults((prev) => (prev ? applyDeletion(prev, payload.id, payload.deletedAt) : prev));
+      // Replying to a message that has just been deleted: drop the reply rather than quote nothing.
+      setReplyingTo((prev) => (prev && prev.id === payload.id ? null : prev));
     };
     const handleReactionAdded = (payload: { messageId: string; conversationId: string } & Reaction) => {
       if (payload.conversationId !== conversationId) return;

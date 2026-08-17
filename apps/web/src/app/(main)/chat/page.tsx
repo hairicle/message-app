@@ -193,10 +193,32 @@ export default function ChatPage() {
         return prev;
       });
     };
+    /**
+     * Keep the sidebar's one-line preview honest when a message is edited or deleted.
+     *
+     * It holds its own copy of the text, so without this a deleted message stayed readable in the
+     * list even after vanishing from the thread — and deletion is administrators-only, meaning it
+     * reported success while the words were still on screen.
+     *
+     * Matched by id, which the preview carries for exactly this reason; it has no other use.
+     */
+    const patchPreview = (id: string, apply: (m: NonNullable<Conversation['last_message']>) => NonNullable<Conversation['last_message']>) =>
+      setConversations((prev) => prev.map((c) => (
+        c.last_message && c.last_message.id === id ? { ...c, last_message: apply(c.last_message) } : c
+      )));
+
+    const onEdited = (p: { id: string; ciphertext: string }) =>
+      patchPreview(p.id, (lm) => ({ ...lm, ciphertext: p.ciphertext }));
+    const onDeleted = (p: { id: string; deletedAt: string | null }) =>
+      // Blanked and marked, matching what the server stores and what a refetch would return.
+      patchPreview(p.id, (lm) => ({ ...lm, ciphertext: '', deleted_at: p.deletedAt }));
+
     const reqPresence = () => socket.emit('presence:get');
     socket.on('presence:init', onInit);
     socket.on('presence:update', onUpdate);
     socket.on('message:new', onMsg);
+    socket.on('message:edited', onEdited);
+    socket.on('message:deleted', onDeleted);
     socket.on('conversation:new', onNewConversation);
     socket.on('connect', reqPresence);
     if (socket.connected) reqPresence();
@@ -204,6 +226,8 @@ export default function ChatPage() {
       socket.off('presence:init', onInit);
       socket.off('presence:update', onUpdate);
       socket.off('message:new', onMsg);
+      socket.off('message:edited', onEdited);
+      socket.off('message:deleted', onDeleted);
       socket.off('conversation:new', onNewConversation);
       socket.off('connect', reqPresence);
     };

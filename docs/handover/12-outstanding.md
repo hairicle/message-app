@@ -2,7 +2,7 @@
 
 Everything known to be unfinished, unfixed or worth deciding about, in one place.
 
-**As of `7d4cfc2`, 2026-08-12.** Every figure below was measured on that commit, not recalled — the
+**As of the current `dev2`, 2026-08-12.** Every figure below was measured on that commit, not recalled — the
 commands to re-measure are at the bottom, and they matter more than the numbers, because this
 document is only true until the next change.
 
@@ -12,8 +12,8 @@ document is only true until the next change.
 
 | Suite | Result |
 |---|---|
-| API unit | **284 / 284** |
-| Web unit | **197 / 197** |
+| API unit | **290 / 290** |
+| Web unit | **215 / 215** |
 | Security, live against the running API | **65 / 65** |
 | File, input and exception handling, live | **54 / 54** |
 | API and web typecheck | clean |
@@ -26,8 +26,8 @@ the point of writing it down.
 
 ## Known bugs
 
-From the reliability audit ([the six patterns](#where-these-came-from)). Audited and reported, not
-fixed. **None of these appear in the gaps register**, so this is the only record of them.
+From the reliability audit ([the six patterns](#where-these-came-from)). **None of these appear in
+the gaps register**, so this is the only record of them. Two of the four are now fixed.
 
 ### ~~A3 — No idempotency key~~ — **FIXED** in `7d4cfc2`
 
@@ -43,21 +43,27 @@ phone a lost acknowledgement is the ordinary condition rather than a hiccup.
 identified. Only future ones are prevented, which is why this was worth doing before the mobile
 client rather than after.
 
-### A4 — Denormalized client state · **P0**
+### ~~A4 — Denormalized client state~~ — **FIXED**
 
-`handleMessageDeleted` and `handleMessageEdited` update `messages[]` only
-([MessageThread.tsx:319-325](../../apps/web/src/components/MessageThread.tsx#L319)). The same
-message is also held in `pinnedMessages`, `bookmarks`, `searchResults` and
-`conversations[].last_message`.
+The thread was not the only place a message body lived on screen. The pinned bar, the bookmarks
+list, the search results and the sidebar's one-line preview each keep their own copy — necessarily,
+because a pinned message may be thousands of messages up and never loaded into the thread, so they
+cannot hold an id and look it up.
 
-**Consequence:** delete a pinned message and **its text stays readable in the pinned bar**. Deletion
-is admin-only — it exists to remove something that should not be there — so the feature reports
-success while the content is still on screen in two other places. Edits drift the same way.
+The socket handlers updated the thread and nothing else, so **deleting a pinned message left its
+text readable in the pinned bar** while the deletion reported success. Deletion is
+administrators-only; it exists to remove something that should not be there.
 
-**Likelihood: 100%.** Not a race. Pin a message, delete it, and it happens every time.
+Every list is now corrected through one pair of pure helpers, `applyEdit` and `applyDeletion`, so
+the rule is written once rather than remembered in two handlers. Blanked rather than removed,
+because that is what the server does — `deleteMessage` writes an empty body and leaves the row, and
+neither the pin nor the bookmark query filters deleted messages out, so dropping the entry would
+look tidier and disagree with the next refetch. Verified live: after a delete, a refetch returns
+empty text in all three places, which is exactly what the client now shows without one.
 
-**Fix:** a `Record<string, Message>` entity map, with the other lists holding ids only. No state
-library needed.
+The sidebar preview needed one server change to be fixable at all — it carried no message id, so
+the client could not tell whether a deletion referred to it. `last_message.id` is now returned and
+has no other use.
 
 ### A1 + A2 — No ordering tiebreaker, and a pagination gap · **P0, latent**
 
@@ -184,10 +190,10 @@ Absence is harder to notice than a number, so these are written down rather than
 
 ## What to do next
 
-**A4.** Deterministic, visible, and it makes a moderation action appear to have worked when it did
-not — delete a pinned message and its text stays readable in the pinned bar, every time.
+**Phase 0.1 — refresh tokens.** The remaining blocker for the Android client and the largest single
+piece left: sessions expire in an hour with no refresh flow.
 
-A3 was the other half of that pair and is done.
+A3 and A4 are both done.
 
 After it, **Phase 0.1 — refresh tokens**, which is the remaining blocker for the Android client and
 the largest single piece left. Everything else is either latent (A1/A2), a decision (the unbuilt
