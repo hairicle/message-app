@@ -18,6 +18,7 @@ older docs disagree, the code wins and the difference is called out.
 | 10 | [Scaling and encryption](10-scaling-and-encryption.md) | The API can now run more than one instance, message bodies are encrypted at rest, and Vercel deploys are gated on CI. **Two new required variables.** |
 | 11 | [Limits](11-limits.md) | Every bound the system enforces — files, message length, passwords, rate limits — what happens when you cross it, and what is not limited at all. |
 | 12 | [Outstanding work](12-outstanding.md) | **Start here for "what is left".** Every known bug, open gap and decision still to make, with how to re-measure each figure. |
+| 13 | [Android app plan](13-android-app.md) | What to build for a React Native + Expo client, in what order — and the server work that has to land before any of it. |
 
 Staging is already running and documented separately in
 [../staging-deploy.md](../staging-deploy.md). Production follows the same shape; document 5 covers
