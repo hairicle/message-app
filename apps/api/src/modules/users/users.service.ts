@@ -155,12 +155,16 @@ export class UsersService {
       soundEnabled: row?.sound_enabled ?? true,
       desktopEnabled: row?.desktop_enabled ?? true,
       emailEnabled: row?.email_enabled ?? false,
+      // Separate from desktopEnabled on purpose: silencing a box that appears over your work is not
+      // the same as silencing the phone in your pocket, and reading one as the other would quiet a
+      // channel nobody chose to quiet.
+      pushEnabled: row?.push_enabled ?? true,
     };
   }
 
   async updateNotificationPrefs(
     userId: string,
-    data: { soundEnabled?: boolean; desktopEnabled?: boolean; emailEnabled?: boolean },
+    data: { soundEnabled?: boolean; desktopEnabled?: boolean; emailEnabled?: boolean; pushEnabled?: boolean },
   ) {
     // Was an INSERT … ON CONFLICT DO UPDATE with COALESCE per column: absent fields keep their
     // stored value, and on first write fall back to the column defaults.
@@ -168,6 +172,7 @@ export class UsersService {
     if (data.soundEnabled !== undefined) patch.sound_enabled = data.soundEnabled;
     if (data.desktopEnabled !== undefined) patch.desktop_enabled = data.desktopEnabled;
     if (data.emailEnabled !== undefined) patch.email_enabled = data.emailEnabled;
+    if (data.pushEnabled !== undefined) patch.push_enabled = data.pushEnabled;
 
     await this.prisma.notification_preferences.upsert({
       where: { user_id: userId },
@@ -177,6 +182,7 @@ export class UsersService {
         sound_enabled: data.soundEnabled ?? true,
         desktop_enabled: data.desktopEnabled ?? true,
         email_enabled: data.emailEnabled ?? false,
+        push_enabled: data.pushEnabled ?? true,
       },
     });
     return this.getNotificationPrefs(userId);

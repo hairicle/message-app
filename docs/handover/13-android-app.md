@@ -81,29 +81,46 @@ the loser reads back what the winner wrote.
 **The app must generate one per message and reuse it on every attempt.** A fresh id per attempt
 would be a fresh message per attempt, which is the bug restated.
 
-## 0.3 — Push notifications
+## ~~0.3 — Push notifications~~ · **DONE on the server**
 
-The one feature that justifies an app at all — otherwise this is a phone browser with an icon.
+The reason an app exists rather than a browser icon: a socket cannot survive the operating system
+suspending the app, so once the phone is in a pocket push is the only thing that gets through.
 
-**Server side:**
+**`POST /api/push/token`** registers a device, **`DELETE`** stops it. The device is taken from the
+caller's own token, never the body, so one session cannot point another device's notifications at
+itself — and registering a token that already belongs to another row clears it there first, because
+a token moves between devices when an app is reinstalled and one phone must not receive another's
+messages.
 
-1. `POST /api/users/me/push-token` — writes `user_devices.push_token` for the device the token was
-   issued to, and clears it on sign-out.
-2. Send on new message, from the same `messages.events` emitter the gateway already subscribes to —
-   so HTTP and socket sends both notify, without a second code path. That emitter exists precisely
-   because a previous attempt at a second path delivered to nobody.
-3. **Respect what already exists**: `conversation_members.muted_until`, and the member's own
-   `last_read_message_id` so a message already read on the laptop does not buzz the phone.
-4. Add `push_enabled` to `notification_preferences`. Do not reuse `desktop_enabled` — someone who
-   silenced browser notifications has not asked to silence their phone.
+Sending hangs off the same `messages.events` emitter the gateway relays from, so a message created
+over HTTP, over the socket or by a forward all notify through one path. It is never awaited by the
+sender: a Firebase outage must not delay or fail the message it is about.
 
-`firebase-admin` was uninstalled in `b58e1ae` because nothing used it. It comes back here, when it
-does.
+**Four reasons not to notify**, each someone's explicit choice or an obvious mistake: the sender
+themselves, a conversation muted and still within its mute, `push_enabled` turned off, and a device
+with no token. Every one is covered by a test, because deciding *not* to notify is what keeps an app
+from being silenced entirely — and then the notifications that mattered are lost too.
 
-**Payload:** send the sender's name and conversation id, and — deliberately — **not the message
-text**, or at least make that a preference. Message bodies are encrypted at rest specifically so the
-server's storage does not hand them over; putting the plaintext through Google's push service and
-onto a lock screen undoes a good part of that.
+**`push_enabled` is a new preference, separate from `desktopEnabled`.** Someone who silenced a box
+appearing over their work has not asked to silence the phone in their pocket.
+
+**The payload deliberately does not carry the message text** — only who sent it, which conversation,
+and what kind of thing arrived. Bodies are encrypted at rest precisely so the database does not hand
+them over; putting the plaintext through a third-party push service and onto a lock screen gives
+away much of that. If this is ever loosened it should be a per-person preference with this as the
+default, not a change of mind about the default.
+
+Tokens Firebase reports as dead are cleared, so a reinstalled app stops costing a send every time.
+
+### What is not verified, and cannot be here
+
+**No notification has been delivered to a real device.** That needs Firebase credentials and a
+phone. What is verified is everything up to the handover: registration, the move between devices,
+unregistering, the preference, the recipient rules, and that with `FIREBASE_SERVICE_ACCOUNT_JSON`
+unset the whole feature is a no-op — the API warns once at startup and messages send exactly as
+before.
+
+Set that variable and the first real send is the test.
 
 ## 0.4 — Worth doing at the same time
 

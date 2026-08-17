@@ -18,6 +18,14 @@ const changePasswordSchema = z.object({
   newPassword: z.string().min(1),
 });
 
+/** Every flag optional: a client sends only what it is changing, and the rest keeps its value. */
+const notificationPrefsSchema = z.object({
+  soundEnabled: z.boolean().optional(),
+  desktopEnabled: z.boolean().optional(),
+  emailEnabled: z.boolean().optional(),
+  pushEnabled: z.boolean().optional(),
+});
+
 const updateProfileSchema = z.object({
   displayName: z.string().min(1).max(100).optional(),
   username: z.string().min(1).max(50).optional(),
@@ -76,9 +84,9 @@ export class UsersController {
   @Patch('me/notifications')
   async updateNotificationPrefs(
     @CurrentUser() user: AuthPayload,
-    @Body() body: { soundEnabled?: boolean; desktopEnabled?: boolean; emailEnabled?: boolean },
+    @Body() body: unknown,
   ) {
-    const prefs = await this.usersService.updateNotificationPrefs(user.id, body);
+    const prefs = await this.usersService.updateNotificationPrefs(user.id, notificationPrefsSchema.parse(body));
     return { prefs };
   }
 

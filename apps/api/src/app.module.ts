@@ -18,6 +18,7 @@ import { TasksModule } from './modules/tasks/tasks.module';
 import { TeamsModule } from './modules/teams/teams.module';
 import { AdminModule } from './modules/admin/admin.module';
 import { DepartmentsModule } from './modules/departments/departments.module';
+import { PushModule } from './modules/push/push.module';
 import { RealtimeModule } from './realtime/realtime.module';
 import { HealthController } from './health/health.controller';
 
@@ -45,6 +46,7 @@ import { HealthController } from './health/health.controller';
     TeamsModule,
     AdminModule,
     DepartmentsModule,
+    PushModule,
     RealtimeModule,
   ],
   controllers: [HealthController],

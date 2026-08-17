@@ -12,7 +12,7 @@ document is only true until the next change.
 
 | Suite | Result |
 |---|---|
-| API unit | **291 / 291** |
+| API unit | **313 / 313** |
 | Web unit | **221 / 221** |
 | Security, live against the running API | **65 / 65** |
 | File, input and exception handling, live | **54 / 54** |
@@ -195,13 +195,13 @@ Absence is harder to notice than a number, so these are written down rather than
 ---
 
 ## What to do next
+**Phase 0 is complete.** Sessions, idempotency, ordering and push are all done, and the Android app
+can begin — see [13-android-app.md](13-android-app.md), Phase 1.
 
-**Phase 0.3 — push notifications.** The last piece of Phase 0, and the reason to have an app rather
-than a browser icon. It includes a decision as much as code: whether the message text goes in the
-payload at all.
+Push is unverified against a real device by necessity: it needs Firebase credentials and a phone.
+Set  and the first send is the test.
 
-Phase 0.1 and 0.2 are done, and so are A1–A4. Only **A6** — the typing throttle, a P2 — remains from
-the audit.
+Only **A6** — the typing throttle, a P2 — remains from the audit.
 
 After it, **Phase 0.1 — refresh tokens**, which is the remaining blocker for the Android client and
 the largest single piece left. Everything else is either latent (A1/A2), a decision (the unbuilt

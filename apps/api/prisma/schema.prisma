@@ -224,6 +224,7 @@ model notification_preferences {
   user_id         String   @id @db.Uuid
   sound_enabled   Boolean  @default(true)
   desktop_enabled Boolean  @default(true)
+  push_enabled    Boolean  @default(true)
   email_enabled   Boolean  @default(false)
   updated_at      DateTime @default(now()) @db.Timestamptz(6)
   users           users    @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
@@ -355,6 +356,7 @@ model user_devices {
   users                 users                   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction)
 
   @@index([user_id], map: "idx_user_devices_user_id")
+  @@index([user_id], map: "idx_user_devices_push_token_present", where: raw("(push_token IS NOT NULL)"))
 }
 
 /// This model contains row level security and requires additional setup for migrations. Visit https://pris.ly/d/row-level-security for more info.
