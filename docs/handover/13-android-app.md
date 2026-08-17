@@ -68,16 +68,18 @@ The web client does this too, so it also stops asking people to sign in daily.
 httpOnly cookie would be out of reach of scripts, but the API has no cookie session at all, so
 that is a change to both ends rather than a line in the client. Recorded rather than pretended.
 
-## 0.2 — Idempotency stops being optional · **blocker**
+## ~~0.2 — Idempotency stops being optional~~ · **DONE**
 
-[A3 in the outstanding list](12-outstanding.md) — a lost acknowledgement makes the retry create a
-second message.
+A lost acknowledgement made the retry create a second message. On the web that needs a network
+hiccup; on mobile it is the normal condition, so the app would have shipped duplicates as routine.
 
-On the web this needs a network hiccup. **On mobile it is the normal condition**: trains, lifts,
-cell handovers, the OS suspending the app mid-send. Shipping the app without `client_message_id`
-means shipping duplicate messages as a routine occurrence, and they cannot be cleaned up afterwards.
+The sender attaches a `clientMessageId`, generated once when the message is written and reused by
+every retry; the server returns the message it already stored. Verified on both transports, and
+eight simultaneous sends of one id produce a single row — the unique index decides that race and
+the loser reads back what the winner wrote.
 
-This was already worth doing. The app makes it a prerequisite.
+**The app must generate one per message and reuse it on every attempt.** A fresh id per attempt
+would be a fresh message per attempt, which is the bug restated.
 
 ## 0.3 — Push notifications
 
@@ -105,18 +107,26 @@ onto a lock screen undoes a good part of that.
 
 ## 0.4 — Worth doing at the same time
 
-- **A1 / A2, the ordering tiebreaker.** Offline sync makes tied timestamps far more likely, because
-  a flushed outbox writes several messages in quick succession.
-- **A6, the typing throttle.** Every keystroke is a socket emit; on a mobile radio that is battery.
+- ~~**A1 / A2, the ordering tiebreaker.**~~ **Done.** Messages order by `(created_at, id)` on both
+  ends and the keyset cursor uses the pair — which also closed a hole where messages sharing a
+  timestamp were unreachable by any page. Offline sync would have made ties common, since a flushed
+  outbox writes several messages in quick succession.
+- **A6, the typing throttle.** Still open. Every keystroke is a socket emit; on a mobile radio that
+  is battery.
 
 ---
 
 # Phase 1 — The app, signed in and reading · ~2 weeks
 
-Expo project inside this repository as `apps/mobile`, so it shares the workspace and
-`@messenger/shared` rather than duplicating the types.
+Expo project in **`Messager Android/`**, a separate folder beside this repository rather than inside
+it.
 
-- Expo Router, TypeScript, the existing `packages/shared` as a workspace dependency.
+That was decided deliberately, against the recommendation further down this document: one tree is
+simpler to work in, and it costs the guarantee that the client's types cannot drift from the API's.
+That folder's README lists the three ways to keep them honest and what each trades — **pick one
+before writing the API client, not after.**
+
+- Expo Router, TypeScript.
 - **Token storage in `expo-secure-store`**, never `AsyncStorage` — the latter is plain text on disk.
 - Login, including the TOTP second step, which the web already implements and the API already
   supports.
@@ -184,10 +194,14 @@ has and none of which are in this scope.
 
 # Things worth deciding before starting, not during
 
-**Where the app lives.** `apps/mobile` in this repository shares the types and the CI, at the cost
-of a heavier install for anyone touching only the API. A separate repository is cleaner to build and
-harder to keep honest about the API's shape. **Recommendation: this repository**, because the types
-are the whole argument for React Native here.
+**~~Where the app lives.~~ Decided: a separate folder,** `Messager Android/`, beside this
+repository rather than `apps/mobile` inside it.
+
+This document originally recommended the opposite, and the reasoning still stands as a cost rather
+than an argument to reopen: inside the workspace the app imports `@messenger/shared` directly, so
+the client's types cannot drift from the API's. Outside it, they are two independent opinions that
+happen to agree, and something has to keep them honest deliberately. The three ways of doing that
+are in that folder's README. **Choose one before writing the API client.**
 
 **What a notification says.** See 0.3. This is a privacy decision, not a technical one, and it is
 easier to start conservative and loosen it than the reverse.
