@@ -344,6 +344,8 @@ model user_devices {
   user_id               String                  @db.Uuid
   device_name           String
   push_token            String?
+  refresh_token_hash    String?                 @unique(map: "idx_user_devices_refresh_token_hash")
+  refresh_expires_at    DateTime?               @db.Timestamptz(6)
   last_active_at        DateTime?               @db.Timestamptz(6)
   created_at            DateTime                @default(now()) @db.Timestamptz(6)
   message_deliveries    message_deliveries[]

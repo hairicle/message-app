@@ -2,7 +2,7 @@
 
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import * as authApi from '../lib/api/auth';
-import { getAuthToken, getDeviceId, setAuthToken, setDeviceId, setSessionExpiredHandler } from '../lib/api/client';
+import { getAuthToken, getDeviceId, getRefreshToken, setAuthToken, setDeviceId, setRefreshToken, setSessionExpiredHandler } from '../lib/api/client';
 import type { User } from '@messenger/shared';
 
 interface AuthContextValue {
@@ -48,6 +48,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return { requiresTotp: true as const, totpToken: result.totpToken };
     }
     setAuthToken(result.token);
+    setRefreshToken(result.refreshToken ?? null);
     setDeviceId(result.deviceId);
     setToken(result.token);
     setDeviceIdState(result.deviceId);
@@ -57,6 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const completeTotpLogin = useCallback(async (totpToken: string, code: string, deviceName: string) => {
     const result = await authApi.completeTotpLogin(totpToken, code, deviceName);
     setAuthToken(result.token);
+    setRefreshToken(result.refreshToken ?? null);
     setDeviceId(result.deviceId);
     setToken(result.token);
     setDeviceIdState(result.deviceId);

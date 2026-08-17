@@ -18,3 +18,16 @@ export function completeTotpLogin(totpToken: string, code: string, deviceName: s
 export function getMe() {
   return apiFetch<{ user: User }>('/api/auth/me');
 }
+
+/**
+ * End this device's session on the server.
+ *
+ * Unauthenticated on purpose: the access token may already have expired, and a stale session must
+ * still be endable by the client holding it.
+ */
+export function logout(refreshToken: string) {
+  return apiFetch<void>('/api/auth/logout', {
+    method: 'POST',
+    body: JSON.stringify({ refreshToken }),
+  });
+}

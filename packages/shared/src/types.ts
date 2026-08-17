@@ -31,6 +31,11 @@ export interface DirectoryUser {
 
 export interface LoginResponse {
   token: string;
+  /**
+   * Exchanged for a new access token when that one expires, so signing in lasts weeks rather than
+   * an hour. Optional only so a client built before this existed still typechecks.
+   */
+  refreshToken?: string;
   deviceId: string;
   user: User;
 }

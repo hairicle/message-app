@@ -42,28 +42,31 @@ Worth stating, because it means the app is not starting from nothing:
 
 **None of this is app code, and the app cannot ship without it.** Roughly a week.
 
-## 0.1 — Sessions have to outlive an hour · **blocker**
+## ~~0.1 — Sessions have to outlive an hour~~ · **DONE**
 
-```
-JWT_EXPIRES_IN=1h        locally
-JWT_EXPIRES_IN=8h        staging
-```
+There was no refresh flow: the access token expired after an hour and the person signed in again.
+Fatal on a phone, and worst at the moment a notification is tapped.
 
-There is **no refresh flow** — `grep -rn refresh apps/api/src` finds only the avatar URL cache. When
-the token expires the user signs in again.
+A refresh token now comes back with every sign-in — thirty days, per device, **rotated on every
+use**, and stored as a SHA-256 digest so a database dump contains nothing presentable as a session.
+`POST /api/auth/refresh` exchanges it; `POST /api/auth/logout` ends it. Neither is behind the auth
+guard, because both have to work once the access token has already expired.
 
-On the web that is a mild annoyance once a day. On a phone it is fatal: a messaging app that demands
-a password every eight hours will be uninstalled, and it fails at the worst moment — a push
-notification arrives, the person taps it, and lands on a login screen instead of the message.
+Refusals are deliberately identical — an invented token, a spent one, an expired one and one
+belonging to a disabled account all answer "Session expired, please sign in again", so the endpoint
+cannot be used to test which tokens are real. A disabled account is refused **and** has its session
+row cleared rather than left to retry.
 
-**What to build:** a refresh token, stored per device in `user_devices`, long-lived (30 days is
-normal), exchanged for a short access token. Revocable per device, which is also how "sign out my
-lost phone" becomes possible. The `AccountStatusService` block list already covers the disable case,
-so a refresh must check it too — otherwise a disabled account keeps minting access tokens.
+Verified against a server issuing three-second access tokens: a request after expiry succeeds
+transparently with exactly one renewal, and **five concurrent requests expiring together share one
+renewal** rather than each exchanging a token the others had just rotated away — the failure a
+naive client would hit on every page load.
 
-Do not simply raise `JWT_EXPIRES_IN` to 30 days. The access token cannot be revoked before it
-expires, which is exactly why the block list exists; a 30-day one would sit in a stolen phone's
-storage for a month.
+The web client does this too, so it also stops asking people to sign in daily.
+
+**One thing worth revisiting:** the refresh token is in `localStorage` beside the access token. An
+httpOnly cookie would be out of reach of scripts, but the API has no cookie session at all, so
+that is a change to both ends rather than a line in the client. Recorded rather than pretended.
 
 ## 0.2 — Idempotency stops being optional · **blocker**
 
